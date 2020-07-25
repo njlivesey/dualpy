@@ -1,7 +1,7 @@
 import numpy as np
 
 from .jacobians import *
-from .duals import *
+from .duals import dlarray
 
 __all__ = ["seed", "_seed_dense", "_seed_sparse", "_seed_diagonal", "compute_jacobians_numerically"]
 
