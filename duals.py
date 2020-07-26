@@ -112,8 +112,6 @@ class dlarray(units.Quantity):
         return HANDLED_FUNCTIONS[func](*args, **kwargs)
 
     def __getitem__(self, *args):
-        print(f"---- Asked for get item on shape {self.shape}")
-        print(f"Args is {args}")
         out = dlarray(units.Quantity(self).__getitem__(*args))
         for name, jacobian in self.jacobians.items():
             out.jacobians[name] = jacobian._getjitem(out.shape, *args)
@@ -136,7 +134,7 @@ class dlarray(units.Quantity):
         # This will probably (hopefully!) fail if we're using one of
         # those function unit things (such as dB).
         if self.hasJ:
-            scale = self.unit.to(unit) << unit/self.unit
+            scale = self.unit.to(unit, **kwargs) << unit/self.unit
             out._chain_rule(self, scale)
         return out
 
@@ -202,6 +200,28 @@ class dlarray(units.Quantity):
         return out
 
     def multiply(a, b, out=None):
+        a_, b_, aj, bj, out=_setup_dual_operation(a, b, out=out)
+        # Because out may share memory with a or b, we need to do the
+        # Jacobians first as they need access to a and b
+        # unadulterated.
+        out_jacobians={}
+        for name, jacobian in aj.items():
+            out_jacobians[name] = jacobian.premul_diag(b_)
+        for name, jacobian in bj.items():
+            if name in out_jacobians:
+                out_jacobians[name] += jacobian.premul_diag(a_)
+            else:
+                out_jacobians[name] = jacobian.premul_diag(a_)
+        if out is None:
+            out=dlarray(a_ * b_)
+        else:
+            if not isinstance(out, dlarray):
+                out=dlarray(out)
+            out[:]=a_ * b_
+        out.jacobians=out_jacobians
+        return out
+
+    def rmultiply(a, b, out=None):
         a_, b_, aj, bj, out=_setup_dual_operation(a, b, out=out)
         # Because out may share memory with a or b, we need to do the
         # Jacobians first as they need access to a and b
@@ -627,14 +647,14 @@ def atleast_1d(*args):
 
 @implements(np.where)
 def where(condition, a=None, b=None):
-
+    print("IN WHERE")
     if a is None or b is None:
         return NotImplemented
     cond_, a_, b_, condj, aj, bj, out=_setup_dual_operation(condition, a, b)
     if condj:
         raise ValueError(
             "Jacobians not allowed on condition argument in 'where'")
-    out=dlarray(np.where(condition, a_, b_))
+    out=dlarray(np.where(cond_, a_, b_))
     # Now go through the jacobians and insert them where the condition
     # applies, otherwise they're zero.
     for name, jacobian in aj.items():
@@ -688,3 +708,10 @@ def clip(a, a_min, a_max, out=None, **kwargs):
         out._chain_rule(a, factor.astype(int))
     return out
 
+@implements(np.nan_to_num)
+def nan_to_num(x, copy=True, nan=0.0, posinf=None, neginf=None):
+    x_, j, out = _setup_dual_operation(x)
+    result = dlarray(np.nan_to_num(x_, copy=copy, nan=nan, posinf=posinf, neginf=neginf))
+    for name, jacobian in j.items():
+        result.jacobians[name] = jacobian.nan_to_num(copy=copy, nan=nan, posinf=posinf, neginf=neginf)
+    return result

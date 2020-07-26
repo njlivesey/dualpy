@@ -142,7 +142,9 @@ class dljacobian_base(object):
             f"Dependent shape is {self.dependent_shape} <{self.dependent_size}>\n" +
             f"Independent shape is {self.independent_shape} <{self.independent_size}>\n" +
             f"Combined they are {self.shape} <{self.size}>\n" +
-            f"Dummies are {self._dummy_dependent} and {self._dummy_independent}"
+            f"Dummies are {self._dummy_dependent} and {self._dummy_independent}\n" +
+            f"Units are d<{self.dependent_unit}>/d<{self.independent_unit}> = " +
+            f"{(self.dependent_unit/self.independent_unit).decompose()}"
             )
 
     def __repr__(self):
@@ -177,6 +179,10 @@ class dljacobian_base(object):
     def flatten(self, order='C'):
         """flatten a jacobian"""
         return self.reshape((self.dependent_size,), order=order)
+
+    def nan_to_num(self, copy=True, nan=0.0, posinf=None, neginf=None):
+        return self.__class__(
+            template=self, data=np.nan_to_num(self.data, copy=copy, nan=nan, posinf=posinf, neginf=neginf))
        
 # ----------------------------------------------- dljacobian_diagonal
 class dljacobian_diagonal(dljacobian_base):
@@ -755,4 +761,14 @@ class dljacobian_sparse(dljacobian_base):
 
     def to2darray(self):
         return self.data2d << (self.dependent_unit/self.independent_unit)
+
+    def nan_to_num(self, copy=True, nan=0.0, posinf=None, neginf=None):
+        if copy:
+            data2d = self.data2d.copy()
+        else:
+            data2d = data2d
+        data2d.data = np.nan_to_num(data2d.data, copy=False, nan=nan, posinf=posinf, neginf=neginf)
+        return self.__class__(template=self, data=data2d)
+
+       
 

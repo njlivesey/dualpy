@@ -1,9 +1,12 @@
 import numpy as np
+import astropy.units as units
 
 from .jacobians import *
 from .duals import dlarray
+from .dual_helpers import _setup_dual_operation
 
-__all__ = ["seed", "_seed_dense", "_seed_sparse", "_seed_diagonal", "compute_jacobians_numerically"]
+__all__ = ["seed", "_seed_dense", "_seed_sparse", "_seed_diagonal",
+           "compute_jacobians_numerically", "solve_quadratic"]
 
 def seed(value, name, force=False, overwrite=False, reset=False):
     # In some senses, this is the most important routine in the package,
@@ -145,3 +148,33 @@ def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None)
             result_n.jacobians[name]=jacobian
     # Now we're done, I think
     return result_a, result_n
+
+def solve_quadratic(a, b, c, sign=1):
+    """Solve quadratic equation ax^2+bx+c=0 returning jacobians"""
+    # Use Muller's equation for stability when a=0
+    a_, b_, c_, aj, bj, cj, out = _setup_dual_operation(a, b, c)
+    d_ = np.sqrt(b_**2-4*a_*c_)
+    x_ = -2*c_ / (b_+sign*d_)
+    x = dlarray(x_)
+    anyJ = aj is not None or bj is not None or cj is not None
+    if anyJ:
+        # Precompute some terms
+        scale = 1.0/(2*a_*x_ + b_)
+        if len(aj):
+            x_2 = x_**2
+        for name, jacobian in aj.items():
+            x.jacobians[name] = jacobian.premul_diag(x_2*scale)
+        for name, jacobian in bj.items():
+            if name in x.jacobians:
+                x.jacobians[name] += jacobian.premul_diag(x*scale)
+            else:
+                x.jacobians[name] = jacobian.premul_diag(x*scale)
+        for name, jacobian in cj.items():
+            if name in x.jacobians:
+                x.jacobians[name] += jacobian.premul_diag(scale)
+            else:
+                x.jacobians[name] = jacobian.premul_diag(scale)
+    return x
+
+                
+    
