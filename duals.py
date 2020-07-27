@@ -647,7 +647,6 @@ def atleast_1d(*args):
 
 @implements(np.where)
 def where(condition, a=None, b=None):
-    print("IN WHERE")
     if a is None or b is None:
         return NotImplemented
     cond_, a_, b_, condj, aj, bj, out=_setup_dual_operation(condition, a, b)

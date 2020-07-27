@@ -247,7 +247,6 @@ class dljacobian_diagonal(dljacobian_base):
         diag_, dependent_unit, dependent_shape = self._prepare_premul_diag(diag)
         if dependent_shape == self.independent_shape:
             return dljacobian_diagonal(diag_*self.data, template=self,
-                                       dependent_shape=dependent_shape,
                                        dependent_unit=dependent_unit)
         else:
             return dljacobian_sparse(self).premul_diag(diag)
@@ -766,7 +765,7 @@ class dljacobian_sparse(dljacobian_base):
         if copy:
             data2d = self.data2d.copy()
         else:
-            data2d = data2d
+            data2d = self.data2d
         data2d.data = np.nan_to_num(data2d.data, copy=False, nan=nan, posinf=posinf, neginf=neginf)
         return self.__class__(template=self, data=data2d)
 
