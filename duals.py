@@ -12,7 +12,7 @@ import copy
 from .jacobians import *
 from .dual_helpers import *
 
-__all__ = ["dlarray"]
+__all__ = ["dlarray","nan_to_num_jacobians"]
 
 class dlarray(units.Quantity):
     """A combination of an astropy Quantity (which is in turn numpy array and a collection of jacobian
@@ -111,11 +111,17 @@ class dlarray(units.Quantity):
         #    return NotImplemented
         return HANDLED_FUNCTIONS[func](*args, **kwargs)
 
-    def __getitem__(self, *args):
-        out = dlarray(units.Quantity(self).__getitem__(*args))
+    def __getitem__(self, key):
+        out = dlarray(units.Quantity(self).__getitem__(key))
         for name, jacobian in self.jacobians.items():
-            out.jacobians[name] = jacobian._getjitem(out.shape, *args)
+            out.jacobians[name] = jacobian._getjitem(out.shape, key)
         return out
+
+    def __setitem__(self, key, value):
+        s_, v_, sj, vj, out_=_setup_dual_operation(self, value)
+        s_.__setitem__(key, value)
+        for name, jacobian in sj.items():
+            jacobian._setjitem(key, vj.get(name, None))
 
     def _check(self, name="<unknown>"):
         # A routine to check that a dual is OK
@@ -708,9 +714,16 @@ def clip(a, a_min, a_max, out=None, **kwargs):
     return out
 
 @implements(np.nan_to_num)
-def nan_to_num(x, copy=True, nan=0.0, posinf=None, neginf=None):
+def nan_to_num(x, copy=True, nan=0.0, posinf=None, neginf=None, jacobians_only=False):
     x_, j, out = _setup_dual_operation(x)
-    result = dlarray(np.nan_to_num(x_, copy=copy, nan=nan, posinf=posinf, neginf=neginf))
+    if jacobians_only:
+        result = dlarray(x_)
+    else:
+        result = dlarray(np.nan_to_num(x_, copy=copy, nan=nan, posinf=posinf, neginf=neginf))
     for name, jacobian in j.items():
         result.jacobians[name] = jacobian.nan_to_num(copy=copy, nan=nan, posinf=posinf, neginf=neginf)
     return result
+
+def nan_to_num_jacobians(x, copy=True, nan=0.0, posinf=None, neginf=None):
+    return nan_to_num(x, copy=copy, nan=nan, posinf=posinf, neginf=neginf, jacobians_only=True)
+

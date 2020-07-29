@@ -159,7 +159,7 @@ def solve_quadratic(a, b, c, sign=1):
     anyJ = aj is not None or bj is not None or cj is not None
     if anyJ:
         # Precompute some terms
-        scale = 1.0/(2*a_*x_ + b_)
+        scale = -1.0/(2*a_*x_ + b_)
         if len(aj):
             x_2 = x_**2
         for name, jacobian in aj.items():
@@ -175,6 +175,3 @@ def solve_quadratic(a, b, c, sign=1):
             else:
                 x.jacobians[name] = jacobian.premul_diag(scale)
     return x
-
-                
-    

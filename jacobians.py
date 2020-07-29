@@ -28,7 +28,7 @@ def _broadcasted_shape(shp1, shp2):
         if a == 1 or b == 1 or a == b:
             result.append(max(a,b))
         else:
-            raise ValueError("Arrays not broadcastable")
+            raise ValueError(f"Arrays not broadcastable {shp1} and {shp2}")
     return tuple(result[::-1])
 
 def _array_to_sparse_diagonal(x):
@@ -213,13 +213,20 @@ class dljacobian_diagonal(dljacobian_base):
     def __str__(self):
         return super().__str__() + f"\ndata is {self.data.shape}"
 
-    def _getjitem(self, new_shape, *args):
+    def _getjitem(self, new_shape, key):
         """A getitem type method for diagonal Jacobians"""
         # OK, once we extract items, this will no longer be diagonal,
         # so we convert to sparse before doing the subset.
         self_sparse = dljacobian_sparse(data=self)
-        result = self_sparse._getjitem(new_shape, *args)
+        result = self_sparse._getjitem(new_shape, key)
         return result
+
+    def _setjitem(self, key, value):
+        """A setitem type method for diagonal Jacobians"""
+        # OK, once we insert items, this will no longer be diagonal,
+        # so we convert to sparse before doing the subset
+        self = dljacobian_sparse(data=self)
+        self._setjitem(key, value)
 
     def broadcast_to(self, shape):
         """Broadcast diagonal jacobian to new dependent shape"""
@@ -327,9 +334,15 @@ class dljacobian_dense(dljacobian_base):
             f"data2d is {self.data2d.shape}"
             )
 
-    def _getjitem(self, new_shape, *args):
+    def _getjitem(self, new_shape, key):
         """A getitem type method for dense Jacobians"""
-        result_ = self.data.__getitem__(*args)
+        try:
+            jkey = list(key)
+        except TypeError:
+            jkey = [key]
+        extra = [np.s_[:]]*self.independent_ndim
+        jkey = tuple(jkey+extra)
+        result_ = self.data.__getitem__(jkey)
         new_full_shape = new_shape + self.independent_shape
         # try:
         result_.shape = new_full_shape
@@ -338,6 +351,22 @@ class dljacobian_dense(dljacobian_base):
         #    result_ = np.reshape(result_, new_full_shape)
         return dljacobian_dense(data=result_, template=self,
                                 dependent_shape=new_shape)
+
+    def _setjitem(self, key, value):
+        """A getitem type method for dense Jacobians"""
+        if value is not None:
+            self_, value_, result_type = _prepare_jacobians_for_binary_op(self, value)
+            if result_type != type(self):
+                return TypeError("Jacobian is not of correct time to receive new contents")
+        else:
+            value_ = 0.0
+        try:
+            jkey = list(key)
+        except TypeError:
+            jkey = [key]
+        extra = [np.s_[:]]*self.independent_ndim
+        jkey = tuple(jkey+extra)
+        self.data.__setitem__(jkey, value_)
 
     def broadcast_to(self, shape):
         """Broadcast dense Jacobian to new dependent_shape"""
@@ -463,9 +492,12 @@ class dljacobian_sparse(dljacobian_base):
             
     def __str__(self):
         """Provide a string summary of a sparse Jacobian"""
-        return super().__str__() + f"\ndata2d is {self.data2d.shape}"
+        suffix = ( f"\ndata2d is {self.data2d.shape}" +
+                   f" with {self.data2d.nnz} numbers stored")
+        return super().__str__() + suffix
 
-    def _getjitem(self, new_shape, *args):
+
+    def _getjitem(self, new_shape, key):
         """A getitem type method for sparse Jacobians"""
         # OK, getjitem for sparse is a bit more complicated than for
         # the others.  This is mainly because matplotlib seems to put
@@ -475,36 +507,38 @@ class dljacobian_sparse(dljacobian_base):
         # arrays too, so there's some choreography associated with
         # that too.
         # print (self)
-        if isinstance(args[0], tuple):
-            if len(args) > 1:
-                raise NotImplementedError("Confusion about the args in _getjitem for sparse")
-            request = args[0]
-        else:
-            request = args
         if self.dependent_ndim > 1:
             # This thing to remember is that there is no shame in
             # handling things that are the length of the dependent
-            # vector (or independent one come to that).
+            # vector (or independent one come to that), just avoid
+            # things that are the cartesian product of them.
             iold = np.reshape(np.arange(self.dependent_size), self.dependent_shape)
-            inew = iold.__getitem__(request).ravel()
+            inew = iold.__getitem__(key).ravel()
             dependent_slice = (inew,)
         else:
-            dependent_slice = request
+            dependent_slice = key
         # OK, so now we have the option to fall back to a dense case
         # because matplotlib makes some strange __getitem__ requests
         # that give odd errors down the road.
+        # Append a "get the lot" slice for the independent variable dimension
         try:
-            # Append a "get the lot" slice for the independent variable dimension
             jSlice = dependent_slice + (np.s_[:],)
+        except TypeError:
+            jSlice = (dependent_slice,np.s_[:])
+        try:
             if len(jSlice) > 2:
                 raise TypeError("Dummy raise to fall back to dense")
             result_ =  self.data2d.__getitem__(jSlice)
             return dljacobian_sparse(data=result_, template=self,
-                                     dependent_shape=result_.shape[0:1])
+                                     dependent_shape=new_shape)
         except TypeError:
             warnings.warn("dljacobian_sparse._getjitem had to fall back to dense")
             self_dense = dljacobian_dense(self)
             return self_dense._getjitem(new_shape, *args)
+
+    def _setjitem(self, key, value):
+        """A setitem type method for dense Jacobians"""
+        raise NotImplementedError("Not (yet) written the setitem capability for sparse Jacobians")
 
     def broadcast_to(self, shape):
         """Broadcast the dependent vector part of a sparse Jacobian to another shape"""
@@ -556,11 +590,14 @@ class dljacobian_sparse(dljacobian_base):
         #     out = (diagonal matrix) @ self
         # However, when expressed that way it's less efficient then below
         diag_, dependent_unit, dependent_shape = self._prepare_premul_diag(diag)
-        # Do a manual broadcast if needed (which is actually not a
-        # real broadcast, but unfortunately a somewhat wasteul
-        # replicate opration.
+        # Do a manual broadcast if needed (which, in the case of the
+        # Jacobian is actually not a real broadcast, but unfortunately
+        # a somewhat wasteful replicate opration.  But since the
+        # result will be the size of the broadcasted shape in any
+        # case, there is no real loss.
         if dependent_shape != self.dependent_shape:
             self = self.broadcast_to(dependent_shape)
+            diag_ = np.broadcast_to(diag_, dependent_shape)
         diag_ = diag_.ravel()
         out_ = self.data2d.copy()
         if np.iscomplexobj(diag_) and not np.iscomplexobj(out_):
