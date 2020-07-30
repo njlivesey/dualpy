@@ -534,7 +534,7 @@ class dljacobian_sparse(dljacobian_base):
         except TypeError:
             warnings.warn("dljacobian_sparse._getjitem had to fall back to dense")
             self_dense = dljacobian_dense(self)
-            return self_dense._getjitem(new_shape, *args)
+            return self_dense._getjitem(new_shape, key)
 
     def _setjitem(self, key, value):
         """A setitem type method for dense Jacobians"""
