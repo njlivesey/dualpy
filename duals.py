@@ -166,9 +166,7 @@ class dlarray(units.Quantity):
             self.jacobians[name] = jacobian.premul_diag(d)
 
     def ravel(self, *args):
-        out=dlarray(units.Quantity(self).ravel(*args))
-        out.jacobians=self.jacobians
-        return out
+        return np.reshape(self, (self.size,))
 
     # Now a whole bunch of binary operators
     def add(a, b, out=None):

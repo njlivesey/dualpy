@@ -155,8 +155,11 @@ def solve_quadratic(a, b, c, sign=1):
     a_, b_, c_, aj, bj, cj, out = _setup_dual_operation(a, b, c)
     d_ = np.sqrt(b_**2-4*a_*c_)
     x_ = -2*c_ / (b_+sign*d_)
-    x = dlarray(x_)
-    anyJ = aj is not None or bj is not None or cj is not None
+    anyJ = aj or bj or cj
+    if anyJ:
+        x = dlarray(x_)
+    else:
+        x = x_
     if anyJ:
         # Precompute some terms
         scale = -1.0/(2*a_*x_ + b_)
