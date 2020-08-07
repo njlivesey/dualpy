@@ -752,33 +752,33 @@ class dljacobian_sparse(dljacobian_base):
                 # Turn this to a csc matrix, this will be what we cumsum over the rows
                 new_csc = new_coo.tocsc()
                 nrows = shape_shuff[0]
-                # We have two choices here, we could do a python loop to build
-                # up and store cumulative sums, but I suspect that, while on
-                # paper more efficient (reducing the number of additions, it
-                # would be slow in reality. Instead, I'll create
-                # lower-triangle matrix with ones and zeros and multiply by
-                # that.
-                lt = sparse.csc_matrix(np.tri(nrows))
-                intermediate = lt @ new_csc
-                if easy:
-                    result = dljacobian_sparse(template=self, data=intermediate)
-                else:
-                    # Now we need to transpose this back to the original
-                    # shape.  Reverse the steps above.
-                    intermediate_coo = intermediate.tocoo()
-                    # First ravel the combined row/column index
-                    i = np.ravel_multi_index((intermediate_coo.row, intermediate_coo.col),
-                                             intermediate_coo.shape)
-                    # Now get these all as unravelled indices across the board
-                    i = list(np.unravel_index(i, shape_shuff))
-                    # Now rearrange this to put things back in their proper place
-                    i.insert(axis, i.pop(0))
-                    # Now ravel them all into one index again
-                    i = np.ravel_multi_index(i, self.shape)
-                    # And now make row and column indices out of them
-                    row, col = np.unravel_index(i, self.shape2d)
-                    result_coo = sparse.coo_matrix((intermediate_coo.data,(row,col)), shape=self.shape2d)
-                    result = dljacobian_sparse(template=self, data=result_coo.tocsc())
+            # We have two choices here, we could do a python loop to build
+            # up and store cumulative sums, but I suspect that, while on
+            # paper more efficient (reducing the number of additions, it
+            # would be slow in reality. Instead, I'll create
+            # lower-triangle matrix with ones and zeros and multiply by
+            # that.
+            lt = sparse.csc_matrix(np.tri(nrows))
+            intermediate = lt @ new_csc
+            if easy:
+                result = dljacobian_sparse(template=self, data=intermediate)
+            else:
+                # Now we need to transpose this back to the original
+                # shape.  Reverse the steps above.
+                intermediate_coo = intermediate.tocoo()
+                # First ravel the combined row/column index
+                i = np.ravel_multi_index((intermediate_coo.row, intermediate_coo.col),
+                                         intermediate_coo.shape)
+                # Now get these all as unravelled indices across the board
+                i = list(np.unravel_index(i, shape_shuff))
+                # Now rearrange this to put things back in their proper place
+                i.insert(axis, i.pop(0))
+                # Now ravel them all into one index again
+                i = np.ravel_multi_index(i, self.shape)
+                # And now make row and column indices out of them
+                row, col = np.unravel_index(i, self.shape2d)
+                result_coo = sparse.coo_matrix((intermediate_coo.data,(row,col)), shape=self.shape2d)
+                result = dljacobian_sparse(template=self, data=result_coo.tocsc())
         return result
             
 
