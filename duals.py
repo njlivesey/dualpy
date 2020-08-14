@@ -1,18 +1,17 @@
 """The dual type for dualpy"""
 
 import numpy as np
-import scipy.sparse as sparse
 import scipy.special as special
 import scipy.constants as constants
 import astropy.units as units
 import fnmatch
-import itertools
-import copy
 
 from .jacobians import *
 from .dual_helpers import *
 
+
 __all__ = ["dlarray","nan_to_num_jacobians"]
+
 
 class dlarray(units.Quantity):
     """A combination of an astropy Quantity (which is in turn numpy array and a collection of jacobian
