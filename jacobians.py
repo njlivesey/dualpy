@@ -4,6 +4,7 @@ import warnings
 import numpy as np
 import scipy.sparse as sparse
 import itertools
+import inspect
 
 __all__ = [ "dljacobian_base", "dljacobian_diagonal", "dljacobian_dense", "dljacobian_sparse" ]
 
@@ -506,7 +507,6 @@ class dljacobian_sparse(dljacobian_base):
         # result.  scipy.sparse is fussier about indexing than regular
         # arrays too, so there's some choreography associated with
         # that too.
-        # print (self)
         if self.dependent_ndim > 1:
             # This thing to remember is that there is no shame in
             # handling things that are the length of the dependent

@@ -561,11 +561,11 @@ class dlarray(units.Quantity):
         if wildcard is not None:
             # Build a list of keys to remove
             keys=[key
-                    for key in self.jacobians.keys()
-                    if fnmatch.fnmatch(key, wildcard)]
+                  for key in self.jacobians.keys()
+                  if fnmatch.fnmatch(key, wildcard)]
             # Remove them (done this way because Python complains if
             # iterating over a list of keys that keeps changing as
-            # keys are rmoved)
+            # keys are removed)
             for key in keys:
                 self.jacobians.pop(key)
         # Now, are any jacobians leff ("if" below tests True if so)
