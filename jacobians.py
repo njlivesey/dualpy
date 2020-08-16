@@ -284,7 +284,15 @@ class dljacobian_diagonal(dljacobian_base):
         return dljacobian_dense(self).cumsum(axis)
 
     def diagonal(self):
+        """Return a diagonal Jacobian's contents as just the diagonal (shape=dependent_shape)"""
         return self.data << (self.dependent_unit/self.independent_unit)
+
+    # The reaons we have extract_diagonal and diagonal is that diagonal is
+    # only populated for diagonal Jacobians.  extract_diagonal is
+    # populated for all.
+    def extract_diagonal(self):
+        """Extract the diagonal from a diagonal Jacobian"""
+        return diagonal(self)
 
     def todensearray(self):
         self_dense = dljacobian_dense(self)
@@ -443,10 +451,10 @@ class dljacobian_dense(dljacobian_base):
         return dljacobian_dense(template=self,
                                 data=np.cumsum(self.data, axis))
 
-    def diagonal(self):
+    def extract_diagonal(self):
+        """Extract the diagonal from a dense Jacobian"""
         if self.dependent_shape != self.independent_shape:
             raise ValueError("Dense Jacobian is not square")
-        warnings.warn("Asking for diagonal of dense Jacobian")
         result_ = np.reshape(self.data2d.diagonal(), self.dependent_shape)
         return result_ << (self.dependent_unit/self.independent_unit)
 
@@ -782,7 +790,8 @@ class dljacobian_sparse(dljacobian_base):
         return result
             
 
-    def diagonal(self):
+    def extract_diagonal(self):
+        """Extract the diagonal from a sparse Jacobian"""
         if self.dependent_shape != self.independent_shape:
             raise ValueError("Sparse Jacobian is not square")
         result_ = np.reshape(self.data2d.diagonal(), self.dependent_shape)
