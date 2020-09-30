@@ -119,7 +119,7 @@ def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None)
             kwargs_no_duals[n]=a
     # Now define our perturbations
     finfo=np.finfo(np.float32)
-    ptb_f=np.sqrt(finfo.eps)/1e3
+    ptb_f=np.sqrt(finfo.eps)
     ptb_a=ptb_f
     # Now, iterate over all our arguments
     for a, a_nd in zip(all_args, all_args_no_duals):
@@ -136,7 +136,6 @@ def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None)
                 a_nd_flat=a_nd.reshape(-1)
                 oldV=a_nd_flat[i]
                 dx=np.maximum(np.abs(oldV*ptb_f), (ptb_a << oldV.unit))
-                print (f"Perturbing {name}[{i}] from {a_nd_flat[i]} to that plus {dx}")
                 a_nd_flat[i] += dx
                 resultP=plain_func(*args_no_duals, **kwargs_no_duals)
                 a_nd_flat[i]=oldV
