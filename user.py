@@ -1,12 +1,14 @@
 import numpy as np
 import astropy.units as units
+import scipy.special as special
+import scipy.constants as constants
 
 from .jacobians import *
 from .duals import dlarray
 from .dual_helpers import _setup_dual_operation
 
 __all__ = ["seed", "_seed_dense", "_seed_sparse", "_seed_diagonal",
-           "compute_jacobians_numerically", "solve_quadratic"]
+           "compute_jacobians_numerically", "solve_quadratic", "voigt_profile"]
 
 def seed(value, name, force=False, overwrite=False, reset=False):
     # In some senses, this is the most important routine in the package,
@@ -116,8 +118,8 @@ def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None)
         else:
             kwargs_no_duals[n]=a
     # Now define our perturbations
-    finfo=np.finfo(0.0)  # result0[0].value
-    ptb_f=np.sqrt(finfo.eps)
+    finfo=np.finfo(np.float32)
+    ptb_f=np.sqrt(finfo.eps)/1e3
     ptb_a=ptb_f
     # Now, iterate over all our arguments
     for a, a_nd in zip(all_args, all_args_no_duals):
@@ -134,6 +136,7 @@ def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None)
                 a_nd_flat=a_nd.reshape(-1)
                 oldV=a_nd_flat[i]
                 dx=np.maximum(np.abs(oldV*ptb_f), (ptb_a << oldV.unit))
+                print (f"Perturbing {name}[{i}] from {a_nd_flat[i]} to that plus {dx}")
                 a_nd_flat[i] += dx
                 resultP=plain_func(*args_no_duals, **kwargs_no_duals)
                 a_nd_flat[i]=oldV
@@ -143,8 +146,8 @@ def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None)
             target_shape = result0.shape + template.independent_shape
             jacobian = np.reshape(jacobian, target_shape)
             jacobian = dljacobian_dense(
-                data=jacobian, template=template, dependent_shape=result0.shape)
-
+                data=jacobian, template=template, dependent_shape=result0.shape,
+                dependent_unit=dResult.unit, independent_unit=dx.unit)
             result_n.jacobians[name]=jacobian
     # Now we're done, I think
     return result_a, result_n
@@ -178,3 +181,36 @@ def solve_quadratic(a, b, c, sign=1):
             else:
                 x.jacobians[name] = jacobian.premul_diag(scale)
     return x
+
+# Note that astropy doesn't supply this routine so, unlike sin,
+# cos, etc. this leapfrongs straight to scipy.special, for now.
+# That may give us problems down the road.
+
+def wofz(z):
+    z_=units.Quantity(z)
+    if z_.unit != units.dimensionless_unscaled:
+        raise units.UnitsError(
+            "Can only apply wofz function to dimensionless quantities")
+    out_ = special.wofz(z_.value) << units.dimensionless_unscaled
+    out = dlarray(out_)
+    # The derivative actually comes out of the definition of the
+    # Fadeeva function pretty easily
+    if hasattr(z,"jacobians"):
+        c=2*complex(0, 1)/np.sqrt(constants.pi)
+        out._chain_rule(z, c-2*z_*out_)
+    return out
+
+def voigt_profile(x, sigma, gamma):
+    if hasattr(x,"_check"):
+        x._check("x")
+    if hasattr(sigma,"_check"):
+        sigma._check("sigma")
+    if hasattr(gamma,"_check"):
+        gamma._check("gamma")
+    i=complex(0, 1)
+    z=((x+gamma*i)/(sigma*np.sqrt(2))).to(units.dimensionless_unscaled)
+    outZ=wofz(z)/(sigma*np.sqrt(2*constants.pi))
+    if hasattr(outZ, "_check"):
+        outZ._check("outZ")
+    out = np.real(outZ)
+    return out

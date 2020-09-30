@@ -17,7 +17,7 @@ def _broadcast_jacobians(js, new):
 def _setup_dual_operation(*args, out=None):
     arrays_=[np.asarray(x) for x in args]
     shapes=[x.shape for x in arrays_]
-    # arrays_=np.broadcast_arrays(*arrays_)
+    arrays_=np.broadcast_arrays(*arrays_)
     # Put units back on after all that
     arrays_=[x << orig.unit if hasattr(
         orig, "unit") else x for x, orig in zip(arrays_, args)]
@@ -25,7 +25,7 @@ def _setup_dual_operation(*args, out=None):
     jacobians=[]
     for x, orig in zip(arrays_, args):
         if hasattr(orig, "jacobians"):
-            if False and orig.shape != x.shape:
+            if orig.shape != x.shape:
                 j=_broadcast_jacobians(orig.jacobians, x.shape)
             else:
                 j=orig.jacobians
@@ -51,4 +51,10 @@ def _setup_dual_operation(*args, out=None):
         # jacobians.
         if hasattr(out,"jacobians"):
             out.jacobians={}
+
+    # # Some debugging
+    # for a, j in zip(arrays_, jacobians):
+    #     print (f"Working with dual with {a.shape}")
+    #     for key, jj in j.items():
+    #         print(f"   Jacobian for {key} has shape {jj.dependent_shape} by {jj.independent_shape}")
     return tuple(arrays_) + tuple(jacobians) + (out,)

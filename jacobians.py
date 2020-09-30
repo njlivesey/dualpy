@@ -5,6 +5,7 @@ import numpy as np
 import scipy.sparse as sparse
 import itertools
 import inspect
+import copy
 
 __all__ = [ "dljacobian_base", "dljacobian_diagonal", "dljacobian_dense", "dljacobian_sparse" ]
 
@@ -162,6 +163,13 @@ class dljacobian_base(object):
         s_, o_ = _prepare_jacobians_for_binary_op(self, other)
         return result_type(data=s_-o_, template=self)
 
+    def __lshift__(self, unit):
+        result = copy.copy(self) # or should this be deepcopy
+        result.dependent_unit = unit
+
+    def real(self):
+        return type(self)(np.real(self.data), template=self)
+
     # This routine is called by the child classes to set up for a
     # premul_diag.  It works out the units issues and sets up for
     # broadcasting.
@@ -184,6 +192,30 @@ class dljacobian_base(object):
     def nan_to_num(self, copy=True, nan=0.0, posinf=None, neginf=None):
         return self.__class__(
             template=self, data=np.nan_to_num(self.data, copy=copy, nan=nan, posinf=posinf, neginf=neginf))
+
+    def to(self, unit):
+        """Change the dependent_unit for a Jacobian"""
+        if unit == self.dependent_unit:
+            return self
+        scale = self.dependent_unit._to(unit) * (unit/self.dependent_unit)
+        # print (f"Scaling from {self.dependent_unit} to {unit}, factor={scale}")
+        return self.scalar_multiply(scale)
+
+    def decompose(self):
+        """Decompose the dependent_unit for a Jacobian"""
+        raise NotImplementedError("Should not be needed")
+        print (f"In decompose comes in with {self.dependent_unit}")
+        unit = self.dependent_unit.decompose()
+        print (f"In decompose, try to give unit {unit}")
+        result = self.to(unit)
+        print (f"In decompose goes out with {self.dependent_unit}")
+        return result
+
+    def scalar_multiply(self, scale):
+        """Multiply Jacobian by a scalar"""
+        self.dependent_unit *= scale.unit
+        self.data *= scale.value02
+        return self
        
 # ----------------------------------------------- dljacobian_diagonal
 class dljacobian_diagonal(dljacobian_base):
@@ -292,7 +324,7 @@ class dljacobian_diagonal(dljacobian_base):
     # populated for all.
     def extract_diagonal(self):
         """Extract the diagonal from a diagonal Jacobian"""
-        return diagonal(self)
+        return self.diagonal()
 
     def todensearray(self):
         self_dense = dljacobian_dense(self)
@@ -467,7 +499,6 @@ class dljacobian_dense(dljacobian_base):
     def to2darray(self):
         return self.to2ddensearray()
 
-
 # ----------------------------------------------- dljacobian_sparse
 class dljacobian_sparse(dljacobian_base):
     """A dljacobian that's stored as sparse 2D array under the hood"""
@@ -553,9 +584,6 @@ class dljacobian_sparse(dljacobian_base):
         # Don't bother doing anything if the shape is already good
         if shape == self.dependent_shape:
             return self
-        # For the sparse jacobians, which never really have a shape
-        # anyway, this simply involves updating the shapes of record
-        # (assuming it's a valid one).
         if not _shapes_broadcastable(self.dependent_shape, shape):
             raise ValueError("Unable to broadcast dljacobian_sparse to new shape")
         # This one has to be rather inefficient as it turns out.  Down
@@ -576,6 +604,8 @@ class dljacobian_sparse(dljacobian_base):
         # Now put a 1 at every [inew,iold] point in a sparse matrix
         one = np.ones((iold.size,), dtype=np.int64)
         M = sparse.csc_matrix(sparse.coo_matrix((one,(inew,iold)), shape=(inew.size,self.dependent_size)))
+        # Now do a matrix multiply to accomplish what broadcast tries
+        # to do.
         result_ = M @ self.data2d
         return dljacobian_sparse(data=result_, template=self, dependent_shape=shape)
     
@@ -607,19 +637,30 @@ class dljacobian_sparse(dljacobian_base):
             self = self.broadcast_to(dependent_shape)
             diag_ = np.broadcast_to(diag_, dependent_shape)
         diag_ = diag_.ravel()
-        out_ = self.data2d.copy()
-        if np.iscomplexobj(diag_) and not np.iscomplexobj(out_):
-            out_=out_ * complex(1, 0)
+
+        # out_ = self.data2d.copy()
+        # if np.iscomplexobj(diag_) and not np.iscomplexobj(out_):
+        #     out_=out_ * complex(1, 0)
+        # if len(diag_) == 1:
+        #     out_.data *= diag_[0]
+        # else:
+        #     # out_.data *= diag_[out_.indices]
+        #     out_.data *= np.take(diag_, out_.indices)
+
         if len(diag_) == 1:
-            out_.data *= diag_
+            out_data = self.data2d.data * diag_
         else:
-            out_.data *= diag_[out_.indices]
+            out_data = self.data2d.data * np.take(diag_, self.data2d.indices)
+        out_ = sparse.csc_matrix((out_data, self.data2d.indices, self.data2d.indptr), shape=self.data2d.shape)
         return dljacobian_sparse(out_, template=self,
                                  dependent_unit=dependent_unit,
                                  dependent_shape=dependent_shape)
     
     def __neg__(self):
         return type(self)(-self.data2d, template=self)
+
+    def real(self):
+        return type(self)(np.real(self.data2d), template=self)
 
     def insert(self, obj, axis, dependent_shape):
         """insert method for sparse Jacobian"""
@@ -814,6 +855,11 @@ class dljacobian_sparse(dljacobian_base):
             data2d = self.data2d
         data2d.data = np.nan_to_num(data2d.data, copy=False, nan=nan, posinf=posinf, neginf=neginf)
         return self.__class__(template=self, data=data2d)
-
-       
+ 
+    def scalar_multiply(self, scale):
+        """Multiply Jacobian by a scalar"""
+        self.dependent_unit *= scale.unit
+        self.data2d *= scale.value
+        return self
+      
 

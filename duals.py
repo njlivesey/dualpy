@@ -1,10 +1,10 @@
 """The dual type for dualpy"""
 
 import numpy as np
-import scipy.special as special
-import scipy.constants as constants
 import astropy.units as units
 import fnmatch
+import scipy.special as special
+import scipy.constants as constants
 
 from .jacobians import *
 from .dual_helpers import *
@@ -95,7 +95,9 @@ class dlarray(units.Quantity):
         dlufunc=getattr(dlarray, ufunc.__name__, None)
         if dlufunc is None:
             return NotImplemented
-        return dlufunc(*args, **kwargs)
+        result = dlufunc(*args, **kwargs)
+        result._check()
+        return result
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_FUNCTIONS:
@@ -147,9 +149,9 @@ class dlarray(units.Quantity):
     #     return self.to(self.unit.decompose())
 
     def _ones_like(a):
-        out=dlarray(a)
-        out[:]=1.0
-        return out
+        result_ = np.ones_like(units.Quantity(a))
+        result = dlarray(result_)
+        return result
 
     def hasJ(self):
         return self.jacobians
@@ -157,12 +159,16 @@ class dlarray(units.Quantity):
     # Update all the Jacobians in a dlarray by premultiplying them by
     # a diagonal.  Most of the work is done by the premul_diag method
     # for the Jacobian itself.
-    def _chain_rule(self, a, d):
+    def _chain_rule(self, a, d, unit=None):
         """Finish up the computation of Jacobians
            a: dlarray - original input to ufunc
            d: ndarray - d(self)/da"""
-        for name, jacobian in a.jacobians.items():
-            self.jacobians[name] = jacobian.premul_diag(d)
+        if unit is not None:
+            for name, jacobian in a.jacobians.items():
+                self.jacobians[name] = jacobian.to(unit).premul_diag(d)
+        else:
+            for name, jacobian in a.jacobians.items():
+                self.jacobians[name] = jacobian.premul_diag(d)
 
     def ravel(self, *args):
         return np.reshape(self, (self.size,))
@@ -182,7 +188,7 @@ class dlarray(units.Quantity):
             if name in out.jacobians:
                 out.jacobians[name] += jacobian
             else:
-                out.jacobians[name]=jacobian
+                out.jacobians[name] = jacobian.to(out.unit)
         return out
 
     def subtract(a, b, out=None):
@@ -199,7 +205,7 @@ class dlarray(units.Quantity):
             if name in out.jacobians:
                 out.jacobians[name] += -jacobian
             else:
-                out.jacobians[name]=-jacobian
+                out.jacobians[name] = -jacobian.to(out.unit)
         return out
 
     def multiply(a, b, out=None):
@@ -220,7 +226,9 @@ class dlarray(units.Quantity):
         else:
             if not isinstance(out, dlarray):
                 out=dlarray(out)
-            out[:]=a_ * b_
+            new_unit = a_.unit * b_.unit
+            out = out << new_unit
+            out[:] = a_ * b_
         out.jacobians=out_jacobians
         return out
 
@@ -236,12 +244,13 @@ class dlarray(units.Quantity):
             if name in out_jacobians:
                 out_jacobians[name] += jacobian.premul_diag(a_)
             else:
-                out_jacobians[name] = jacobian.premul_diag(a_)
+                out_jacobians[name] = jacobian.premul_diag(a_).to(out.unit)
         if out is None:
             out=dlarray(a_ * b_)
         else:
             if not isinstance(out, dlarray):
                 out=dlarray(out)
+            out = out << a_.unit * b_.unit
             out[:]=a_ * b_
         out.jacobians=out_jacobians
         return out
@@ -251,23 +260,26 @@ class dlarray(units.Quantity):
         # Note that, the way this is constructed, it's OK if out
         # shares memory with a and/or b, neither a or b are used after
         # out is filled. We do need to keep 1/b though.
-        r_=np.reciprocal(b_)
+        r_ = np.reciprocal(b_)
         if out is None:
             out=dlarray(a_ * r_)
         else:
+            if not isinstance(out, dlarray):
+                out = dlarray(out)
+            out = out << a_.unit/b_.unit
             out[:]=a_ * r_
-        out_=units.Quantity(out)
+        out_ = units.Quantity(out)
         # We're going to do the quotient rule as (1/b)a' - (a/(b^2))b'
         # The premultiplier for a' is the reciprocal _r, computed above
-        # The premultiplier for b' is second is that times the result
-        c_=out_*r_
+        # The premultiplier for b' is that times the result
+        c_ = out_*r_
         for name, jacobian in aj.items():
             out.jacobians[name]=jacobian.premul_diag(r_)
         for name, jacobian in bj.items():
             if name in out.jacobians:
                 out.jacobians[name] += -jacobian.premul_diag(c_)
             else:
-                out.jacobians[name]=-jacobian.premul_diag(c_)
+                out.jacobians[name] = -jacobian.premul_diag(c_).to(out.unit)
         return out
 
     def power(a, b):
@@ -292,7 +304,7 @@ class dlarray(units.Quantity):
                 if name in out.jacobians:
                     out.jacobians[name] += jacobian.premul_diag(dB_)
                 else:
-                    out.jacobians[name]=jacobian.premul_diag(dB_)
+                    out.jacobians[name]=jacobian.premul_diag(dB_).to(out.unit)
         elif isinstance(a, dlarray):
             out=dlarray(a_**b)
             d_=b*a_**(b-1)
@@ -303,7 +315,7 @@ class dlarray(units.Quantity):
             out_=a**b_
             out=dlarray(out_)
             for name, jacobian in bj.items():
-                out.jacobians[name]=jacobian.premul_diag(out_*np.log(a_))
+                out.jacobians[name]=jacobian.premul_diag(out_*np.log(a_)).to(out.unit)
         return out
 
     def arctan2(a, b):
@@ -317,7 +329,25 @@ class dlarray(units.Quantity):
             if name in out.jacobians:
                 out.jacobians[name] += jacobian.premul_diag(-a_*rr2)
             else:
-                out.jacobians[name]=jacobian.premul_diag(-a_*rr2)
+                out.jacobians[name]=jacobian.premul_diag(-a_*rr2).to(out.unit)
+        return out
+
+    def __mul__(self, other):
+        # Needed for dual * unit case
+        if isinstance(other, (units.UnitBase, str)):
+            return self * units.Quantity(1.0, other)
+        return super().__mul__(other)
+
+    def __truediv__(self, other):
+        # Needed for dual * unit case
+        if isinstance(other, (units.UnitBase, str)):
+            return self / units.Quantity(1.0, other)
+        return super().__truediv__(other)
+
+    def __lshift__(self, other):
+        out = dlarray(np.array(self) << other)
+        for name, jacobian in self.jacobians.items():
+           out.jacobians[name] = jacobian << other
         return out
 
     # Now some unary operators
@@ -358,7 +388,7 @@ class dlarray(units.Quantity):
         out_=np.exp(a_)
         out=dlarray(out_)
         if a.hasJ:
-            out._chain_rule(a, out_)
+            out._chain_rule(a, out_, unit=units.dimensionless_unscaled)
         return out
 
     def log(a):
@@ -366,7 +396,7 @@ class dlarray(units.Quantity):
         out_=np.log(a_)
         out=dlarray(out_)
         if a.hasJ:
-            out._chain_rule(a, 1.0/a_)
+            out._chain_rule(a, 1.0/a_, unit=units.dimensionless_unscaled)
         return out
 
     def log10(a):
@@ -380,7 +410,7 @@ class dlarray(units.Quantity):
         out_=np.sin(a_rad.value) << units.dimensionless_unscaled
         out=dlarray(out_)
         if a_rad.hasJ:
-            out._chain_rule(a_rad, np.cos(a_rad.value) << _perRad)
+            out._chain_rule(a_rad, np.cos(a_rad.value) << _perRad, unit=units.rad)
         return out
 
     def cos(a):
@@ -388,7 +418,7 @@ class dlarray(units.Quantity):
         out_=np.cos(a_rad.value) << units.dimensionless_unscaled
         out=dlarray(out_)
         if a_rad.hasJ:
-            out._chain_rule(a_rad, -np.sin(a_rad.value) << _perRad)
+            out._chain_rule(a_rad, -np.sin(a_rad.value) << _perRad, unit=units.rad)
         return out
 
     def tan(a):
@@ -396,7 +426,7 @@ class dlarray(units.Quantity):
         out_=np.tan(a_rad.value) << units.dimensionless_unscaled
         out=dlarray(out_)
         if a_rad.hasJ:
-            out._chain_rule(a_rad, 1.0/(np.cos(a_rad.value)**2) << _perRad)
+            out._chain_rule(a_rad, 1.0/(np.cos(a_rad.value)**2) << _perRad, unit=units.rad)
         return out
 
     def arcsin(a):
@@ -404,7 +434,7 @@ class dlarray(units.Quantity):
         out_=np.arcsin(a_)
         out=dlarray(out_)
         if a.hasJ:
-            out._chain_rule(a, units.rad/np.sqrt(1-a_**2))
+            out._chain_rule(a, units.rad/np.sqrt(1-a_**2), unit=units.dimensionless_unscaled)
         return out
 
     def arccos(a):
@@ -412,7 +442,7 @@ class dlarray(units.Quantity):
         out_=np.arccos(a_)
         out=dlarray(out_)
         if a.hasJ:
-            out._chain_rule(a, -units.rad/np.sqrt(1-a_**2))
+            out._chain_rule(a, -units.rad/np.sqrt(1-a_**2), unit=units.dimensionless_unscaled)
         return out
 
     def arctan(a):
@@ -420,7 +450,7 @@ class dlarray(units.Quantity):
         out_=np.arctan(a_)
         out=dlarray(out_)
         if a.hasJ:
-            out._chain_rule(a, units.rad/(1+a_**2))
+            out._chain_rule(a, units.rad/(1+a_**2), unit=units.dimensionless_unscaled)
         return out
 
     def sinh(a):
@@ -428,7 +458,7 @@ class dlarray(units.Quantity):
         out_=np.sinh(a_rad.value) << units.dimensionless_unscaled
         out=dlarray(out_)
         if a_rad.hasJ:
-            out._chain_rule(a_rad, np.cosh(a_rad.value) << _perRad)
+            out._chain_rule(a_rad, np.cosh(a_rad.value) << _perRad, unit=units.rad)
         return out
 
     def cosh(a):
@@ -436,7 +466,7 @@ class dlarray(units.Quantity):
         out_=np.cosh(a_rad.value) << units.dimensionless_unscaled
         out=dlarray(out_)
         if a.hasJ:
-            out._chain_rule(a_rad, np.sinh(a_rad.value) << _perRad)
+            out._chain_rule(a_rad, np.sinh(a_rad.value) << _perRad, unit=units.rad)
         return out
 
     def tanh(a):
@@ -444,7 +474,7 @@ class dlarray(units.Quantity):
         out_=np.tanh(a_rad.value) << units.dimensionless_unscaled
         out=dlarray(out_)
         if a.hasJ:
-            out._chain_rule(a_rad, 1.0/np.cosh(a_rad.value)**2 << _perRad)
+            out._chain_rule(a_rad, 1.0/np.cosh(a_rad.value)**2 << _perRad, unit=units.rad)
         return out
 
     def arcsinh(a):
@@ -452,7 +482,7 @@ class dlarray(units.Quantity):
         out_=np.arcsinh(a_)
         out=dlarray(out_)
         if a.hasJ:
-            out._chain_rule(a, units.rad/np.sqrt(a_**2+1))
+            out._chain_rule(a, units.rad/np.sqrt(a_**2+1), unit=units.dimensionless_unscaled)
         return out
 
     def arccosh(a):
@@ -460,7 +490,7 @@ class dlarray(units.Quantity):
         out_=np.arccosh(a_)
         out=dlarray(out_)
         if a.hasJ:
-            out._chain_rule(a, units.rad/np.sqrt(a_**2-1))
+            out._chain_rule(a, units.rad/np.sqrt(a_**2-1), unit=units.dimensionless_unscaled)
         return out
 
     def arctanh(a):
@@ -468,7 +498,7 @@ class dlarray(units.Quantity):
         out_=np.arctanh(a_)
         out=dlarray(out_)
         if a.hasJ:
-            out._chain_rule(a, units.rad/(1-a_**2))
+            out._chain_rule(a, units.rad/(1-a_**2), unit=units.dimensionless_unscaled)
         return out
 
     def absolute(a):
@@ -479,38 +509,8 @@ class dlarray(units.Quantity):
             out._chain_rule(a, np.sign(a_))
         return out
 
-    # Note that astropy doesn't supply this routine so, unlike sin,
-    # cos, etc. this leapfrongs straight to scipy.special, for now.
-    # That may give us problems down the road.
-    def wofz(z):
-        z_=units.Quantity(z)
-        if z_.unit != units.dimensionless_unscaled:
-            raise units.UnitsError(
-                "Can only apply wofz function to dimensionless quantities")
-        out_=special.wofz(z_.value) << units.dimensionless_unscaled
-        out=dlarray(out_)
-        # The derivative actually comes out of the definition of the
-        # Fadeeva function pretty easily
-        if z.hasJ():
-            c=2*complex(0, 1)/np.sqrt(constants.pi)
-            out._chain_rule(z, c-2*z_*out_)
-        return out
-
-    def voigt_profile(x, sigma, gamma):
-        i=complex(0, 1)
-        z=((x+gamma*i)/(sigma*np.sqrt(2))).to(units.dimensionless_unscaled)
-        outZ=special.wofz(z)/(sigma*np.sqrt(2*constants.pi))
-        # Taking the real part of a quantity appears to be more
-        # complex than it should be, in large part because np.real is
-        # not a ufunc.
-        out=dlarray(np.real(outZ))
-        out._set_unit(outZ.unit)
-        if outZ.hasJ():
-            for name, jacobian in outZ.jacobians.items():
-                out.jacobians[name]=dljacobian(np.real(jacobian.data),
-                                                 jacobian.dependent_unit,
-                                                 jacobian.independent_unit)
-        return out
+    def abs(a):
+        return np.absolute(a)
 
     def maximum(a, b, out=None, **kwargs):
         if out is not None:
@@ -538,8 +538,10 @@ class dlarray(units.Quantity):
         out=dlarray(np.minimum(a_, b_))
         if a.hasJ or b.hasJ:
             factor=a_ <= b_
-            out._chain_rule(a, factor.astype(int))
-            out._chain_rule(b, np.logical_not(factor).astype(int))
+            if hasattr(a, "jacobians"):
+                out._chain_rule(a, factor.astype(int))
+            if hasattr(b, "jacobians"):
+                out._chain_rule(b, np.logical_not(factor).astype(int))
         return out
 
     def flatten(self, order='C'):
@@ -720,6 +722,13 @@ def nan_to_num(x, copy=True, nan=0.0, posinf=None, neginf=None, jacobians_only=F
     for name, jacobian in j.items():
         result.jacobians[name] = jacobian.nan_to_num(copy=copy, nan=nan, posinf=posinf, neginf=neginf)
     return result
+
+@implements(np.real)
+def real(a):
+    out = dlarray(np.real(units.Quantity(a)))
+    for name, jacobian in a.jacobians.items():
+        out.jacobians[name] = jacobian.real()
+    return out
 
 def nan_to_num_jacobians(x, copy=True, nan=0.0, posinf=None, neginf=None):
     return nan_to_num(x, copy=copy, nan=nan, posinf=posinf, neginf=neginf, jacobians_only=True)
