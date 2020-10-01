@@ -214,7 +214,7 @@ class dljacobian_base(object):
     def scalar_multiply(self, scale):
         """Multiply Jacobian by a scalar"""
         self.dependent_unit *= scale.unit
-        self.data *= scale.value02
+        self.data *= scale.value
         return self
        
 # ----------------------------------------------- dljacobian_diagonal
