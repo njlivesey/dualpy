@@ -715,23 +715,23 @@ class dljacobian_sparse(dljacobian_base):
             # there is no shame in thinking about things that have the
             # same size as the dependent vector.  To that end, we will
             # formulate this as a sparse-sparse matrix multiply.  In
-            # many ways, this operation is the transpose of the
+            # many ways, this operation is the complement of the
             # broadcast operation, so is constructed in a similar
             # manner.
             try:
-                jaxis = tuple(a if a>=0 else a-self.independent_ndim for a in axis)
+                iter(axis)
             except TypeError:
-                jaxis = (axis if axis >= 0 else axis-self.independent_ndim,)
-
+                axis = (axis,)
             # Take the orginal shape and replace the summed-over axes
             # with one.  In the case where keepdims is set, that would
             # be in dependent_shape of course, but we can't rely on
             # that.
             reduced_shape = list(self.dependent_shape)
-            # print(f"Start with {reduced_shape}, {type(reduced_shape)}")
+            # print(f"Start with {self}")
+            # print(f"Summing over {axis}")
             # Note that the below code implicitly handles the case
             # where an axis element is negative
-            for a in jaxis:
+            for a in axis:
                 reduced_shape[a] = 1
             reduced_size = int(np.prod(reduced_shape))
             # print(f"End with {reduced_shape}, {type(reduced_shape)}")
@@ -749,12 +749,13 @@ class dljacobian_sparse(dljacobian_base):
             # Now put a 1 at every [ireduced, ioriginal] in a sparse matrix
             one = np.ones((ioriginal.size,), dtype=np.int64)
             M = sparse.csc_matrix(sparse.coo_matrix((one,(ireduced,ioriginal)),
-                                                     shape=(ireduced.size,ioriginal.size)))
+                                                     shape=(reduced_size,ioriginal.size)))
             result_ = M @ self.data2d
             # Note that by specifying dependent_shape here, supplied
             # by the calling code, we've implicitly taken the value of
             # the keepdims argument into account.
-            # print (f"OK, after all that work on {self}\n, summing over {axis}, we got reduced_shape={reduced_shape}")
+            # print (f"OK, after all that work on <<<{self}>>>")
+            # print (f"... and summing over {axis}, we got reduced_shape={reduced_shape}")
             # print (f"M is {M.shape}, result_ is {result_.shape} and dependent_shape is {dependent_shape}")
             result = dljacobian_sparse(template=self, data=result_,
                                       dependent_shape=dependent_shape)
