@@ -718,6 +718,10 @@ class dljacobian_sparse(dljacobian_base):
             # many ways, this operation is the transpose of the
             # broadcast operation, so is constructed in a similar
             # manner.
+            try:
+                jaxis = tuple(a if a>=0 else a-self.independent_ndim for a in axis)
+            except TypeError:
+                jaxis = axis if axis >= 0 else axis-self.independent_ndim
 
             # Take the orginal shape and replace the summed-over axes
             # with one.  In the case where keepdims is set, that would
@@ -727,7 +731,7 @@ class dljacobian_sparse(dljacobian_base):
             # print(f"Start with {reduced_shape}, {type(reduced_shape)}")
             # Note that the below code implicitly handles the case
             # where an axis element is negative
-            for a in axis:
+            for a in jaxis:
                 reduced_shape[a] = 1
             reduced_size = int(np.prod(reduced_shape))
             # print(f"End with {reduced_shape}, {type(reduced_shape)}")
