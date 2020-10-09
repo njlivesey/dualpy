@@ -721,7 +721,7 @@ class dljacobian_sparse(dljacobian_base):
             try:
                 jaxis = tuple(a if a>=0 else a-self.independent_ndim for a in axis)
             except TypeError:
-                jaxis = axis if axis >= 0 else axis-self.independent_ndim
+                jaxis = (axis if axis >= 0 else axis-self.independent_ndim,)
 
             # Take the orginal shape and replace the summed-over axes
             # with one.  In the case where keepdims is set, that would
