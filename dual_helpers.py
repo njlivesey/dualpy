@@ -5,32 +5,35 @@ import astropy.units as units
 
 __all__ = ["_perRad", "_broadcast_jacobians", "_setup_dual_operation"]
 
-_perRad = units.rad**(-1)
+_perRad = units.rad ** (-1)
+
 
 def _broadcast_jacobians(js, new):
     # Loop over jacobians and broadcast each of them to new shape
-    out={}
+    out = {}
     for name, jacobian in js.items():
         out[name] = jacobian.broadcast_to(new)
     return out
 
+
 def _setup_dual_operation(*args, out=None):
-    arrays_=[np.asarray(x) for x in args]
-    shapes=[x.shape for x in arrays_]
-    arrays_=np.broadcast_arrays(*arrays_)
+    arrays_ = [np.asarray(x) for x in args]
+    shapes = [x.shape for x in arrays_]
+    arrays_ = np.broadcast_arrays(*arrays_)
     # Put units back on after all that
-    arrays_=[x << orig.unit if hasattr(
-        orig, "unit") else x for x, orig in zip(arrays_, args)]
+    arrays_ = [
+        x << orig.unit if hasattr(orig, "unit") else x for x, orig in zip(arrays_, args)
+    ]
     # Now go through the jacobians
-    jacobians=[]
+    jacobians = []
     for x, orig in zip(arrays_, args):
         if hasattr(orig, "jacobians"):
             if orig.shape != x.shape:
-                j=_broadcast_jacobians(orig.jacobians, x.shape)
+                j = _broadcast_jacobians(orig.jacobians, x.shape)
             else:
-                j=orig.jacobians
+                j = orig.jacobians
         else:
-            j={}
+            j = {}
         jacobians.append(j)
 
     # Handle the case where an "out" is provided. I originally had
@@ -43,14 +46,14 @@ def _setup_dual_operation(*args, out=None):
         if isinstance(out, tuple):
             if len(out) != 1:
                 raise NotImplementedError("Cannot support multiple outs")
-            out=out[0]
+            out = out[0]
         # As inefficient as this might appear, I'm pretty sure I need
         # to blow away the Jacobians in out and let the calling code
         # recreate them from scratch.  Unpleasent things happen if
         # not, as things done to out.jacobians leak back on a and b's
         # jacobians.
-        if hasattr(out,"jacobians"):
-            out.jacobians={}
+        if hasattr(out, "jacobians"):
+            out.jacobians = {}
 
     # # Some debugging
     # for a, j in zip(arrays_, jacobians):

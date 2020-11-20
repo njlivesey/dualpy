@@ -7,11 +7,17 @@ import itertools
 import inspect
 import copy
 
-__all__ = [ "dljacobian_base", "dljacobian_diagonal", "dljacobian_dense", "dljacobian_sparse" ]
+__all__ = [
+    "dljacobian_base",
+    "dljacobian_diagonal",
+    "dljacobian_dense",
+    "dljacobian_sparse",
+]
 
 # ----------------------------------------------- Helper routines
 # First some support routines for the dljacobian class and general
 # usage
+
 
 def _shapes_broadcastable(shp1, shp2):
     # Test if two shapes can be broadcast together
@@ -22,22 +28,25 @@ def _shapes_broadcastable(shp1, shp2):
             return False
     return True
 
+
 def _broadcasted_shape(shp1, shp2):
     # Return the broadcasted shape of the two arguments
     # Also check's they're legal
     result = []
     for a, b in itertools.zip_longest(shp1[::-1], shp2[::-1], fillvalue=1):
         if a == 1 or b == 1 or a == b:
-            result.append(max(a,b))
+            result.append(max(a, b))
         else:
             raise ValueError(f"Arrays not broadcastable {shp1} and {shp2}")
     return tuple(result[::-1])
 
+
 def _array_to_sparse_diagonal(x):
     """Turn an ndarray into a diagonal, stored as csc"""
     x_ = np.array(x).ravel()
-    result = sparse.diags(x_, 0, format='csc')
+    result = sparse.diags(x_, 0, format="csc")
     return result
+
 
 def _prepare_jacobians_for_binary_op(a, b):
     """Take two Jacobians about to have something binary done to them and
@@ -91,7 +100,7 @@ def _prepare_jacobians_for_binary_op(a, b):
     # If needed, put them in the same units by scaling b to be in a's
     # units
     if scale != 1.0:
-        b_ = b_.copy()*scale
+        b_ = b_.copy() * scale
     return a_, b_, result_type
 
 
@@ -104,12 +113,19 @@ class dljacobian_base(object):
 
     """
 
-    def __init__(self, template=None,
-                 dependent_unit=None, independent_unit=None,
-                 dependent_shape=None, independent_shape=None):
+    def __init__(
+        self,
+        template=None,
+        dependent_unit=None,
+        independent_unit=None,
+        dependent_shape=None,
+        independent_shape=None,
+    ):
         """Define a new jacobian"""
+
         def pick(*args):
-            return next((item for item in args if item is not None),None)
+            return next((item for item in args if item is not None), None)
+
         # Set up the core metadata
         if isinstance(template, dljacobian_base):
             self.dependent_unit = pick(dependent_unit, template.dependent_unit)
@@ -140,31 +156,31 @@ class dljacobian_base(object):
 
     def __str__(self):
         return (
-            f"Jacobian of type {type(self)}\n" +
-            f"Dependent shape is {self.dependent_shape} <{self.dependent_size}>\n" +
-            f"Independent shape is {self.independent_shape} <{self.independent_size}>\n" +
-            f"Combined they are {self.shape} <{self.size}>\n" +
-            f"Dummies are {self._dummy_dependent} and {self._dummy_independent}\n" +
-            f"Units are d<{self.dependent_unit}>/d<{self.independent_unit}> = " +
-            f"{(self.dependent_unit/self.independent_unit).decompose()}"
-            )
+            f"Jacobian of type {type(self)}\n"
+            + f"Dependent shape is {self.dependent_shape} <{self.dependent_size}>\n"
+            + f"Independent shape is {self.independent_shape} <{self.independent_size}>\n"
+            + f"Combined they are {self.shape} <{self.size}>\n"
+            + f"Dummies are {self._dummy_dependent} and {self._dummy_independent}\n"
+            + f"Units are d<{self.dependent_unit}>/d<{self.independent_unit}> = "
+            + f"{(self.dependent_unit/self.independent_unit).decompose()}"
+        )
 
     def __repr__(self):
         return self.__str__()
-    
+
     def __neg__(self):
         return type(self)(-self.data, template=self)
 
     def __add__(self, other):
         s_, o_, result_type = _prepare_jacobians_for_binary_op(self, other)
-        return result_type(data=s_+o_, template=self)
+        return result_type(data=s_ + o_, template=self)
 
     def __subtract__(self, other):
         s_, o_ = _prepare_jacobians_for_binary_op(self, other)
-        return result_type(data=s_-o_, template=self)
+        return result_type(data=s_ - o_, template=self)
 
     def __lshift__(self, unit):
-        result = copy.copy(self) # or should this be deepcopy
+        result = copy.copy(self)  # or should this be deepcopy
         result.dependent_unit = unit
 
     def real(self):
@@ -176,7 +192,7 @@ class dljacobian_base(object):
     def _prepare_premul_diag(self, diag):
         # print (f"Asked for premul_diag on {self}\n.... with {diag.shape}")
         if hasattr(diag, "unit"):
-            dependent_unit = diag.unit*self.dependent_unit
+            dependent_unit = diag.unit * self.dependent_unit
             diag_ = diag.value
         else:
             dependent_unit = self.dependent_unit
@@ -185,30 +201,34 @@ class dljacobian_base(object):
         # print (f"Will return dependent_shape={dependent_shape}")
         return diag_, dependent_unit, dependent_shape
 
-    def flatten(self, order='C'):
+    def flatten(self, order="C"):
         """flatten a jacobian"""
         return self.reshape((self.dependent_size,), order=order)
 
     def nan_to_num(self, copy=True, nan=0.0, posinf=None, neginf=None):
         return self.__class__(
-            template=self, data=np.nan_to_num(self.data, copy=copy, nan=nan, posinf=posinf, neginf=neginf))
+            template=self,
+            data=np.nan_to_num(
+                self.data, copy=copy, nan=nan, posinf=posinf, neginf=neginf
+            ),
+        )
 
     def to(self, unit):
         """Change the dependent_unit for a Jacobian"""
         if unit == self.dependent_unit:
             return self
-        scale = self.dependent_unit._to(unit) * (unit/self.dependent_unit)
+        scale = self.dependent_unit._to(unit) * (unit / self.dependent_unit)
         # print (f"Scaling from {self.dependent_unit} to {unit}, factor={scale}")
         return self.scalar_multiply(scale)
 
     def decompose(self):
         """Decompose the dependent_unit for a Jacobian"""
         raise NotImplementedError("Should not be needed")
-        print (f"In decompose comes in with {self.dependent_unit}")
+        print(f"In decompose comes in with {self.dependent_unit}")
         unit = self.dependent_unit.decompose()
-        print (f"In decompose, try to give unit {unit}")
+        print(f"In decompose, try to give unit {unit}")
         result = self.to(unit)
-        print (f"In decompose goes out with {self.dependent_unit}")
+        print(f"In decompose goes out with {self.dependent_unit}")
         return result
 
     def scalar_multiply(self, scale):
@@ -216,7 +236,8 @@ class dljacobian_base(object):
         self.dependent_unit *= scale.unit
         self.data *= scale.value
         return self
-       
+
+
 # ----------------------------------------------- dljacobian_diagonal
 class dljacobian_diagonal(dljacobian_base):
     """dljacobian that's really a diagonal"""
@@ -226,21 +247,25 @@ class dljacobian_diagonal(dljacobian_base):
             if template is None:
                 template = data
             else:
-                raise ValueError("Cannot supply template with jacobian for data simultaneously")
+                raise ValueError(
+                    "Cannot supply template with jacobian for data simultaneously"
+                )
         super().__init__(template=template, **kwargs)
         if self.dependent_shape != self.independent_shape:
-            raise ValueError(
-                "Attempt to create a diagonal Jacobian that is not square")
+            raise ValueError("Attempt to create a diagonal Jacobian that is not square")
         if isinstance(data, dljacobian_base):
             if isinstance(data, dljacobian_diagonal):
                 data_ = data.data
             else:
-                raise ValueError("Can only create diagonal Jacobians from other diagonals")
+                raise ValueError(
+                    "Can only create diagonal Jacobians from other diagonals"
+                )
         else:
             data_ = data
         if data_.shape != self.dependent_shape:
             raise ValueError(
-                "Attempt to create a jacobian_diagonal using wrong-shaped input")
+                "Attempt to create a jacobian_diagonal using wrong-shaped input"
+            )
         self.data = data_
 
     def __str__(self):
@@ -272,7 +297,7 @@ class dljacobian_diagonal(dljacobian_base):
         self_sparse = dljacobian_sparse(self)
         return self_sparse.broadcast_to(shape)
 
-    def reshape(self, shape, order='C'):
+    def reshape(self, shape, order="C"):
         # OK, once you reshape a diagonal, it is not longer,
         # strictly speaking, a diagonal So, convert to sparse and
         # reshape that.  However, don't bother doing anything if
@@ -286,11 +311,11 @@ class dljacobian_diagonal(dljacobian_base):
         """Diagonal premulitply for diagonal Jacobian"""
         diag_, dependent_unit, dependent_shape = self._prepare_premul_diag(diag)
         if dependent_shape == self.independent_shape:
-            return dljacobian_diagonal(diag_*self.data, template=self,
-                                       dependent_unit=dependent_unit)
+            return dljacobian_diagonal(
+                diag_ * self.data, template=self, dependent_unit=dependent_unit
+            )
         else:
             return dljacobian_sparse(self).premul_diag(diag)
-
 
     def insert(self, obj, axis, dependent_shape):
         """insert method for diagonal Jacobian"""
@@ -305,8 +330,9 @@ class dljacobian_diagonal(dljacobian_base):
         # no longer diagonal by construction, so it needs to be
         # converted to sparse.
         self_sparse = dljacobian_sparse(self)
-        return self_sparse.sum(dependent_shape, axis=axis, dtype=dtype,
-                               keepdims=keepdims)
+        return self_sparse.sum(
+            dependent_shape, axis=axis, dtype=dtype, keepdims=keepdims
+        )
 
     def cumsum(self, axis):
         """Perform cumsum for the diagonal Jacobians"""
@@ -317,7 +343,7 @@ class dljacobian_diagonal(dljacobian_base):
 
     def diagonal(self):
         """Return a diagonal Jacobian's contents as just the diagonal (shape=dependent_shape)"""
-        return self.data << (self.dependent_unit/self.independent_unit)
+        return self.data << (self.dependent_unit / self.independent_unit)
 
     # The reaons we have extract_diagonal and diagonal is that diagonal is
     # only populated for diagonal Jacobians.  extract_diagonal is
@@ -333,10 +359,11 @@ class dljacobian_diagonal(dljacobian_base):
     def to2darray(self):
         self_sparse = dljacobian_sparse(self)
         return self_sparse.to2darray()
-    
+
     def to2ddensearray(self):
         self_dense = dljacobian_dense(self)
         return self_dense.to2ddensearray()
+
 
 # ----------------------------------------------- dljacobian_dense
 class dljacobian_dense(dljacobian_base):
@@ -347,11 +374,15 @@ class dljacobian_dense(dljacobian_base):
             if template is None:
                 template = data
             else:
-                raise ValueError("Cannot supply template with jacobian data simultaneously")
+                raise ValueError(
+                    "Cannot supply template with jacobian data simultaneously"
+                )
         super().__init__(template=template, **kwargs)
         if isinstance(data, dljacobian_base):
             if isinstance(data, dljacobian_diagonal):
-                data_ = np.reshape(_array_to_sparse_diagonal(data.data).toarray(), data.shape)
+                data_ = np.reshape(
+                    _array_to_sparse_diagonal(data.data).toarray(), data.shape
+                )
             elif isinstance(data, dljacobian_dense):
                 data_ = data.data
             elif isinstance(data, dljacobian_sparse):
@@ -363,17 +394,18 @@ class dljacobian_dense(dljacobian_base):
         if data_.shape != self.shape:
             # print (f"\n\nIn atemping to store {data_.shape} into {self.shape}")
             # print (f"Shapes are {self.dependent_shape}, {self.independent_shape}, and {self.shape}")
-            raise ValueError(
-                "Attempt to create jacobian_dense with wrong-shaped input")
+            raise ValueError("Attempt to create jacobian_dense with wrong-shaped input")
         self.data = data_
-        self.data2d = np.reshape(self.data, [self.dependent_size, self.independent_size])
+        self.data2d = np.reshape(
+            self.data, [self.dependent_size, self.independent_size]
+        )
 
     def __str__(self):
         return (
-            super().__str__() +
-            f"\ndata is {self.data.shape}\n" +
-            f"data2d is {self.data2d.shape}"
-            )
+            super().__str__()
+            + f"\ndata is {self.data.shape}\n"
+            + f"data2d is {self.data2d.shape}"
+        )
 
     def _getjitem(self, new_shape, key):
         """A getitem type method for dense Jacobians"""
@@ -381,8 +413,8 @@ class dljacobian_dense(dljacobian_base):
             jkey = list(key)
         except TypeError:
             jkey = [key]
-        extra = [np.s_[:]]*self.independent_ndim
-        jkey = tuple(jkey+extra)
+        extra = [np.s_[:]] * self.independent_ndim
+        jkey = tuple(jkey + extra)
         result_ = self.data.__getitem__(jkey)
         new_full_shape = new_shape + self.independent_shape
         # try:
@@ -390,23 +422,24 @@ class dljacobian_dense(dljacobian_base):
         # except AttributeError:
         #    warnings.warn("dljacogian_dense._getjitem had to make a copy")
         #    result_ = np.reshape(result_, new_full_shape)
-        return dljacobian_dense(data=result_, template=self,
-                                dependent_shape=new_shape)
+        return dljacobian_dense(data=result_, template=self, dependent_shape=new_shape)
 
     def _setjitem(self, key, value):
         """A getitem type method for dense Jacobians"""
         if value is not None:
             self_, value_, result_type = _prepare_jacobians_for_binary_op(self, value)
             if result_type != type(self):
-                return TypeError("Jacobian is not of correct time to receive new contents")
+                return TypeError(
+                    "Jacobian is not of correct time to receive new contents"
+                )
         else:
             value_ = 0.0
         try:
             jkey = list(key)
         except TypeError:
             jkey = [key]
-        extra = [np.s_[:]]*self.independent_ndim
-        jkey = tuple(jkey+extra)
+        extra = [np.s_[:]] * self.independent_ndim
+        jkey = tuple(jkey + extra)
         self.data.__setitem__(jkey, value_)
 
     def broadcast_to(self, shape):
@@ -416,10 +449,9 @@ class dljacobian_dense(dljacobian_base):
             return self
         full_shape = shape + self.independent_shape
         result_ = np.broadcast_to(self.data, full_shape)
-        return dljacobian_dense(data=result_, template=self,
-                                dependent_shape=shape)
+        return dljacobian_dense(data=result_, template=self, dependent_shape=shape)
 
-    def reshape(self, shape, order='C'):
+    def reshape(self, shape, order="C"):
         """reshape dense Jacobian"""
         # Don't bother doing anything if the shape is already good
         if shape == self.dependent_shape:
@@ -429,9 +461,8 @@ class dljacobian_dense(dljacobian_base):
         except TypeError:
             full_shape = (shape,) + self.independent_shape
         result_ = np.reshape(self.data, full_shape, order)
-        return dljacobian_dense(data=result_, template=self,
-                                dependent_shape=shape)
-    
+        return dljacobian_dense(data=result_, template=self, dependent_shape=shape)
+
     def premul_diag(self, diag):
         """Diagonal premulitply for dense Jacobian"""
         diag_, dependent_unit, dependent_shape = self._prepare_premul_diag(diag)
@@ -443,9 +474,12 @@ class dljacobian_dense(dljacobian_base):
             # need to be handled specially
         except ValueError:
             pass
-        return dljacobian_dense(diag_*self.data, template=self,
-                                dependent_unit=dependent_unit,
-                                dependent_shape=dependent_shape)
+        return dljacobian_dense(
+            diag_ * self.data,
+            template=self,
+            dependent_unit=dependent_unit,
+            dependent_shape=dependent_shape,
+        )
 
     def insert(self, obj, axis, dependent_shape):
         """insert method for dense Jacobian"""
@@ -458,8 +492,7 @@ class dljacobian_dense(dljacobian_base):
             jaxis = axis
         data = np.insert(self.data, obj, 0.0, jaxis)
         # print (f"data comes back as {data.shape}")
-        return dljacobian_dense(data, template=self,
-                                dependent_shape=dependent_shape)
+        return dljacobian_dense(data, template=self, dependent_shape=dependent_shape)
 
     def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):
         """Performs sum for the dense Jacobians"""
@@ -470,34 +503,35 @@ class dljacobian_dense(dljacobian_base):
             jaxis = tuple(range(self.dependent_ndim))
         else:
             try:
-                jaxis = tuple(a if a>=0 else a-self.independent_ndim for a in axis)
+                jaxis = tuple(a if a >= 0 else a - self.independent_ndim for a in axis)
             except TypeError:
-                jaxis = axis if axis >= 0 else axis-self.independent_ndim
+                jaxis = axis if axis >= 0 else axis - self.independent_ndim
         return dljacobian_dense(
-            data=np.sum(self.data, axis=jaxis, dtype=dtype,
-                        keepdims=keepdims),
-            template=self, dependent_shape=dependent_shape)
+            data=np.sum(self.data, axis=jaxis, dtype=dtype, keepdims=keepdims),
+            template=self,
+            dependent_shape=dependent_shape,
+        )
 
     def cumsum(self, axis):
         """Perform cumsum for a dense Jacobian"""
-        return dljacobian_dense(template=self,
-                                data=np.cumsum(self.data, axis))
+        return dljacobian_dense(template=self, data=np.cumsum(self.data, axis))
 
     def extract_diagonal(self):
         """Extract the diagonal from a dense Jacobian"""
         if self.dependent_shape != self.independent_shape:
             raise ValueError("Dense Jacobian is not square")
         result_ = np.reshape(self.data2d.diagonal(), self.dependent_shape)
-        return result_ << (self.dependent_unit/self.independent_unit)
+        return result_ << (self.dependent_unit / self.independent_unit)
 
     def todensearray(self):
-        return self.data << (self.dependent_unit/self.independent_unit)
+        return self.data << (self.dependent_unit / self.independent_unit)
 
     def to2ddensearray(self):
-        return self.data2d << (self.dependent_unit/self.independent_unit)
+        return self.data2d << (self.dependent_unit / self.independent_unit)
 
     def to2darray(self):
         return self.to2ddensearray()
+
 
 # ----------------------------------------------- dljacobian_sparse
 class dljacobian_sparse(dljacobian_base):
@@ -511,7 +545,9 @@ class dljacobian_sparse(dljacobian_base):
             if template is None:
                 template = data
             else:
-                raise ValueError("Cannot supply template with jacobian data simultaneously")
+                raise ValueError(
+                    "Cannot supply template with jacobian data simultaneously"
+                )
         super().__init__(template=template, **kwargs)
         if isinstance(data, dljacobian_sparse):
             data2d_ = data.data2d
@@ -525,17 +561,17 @@ class dljacobian_sparse(dljacobian_base):
             raise TypeError("Values supplied to dljacobian_sparse are not suitable")
         if data2d_.shape != self.shape2d:
             # print (data2d_.shape, self.shape2d)
-            raise ValueError(
-                "Attempt to create jacobian_sparse with wrong-sized input")
+            raise ValueError("Attempt to create jacobian_sparse with wrong-sized input")
         else:
             self.data2d = data2d_
-            
+
     def __str__(self):
         """Provide a string summary of a sparse Jacobian"""
-        suffix = ( f"\ndata2d is {self.data2d.shape}" +
-                   f" with {self.data2d.nnz} numbers stored")
+        suffix = (
+            f"\ndata2d is {self.data2d.shape}"
+            + f" with {self.data2d.nnz} numbers stored"
+        )
         return super().__str__() + suffix
-
 
     def _getjitem(self, new_shape, key):
         """A getitem type method for sparse Jacobians"""
@@ -563,13 +599,14 @@ class dljacobian_sparse(dljacobian_base):
         try:
             jSlice = dependent_slice + (np.s_[:],)
         except TypeError:
-            jSlice = (dependent_slice,np.s_[:])
+            jSlice = (dependent_slice, np.s_[:])
         try:
             if len(jSlice) > 2:
                 raise TypeError("Dummy raise to fall back to dense")
-            result_ =  self.data2d.__getitem__(jSlice)
-            return dljacobian_sparse(data=result_, template=self,
-                                     dependent_shape=new_shape)
+            result_ = self.data2d.__getitem__(jSlice)
+            return dljacobian_sparse(
+                data=result_, template=self, dependent_shape=new_shape
+            )
         except TypeError:
             warnings.warn("dljacobian_sparse._getjitem had to fall back to dense")
             self_dense = dljacobian_dense(self)
@@ -577,7 +614,9 @@ class dljacobian_sparse(dljacobian_base):
 
     def _setjitem(self, key, value):
         """A setitem type method for dense Jacobians"""
-        raise NotImplementedError("Not (yet) written the setitem capability for sparse Jacobians")
+        raise NotImplementedError(
+            "Not (yet) written the setitem capability for sparse Jacobians"
+        )
 
     def broadcast_to(self, shape):
         """Broadcast the dependent vector part of a sparse Jacobian to another shape"""
@@ -590,7 +629,7 @@ class dljacobian_sparse(dljacobian_base):
         # the road we might be able to do something with some kind of
         # index mapping, but for now, just do a replication rather
         # than a broadcast (shame)
-        
+
         # Get a 1D vector indexing original dependent vector
         iold = np.arange(self.dependent_size)
         # Turn into an nD array
@@ -603,13 +642,17 @@ class dljacobian_sparse(dljacobian_base):
         inew = np.arange(iold.size)
         # Now put a 1 at every [inew,iold] point in a sparse matrix
         one = np.ones((iold.size,), dtype=np.int64)
-        M = sparse.csc_matrix(sparse.coo_matrix((one,(inew,iold)), shape=(inew.size,self.dependent_size)))
+        M = sparse.csc_matrix(
+            sparse.coo_matrix(
+                (one, (inew, iold)), shape=(inew.size, self.dependent_size)
+            )
+        )
         # Now do a matrix multiply to accomplish what broadcast tries
         # to do.
         result_ = M @ self.data2d
         return dljacobian_sparse(data=result_, template=self, dependent_shape=shape)
-    
-    def reshape(self, shape, order='C'):
+
+    def reshape(self, shape, order="C"):
         """Reshape a sparse Jacobian to a new dependent vector"""
         # Don't bother doing anything if the shape is already good
         if shape == self.dependent_shape:
@@ -620,7 +663,7 @@ class dljacobian_sparse(dljacobian_base):
         if int(np.prod(shape)) != self.dependent_size:
             raise ValueError("Unable to reshape dljacobian_sparse to new shape")
         return dljacobian_sparse(data=self.data2d, template=self, dependent_shape=shape)
-    
+
     def premul_diag(self, diag):
         """Dependent-Element by element multiply of an other quantity"""
         # This is a hand-woven diagnonal/sparse-csc multiply
@@ -651,11 +694,16 @@ class dljacobian_sparse(dljacobian_base):
             out_data = self.data2d.data * diag_
         else:
             out_data = self.data2d.data * np.take(diag_, self.data2d.indices)
-        out_ = sparse.csc_matrix((out_data, self.data2d.indices, self.data2d.indptr), shape=self.data2d.shape)
-        return dljacobian_sparse(out_, template=self,
-                                 dependent_unit=dependent_unit,
-                                 dependent_shape=dependent_shape)
-    
+        out_ = sparse.csc_matrix(
+            (out_data, self.data2d.indices, self.data2d.indptr), shape=self.data2d.shape
+        )
+        return dljacobian_sparse(
+            out_,
+            template=self,
+            dependent_unit=dependent_unit,
+            dependent_shape=dependent_shape,
+        )
+
     def __neg__(self):
         return type(self)(-self.data2d, template=self)
 
@@ -689,12 +737,14 @@ class dljacobian_sparse(dljacobian_base):
         all_indices[axis_] = i
         row = np.ravel_multi_index(all_indices, dependent_shape)
         dependent_size = int(np.prod(dependent_shape))
-        self_coo = sparse.coo_matrix((self_coo.data,(row,self_coo.col)),
-                                     shape=(dependent_size, self.independent_size))
-        return dljacobian_sparse(template=self, data=self_coo.tocsc(),
-                                   dependent_shape=dependent_shape)
+        self_coo = sparse.coo_matrix(
+            (self_coo.data, (row, self_coo.col)),
+            shape=(dependent_size, self.independent_size),
+        )
+        return dljacobian_sparse(
+            template=self, data=self_coo.tocsc(), dependent_shape=dependent_shape
+        )
 
-    
     def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):
         """Perform sum for the sparse Jacobians"""
         # Two different approaches, depending on whether axis is supplied
@@ -703,12 +753,13 @@ class dljacobian_sparse(dljacobian_base):
             result_ = np.sum(self.data2d, axis=0, dtype=dtype)
             # Note that result is a dense matrix
             if keepdims:
-                result_shape = (1,)*self.dependent_ndim + self.independent_shape
+                result_shape = (1,) * self.dependent_ndim + self.independent_shape
             else:
                 result_shape = self.independent_shape
             result_ = np.reshape(np.asarray(result_), result_shape)
-            result = dljacobian_dense(template=self, data=result_,
-                                      dependent_shape=dependent_shape)
+            result = dljacobian_dense(
+                template=self, data=result_, dependent_shape=dependent_shape
+            )
             pass
         else:
             # Here we want to sum over selected indices.  Recall that
@@ -748,8 +799,11 @@ class dljacobian_sparse(dljacobian_base):
             ioriginal = np.arange(self.dependent_size)
             # Now put a 1 at every [ireduced, ioriginal] in a sparse matrix
             one = np.ones((ioriginal.size,), dtype=np.int64)
-            M = sparse.csc_matrix(sparse.coo_matrix((one,(ireduced,ioriginal)),
-                                                     shape=(reduced_size,ioriginal.size)))
+            M = sparse.csc_matrix(
+                sparse.coo_matrix(
+                    (one, (ireduced, ioriginal)), shape=(reduced_size, ioriginal.size)
+                )
+            )
             result_ = M @ self.data2d
             # Note that by specifying dependent_shape here, supplied
             # by the calling code, we've implicitly taken the value of
@@ -757,8 +811,9 @@ class dljacobian_sparse(dljacobian_base):
             # print (f"OK, after all that work on <<<{self}>>>")
             # print (f"... and summing over {axis}, we got reduced_shape={reduced_shape}")
             # print (f"M is {M.shape}, result_ is {result_.shape} and dependent_shape is {dependent_shape}")
-            result = dljacobian_sparse(template=self, data=result_,
-                                      dependent_shape=dependent_shape)
+            result = dljacobian_sparse(
+                template=self, data=result_, dependent_shape=dependent_shape
+            )
             pass
         return result
 
@@ -802,7 +857,9 @@ class dljacobian_sparse(dljacobian_base):
                 # And merging the remainder into a column index
                 col = np.ravel_multi_index(i, shape_shuff[1:])
                 # Make this a new coo matrix - this is what actually performs the transpose
-                new_coo = sparse.coo_matrix((self_coo.data,(row,col)), shape=shape_shuff_2d)
+                new_coo = sparse.coo_matrix(
+                    (self_coo.data, (row, col)), shape=shape_shuff_2d
+                )
                 # Turn this to a csc matrix, this will be what we cumsum over the rows
                 new_csc = new_coo.tocsc()
                 nrows = shape_shuff[0]
@@ -821,8 +878,9 @@ class dljacobian_sparse(dljacobian_base):
                 # shape.  Reverse the steps above.
                 intermediate_coo = intermediate.tocoo()
                 # First ravel the combined row/column index
-                i = np.ravel_multi_index((intermediate_coo.row, intermediate_coo.col),
-                                         intermediate_coo.shape)
+                i = np.ravel_multi_index(
+                    (intermediate_coo.row, intermediate_coo.col), intermediate_coo.shape
+                )
                 # Now get these all as unravelled indices across the board
                 i = list(np.unravel_index(i, shape_shuff))
                 # Now rearrange this to put things back in their proper place
@@ -831,40 +889,41 @@ class dljacobian_sparse(dljacobian_base):
                 i = np.ravel_multi_index(i, self.shape)
                 # And now make row and column indices out of them
                 row, col = np.unravel_index(i, self.shape2d)
-                result_coo = sparse.coo_matrix((intermediate_coo.data,(row,col)), shape=self.shape2d)
+                result_coo = sparse.coo_matrix(
+                    (intermediate_coo.data, (row, col)), shape=self.shape2d
+                )
                 result = dljacobian_sparse(template=self, data=result_coo.tocsc())
         return result
-            
 
     def extract_diagonal(self):
         """Extract the diagonal from a sparse Jacobian"""
         if self.dependent_shape != self.independent_shape:
             raise ValueError("Sparse Jacobian is not square")
         result_ = np.reshape(self.data2d.diagonal(), self.dependent_shape)
-        return result_ << (self.dependent_unit/self.independent_unit)
+        return result_ << (self.dependent_unit / self.independent_unit)
 
     def todensearray(self):
         self_dense = dljacobian_dense(self)
         return self_dense.todensearray()
 
     def to2ddensearray(self):
-        return self.data2d.toarray() << (self.dependent_unit/self.independent_unit)
+        return self.data2d.toarray() << (self.dependent_unit / self.independent_unit)
 
     def to2darray(self):
-        return self.data2d << (self.dependent_unit/self.independent_unit)
+        return self.data2d << (self.dependent_unit / self.independent_unit)
 
     def nan_to_num(self, copy=True, nan=0.0, posinf=None, neginf=None):
         if copy:
             data2d = self.data2d.copy()
         else:
             data2d = self.data2d
-        data2d.data = np.nan_to_num(data2d.data, copy=False, nan=nan, posinf=posinf, neginf=neginf)
+        data2d.data = np.nan_to_num(
+            data2d.data, copy=False, nan=nan, posinf=posinf, neginf=neginf
+        )
         return self.__class__(template=self, data=data2d)
- 
+
     def scalar_multiply(self, scale):
         """Multiply Jacobian by a scalar"""
         self.dependent_unit *= scale.unit
         self.data2d *= scale.value
         return self
-      
-
