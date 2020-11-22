@@ -4,7 +4,6 @@ import warnings
 import numpy as np
 import scipy.sparse as sparse
 import itertools
-import inspect
 import copy
 
 __all__ = [
@@ -55,7 +54,8 @@ def _prepare_jacobians_for_binary_op(a, b):
     # Note that this code does not need to worry about broadcasting,
     # as that is handled elsewhere in this class, and invoked by the
     # methods in dlarray.  Note that the only thing we need to prepare
-    # for here is addition, so we don't need to predict the shape of the result.
+    # for here is addition, so we don't need to predict the shape of
+    # the result.
     scale = 1.0
     if b.dependent_unit != a.dependent_unit:
         scale *= b.dependent_unit._to(a.dependent_unit)

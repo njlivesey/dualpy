@@ -14,11 +14,14 @@ __all__ = ["dlarray", "nan_to_num_jacobians"]
 
 
 class dlarray(units.Quantity):
-    """A combination of an astropy Quantity (which is in turn numpy array and a collection of jacobian
-    information stored as a optionally sparse 2D matrix.
+    """A combination of an astropy Quantity (which is in turn numpy array
+    and a collection of jacobian information stored as a optionally
+    sparse 2D matrix.
 
     This follows the recommendations on subclassing ndarrays in the
-    numpy docum2entation."""
+    numpy docum2entation.
+
+    """
 
     def __new__(cls, input_array):
         # Input array is an already formed ndarray instance.
@@ -134,8 +137,9 @@ class dlarray(units.Quantity):
         for jname, jacobian in self.jacobians.items():
             if self.unit != jacobian.dependent_unit:
                 raise units.UnitsError(
-                    f"The {jname} Jacobian for {name} has the wrong dependent units "
-                    + f"({jacobian.dependent_unit} rather than {self.unit})"
+                    f"The {jname} Jacobian for {name} has the wrong dependent"
+                    f"units ({jacobian.dependent_unit} rather"
+                    f"than {self.unit})"
                 )
 
     def to(self, unit, **kwargs):
