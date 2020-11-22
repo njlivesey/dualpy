@@ -3,7 +3,7 @@ import astropy.units as units
 import scipy.special as special
 import scipy.constants as constants
 
-from .jacobians import *
+from .jacobians import dljacobian_dense, dljacobian_diagonal, dljacobian_sparse
 from .duals import dlarray
 from .dual_helpers import _setup_dual_operation
 
@@ -207,8 +207,6 @@ def solve_quadratic(a, b, c, sign=1):
 # Note that astropy doesn't supply this routine so, unlike sin,
 # cos, etc. this leapfrongs straight to scipy.special, for now.
 # That may give us problems down the road.
-
-
 def wofz(z):
     z_ = units.Quantity(z)
     if z_.unit != units.dimensionless_unscaled:

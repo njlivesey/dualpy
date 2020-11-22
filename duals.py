@@ -3,11 +3,8 @@
 import numpy as np
 import astropy.units as units
 import fnmatch
-import scipy.special as special
-import scipy.constants as constants
 
-from .jacobians import *
-from .dual_helpers import *
+from .dual_helpers import _setup_dual_operation, _per_rad, _broadcast_jacobians
 
 
 __all__ = ["dlarray", "nan_to_num_jacobians"]
@@ -171,8 +168,8 @@ class dlarray(units.Quantity):
     # for the Jacobian itself.
     def _chain_rule(self, a, d, unit=None):
         """Finish up the computation of Jacobians
-           a: dlarray - original input to ufunc
-           d: ndarray - d(self)/da"""
+        a: dlarray - original input to ufunc
+        d: ndarray - d(self)/da"""
         if unit is not None:
             for name, jacobian in a.jacobians.items():
                 self.jacobians[name] = jacobian.to(unit).premul_diag(d)
@@ -422,7 +419,7 @@ class dlarray(units.Quantity):
         out_ = np.sin(a_rad.value) << units.dimensionless_unscaled
         out = dlarray(out_)
         if a_rad.hasJ:
-            out._chain_rule(a_rad, np.cos(a_rad.value) << _perRad, unit=units.rad)
+            out._chain_rule(a_rad, np.cos(a_rad.value) << _per_rad, unit=units.rad)
         return out
 
     def cos(a):
@@ -430,7 +427,7 @@ class dlarray(units.Quantity):
         out_ = np.cos(a_rad.value) << units.dimensionless_unscaled
         out = dlarray(out_)
         if a_rad.hasJ:
-            out._chain_rule(a_rad, -np.sin(a_rad.value) << _perRad, unit=units.rad)
+            out._chain_rule(a_rad, -np.sin(a_rad.value) << _per_rad, unit=units.rad)
         return out
 
     def tan(a):
@@ -439,7 +436,7 @@ class dlarray(units.Quantity):
         out = dlarray(out_)
         if a_rad.hasJ:
             out._chain_rule(
-                a_rad, 1.0 / (np.cos(a_rad.value) ** 2) << _perRad, unit=units.rad
+                a_rad, 1.0 / (np.cos(a_rad.value) ** 2) << _per_rad, unit=units.rad
             )
         return out
 
@@ -478,7 +475,7 @@ class dlarray(units.Quantity):
         out_ = np.sinh(a_rad.value) << units.dimensionless_unscaled
         out = dlarray(out_)
         if a_rad.hasJ:
-            out._chain_rule(a_rad, np.cosh(a_rad.value) << _perRad, unit=units.rad)
+            out._chain_rule(a_rad, np.cosh(a_rad.value) << _per_rad, unit=units.rad)
         return out
 
     def cosh(a):
@@ -486,7 +483,7 @@ class dlarray(units.Quantity):
         out_ = np.cosh(a_rad.value) << units.dimensionless_unscaled
         out = dlarray(out_)
         if a.hasJ:
-            out._chain_rule(a_rad, np.sinh(a_rad.value) << _perRad, unit=units.rad)
+            out._chain_rule(a_rad, np.sinh(a_rad.value) << _per_rad, unit=units.rad)
         return out
 
     def tanh(a):
@@ -495,7 +492,7 @@ class dlarray(units.Quantity):
         out = dlarray(out_)
         if a.hasJ:
             out._chain_rule(
-                a_rad, 1.0 / np.cosh(a_rad.value) ** 2 << _perRad, unit=units.rad
+                a_rad, 1.0 / np.cosh(a_rad.value) ** 2 << _per_rad, unit=units.rad
             )
         return out
 
@@ -643,9 +640,9 @@ def cumsum(a, axis=None, dtype=None, out=None):
     return out
 
 
-@implements(np.broadcast_arrays)
 # One of these days I should look into whether broadcast_arrays and
 # broadcast_to really need the subok argument, given that it's ignored.
+@implements(np.broadcast_arrays)
 def broadcast_arrays(*args, subok=False):
     values = []
     for a in args:
@@ -737,11 +734,13 @@ def searchsorted(a, v, side="left", sorter=None):
 def clip(a, a_min, a_max, out=None, **kwargs):
     if type(a_min) is dlarray:
         raise NotImplementedError(
-            "dlarray.clip does not (currently) support dual for a_min, use dualarray.minimum"
+            "dlarray.clip does not (currently) support dual "
+            "for a_min, use dualarray.minimum"
         )
     if type(a_max) is dlarray:
         raise NotImplementedError(
-            "dlarray.clip does not (currently) support dual for a_max, use dualarray.maximum"
+            "dlarray.clip does not (currently) support dual "
+            "for a_max, use dualarray.maximum"
         )
     if out is not None:
         raise NotImplementedError("dlarray.clip cannot support out")

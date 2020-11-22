@@ -158,7 +158,8 @@ class dljacobian_base(object):
         return (
             f"Jacobian of type {type(self)}\n"
             + f"Dependent shape is {self.dependent_shape} <{self.dependent_size}>\n"
-            + f"Independent shape is {self.independent_shape} <{self.independent_size}>\n"
+            + f"Independent shape is {self.independent_shape}"
+            + f"<{self.independent_size}>\n"
             + f"Combined they are {self.shape} <{self.size}>\n"
             + f"Dummies are {self._dummy_dependent} and {self._dummy_independent}\n"
             + f"Units are d<{self.dependent_unit}>/d<{self.independent_unit}> = "
@@ -176,7 +177,7 @@ class dljacobian_base(object):
         return result_type(data=s_ + o_, template=self)
 
     def __subtract__(self, other):
-        s_, o_ = _prepare_jacobians_for_binary_op(self, other)
+        s_, o_, result_type = _prepare_jacobians_for_binary_op(self, other)
         return result_type(data=s_ - o_, template=self)
 
     def __lshift__(self, unit):
@@ -342,7 +343,7 @@ class dljacobian_diagonal(dljacobian_base):
         return dljacobian_dense(self).cumsum(axis)
 
     def diagonal(self):
-        """Return a diagonal Jacobian's contents as just the diagonal (shape=dependent_shape)"""
+        """Get diagonal elements (shape=dependent_shape)"""
         return self.data << (self.dependent_unit / self.independent_unit)
 
     # The reaons we have extract_diagonal and diagonal is that diagonal is
@@ -392,8 +393,6 @@ class dljacobian_dense(dljacobian_base):
         else:
             data_ = data
         if data_.shape != self.shape:
-            # print (f"\n\nIn atemping to store {data_.shape} into {self.shape}")
-            # print (f"Shapes are {self.dependent_shape}, {self.independent_shape}, and {self.shape}")
             raise ValueError("Attempt to create jacobian_dense with wrong-shaped input")
         self.data = data_
         self.data2d = np.reshape(
@@ -467,9 +466,7 @@ class dljacobian_dense(dljacobian_base):
         """Diagonal premulitply for dense Jacobian"""
         diag_, dependent_unit, dependent_shape = self._prepare_premul_diag(diag)
         try:
-            # print (f"OK here, {diag_.shape}, {self.dependent_shape} {self._dummy_independent}")
             diag_ = np.reshape(diag_, (diag.shape + self._dummy_independent))
-            # print (f"Gets {diag_.shape}")
             # This will fail for scalars, but that's OK scalars don't
             # need to be handled specially
         except ValueError:
@@ -749,7 +746,8 @@ class dljacobian_sparse(dljacobian_base):
         """Perform sum for the sparse Jacobians"""
         # Two different approaches, depending on whether axis is supplied
         if axis is None:
-            # OK, here we want to sum over all the dependent elements, scipy.sparse can do that.
+            # OK, here we want to sum over all the dependent elements,
+            # scipy.sparse can do that.
             result_ = np.sum(self.data2d, axis=0, dtype=dtype)
             # Note that result is a dense matrix
             if keepdims:
@@ -808,9 +806,6 @@ class dljacobian_sparse(dljacobian_base):
             # Note that by specifying dependent_shape here, supplied
             # by the calling code, we've implicitly taken the value of
             # the keepdims argument into account.
-            # print (f"OK, after all that work on <<<{self}>>>")
-            # print (f"... and summing over {axis}, we got reduced_shape={reduced_shape}")
-            # print (f"M is {M.shape}, result_ is {result_.shape} and dependent_shape is {dependent_shape}")
             result = dljacobian_sparse(
                 template=self, data=result_, dependent_shape=dependent_shape
             )
@@ -851,23 +846,23 @@ class dljacobian_sparse(dljacobian_base):
                 i = np.ravel_multi_index((self_coo.row, self_coo.col), self_coo.shape)
                 # Now get these all as unravelled indices across all the axes
                 i = list(np.unravel_index(i, self.shape))
-                # Now rearrange this list of indices to pull the target one to the front.
-                # Do this by popping the axis in question into a row axis
+                # Now rearrange this list of indices to pull the target one to the
+                # front.  Do this by popping the axis in question into a row axis
                 row = i.pop(axis)
                 # And merging the remainder into a column index
                 col = np.ravel_multi_index(i, shape_shuff[1:])
-                # Make this a new coo matrix - this is what actually performs the transpose
+                # Make this a new coo matrix - this is what actually
+                # performs the transpose
                 new_coo = sparse.coo_matrix(
                     (self_coo.data, (row, col)), shape=shape_shuff_2d
                 )
                 # Turn this to a csc matrix, this will be what we cumsum over the rows
                 new_csc = new_coo.tocsc()
                 nrows = shape_shuff[0]
-            # We have two choices here, we could do a python loop to build
-            # up and store cumulative sums, but I suspect that, while on
-            # paper more efficient (reducing the number of additions, it
-            # would be slow in reality. Instead, I'll create
-            # lower-triangle matrix with ones and zeros and multiply by
+            # We have two choices here, we could do a python loop to build up and store
+            # cumulative sums, but I suspect that, while on paper more efficient
+            # (reducing the number of additions, it would be slow in reality. Instead,
+            # I'll create lower-triangle matrix with ones and zeros and multiply by
             # that.
             lt = sparse.csc_matrix(np.tri(nrows))
             intermediate = lt @ new_csc
