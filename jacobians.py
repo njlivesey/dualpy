@@ -605,7 +605,7 @@ class dljacobian_sparse(dljacobian_base):
                 data=result_, template=self, dependent_shape=new_shape
             )
         except TypeError:
-            warnings.warn("dljacobian_sparse._getjitem had to fall back to dense")
+            # warnings.warn("dljacobian_sparse._getjitem had to fall back to dense")
             self_dense = dljacobian_dense(self)
             return self_dense._getjitem(new_shape, key)
 
