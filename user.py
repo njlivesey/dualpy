@@ -3,7 +3,7 @@ import astropy.units as units
 import scipy.special as special
 import scipy.constants as constants
 
-from .jacobians import dljacobian_dense, dljacobian_diagonal, dljacobian_sparse
+from .jacobians import DenseJacobian, DiagonalJacobian, SparseJacobian
 from .duals import dlarray
 from .dual_helpers import _setup_dual_operation
 
@@ -38,7 +38,7 @@ def seed(value, name, force=False, overwrite=False, reset=False):
         out = dlarray(value)
     else:
         out = value
-    jacobian = dljacobian_diagonal(
+    jacobian = DiagonalJacobian(
         np.ones(out.shape),
         dependent_unit=value.unit,
         independent_unit=value.unit,
@@ -53,13 +53,13 @@ def seed(value, name, force=False, overwrite=False, reset=False):
 # perhaps not otherwise ventured into.
 def _seed_dense(value, name, **kwargs):
     result = seed(value, name, **kwargs)
-    result.jacobians[name] = dljacobian_dense(result.jacobians[name])
+    result.jacobians[name] = DenseJacobian(result.jacobians[name])
     return result
 
 
 def _seed_sparse(value, name, **kwargs):
     result = seed(value, name, **kwargs)
-    result.jacobians[name] = dljacobian_sparse(result.jacobians[name])
+    result.jacobians[name] = SparseJacobian(result.jacobians[name])
     return result
 
 
@@ -161,7 +161,7 @@ def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None)
             # Store the Jacobian
             target_shape = result0.shape + template.independent_shape
             jacobian = np.reshape(jacobian, target_shape)
-            jacobian = dljacobian_dense(
+            jacobian = DenseJacobian(
                 data=jacobian,
                 template=template,
                 dependent_shape=result0.shape,

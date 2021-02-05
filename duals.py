@@ -691,6 +691,15 @@ def atleast_1d(*args):
     return tuple(result)
 
 
+@implements(np.diff)
+def diff(array, n, axis, prepend, append):
+    result_ = np.diff(array.value, n, axis, prepend, append) << array.unit
+    result = dlarray(result_)
+    for name, jacobian in array.jacobians.items():
+        result.jacobians[name] = jacobian.diff(n, axis, prepend, append)
+    return result
+
+
 @implements(np.where)
 def where(condition, a=None, b=None):
     if a is None or b is None:
