@@ -671,7 +671,6 @@ def broadcast_to(array, shape, subok=False):
 
 def _reshape(array, *args, **kwargs):
     result = dlarray(units.Quantity(array).reshape(*args, **kwargs))
-    print(f"In reshape: {array.unit}, {result.unit}")
     for name, jacobian in array.jacobians.items():
         result.jacobians[name] = jacobian.reshape(result.shape)
     return result
