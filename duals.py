@@ -105,17 +105,12 @@ class dlarray(units.Quantity):
         return result
 
     def __array_function__(self, func, types, args, kwargs):
-        if func not in HANDLED_FUNCTIONS:
+        if func in HANDLED_FUNCTIONS:
+            return HANDLED_FUNCTIONS[func](*args, **kwargs)
+        elif func in FALLTHROUGH_FUNCTIONS:
+            return super().__array_function__(self, func, types, args, kwargs)
+        else:
             return NotImplemented
-        # Note: this allows subclasses that don't override
-        # __array_function__ to handle dlarray objects
-        #
-        # Note: I've commented out the part below (which I thnk the
-        # comments above are describing) to allow for cases where some
-        # but not all arguments are duals.
-        # if not all(issubclass(t, dlarray) for t in types):
-        #    return NotImplemented
-        return HANDLED_FUNCTIONS[func](*args, **kwargs)
 
     def __getitem__(self, key):
         out = dlarray(units.Quantity(self).__getitem__(key))
@@ -609,6 +604,7 @@ class dlarray(units.Quantity):
 
 # -------------------------------------- Now the array functions
 HANDLED_FUNCTIONS = {}
+FALLTHROUGH_FUNCTIONS = []  # [np.diff]
 
 
 def implements(numpy_function):
@@ -692,7 +688,7 @@ def atleast_1d(*args):
 
 
 @implements(np.diff)
-def diff(array, n, axis, prepend, append):
+def diff(array, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
     result_ = np.diff(array.value, n, axis, prepend, append) << array.unit
     result = dlarray(result_)
     for name, jacobian in array.jacobians.items():

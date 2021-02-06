@@ -2,7 +2,7 @@
 import numpy as np
 
 from .jacobian_helpers import _array_to_sparse_diagonal
-from .jacobian_base import BaseJacobian
+from .base_jacobian import BaseJacobian
 
 
 __all__ = ["DenseJacobian"]
@@ -55,7 +55,7 @@ class DenseJacobian(BaseJacobian):
             jkey = list(key)
         except TypeError:
             jkey = [key]
-        extra = [np.s_[:]] * self.independent_ndim
+        extra = [slice(None)] * self.independent_ndim
         jkey = tuple(jkey + extra)
         result_ = self.data.__getitem__(jkey)
         new_full_shape = new_shape + self.independent_shape
@@ -80,7 +80,7 @@ class DenseJacobian(BaseJacobian):
             jkey = list(key)
         except TypeError:
             jkey = [key]
-        extra = [np.s_[:]] * self.independent_ndim
+        extra = [slice(None)] * self.independent_ndim
         jkey = tuple(jkey + extra)
         self.data.__setitem__(jkey, value_)
 
@@ -155,6 +155,8 @@ class DenseJacobian(BaseJacobian):
     def cumsum(self, axis):
         """Perform cumsum for a dense Jacobian"""
         return DenseJacobian(template=self, data=np.cumsum(self.data, axis))
+
+    
 
     def extract_diagonal(self):
         """Extract the diagonal from a dense Jacobian"""

@@ -7,7 +7,7 @@ __all__ = [
     "SparseJacobian",
 ]
 
-from .jacobian_base import BaseJacobian
+from .base_jacobian import BaseJacobian
 from .dense_jacobians import DenseJacobian
 from .diagonal_jacobians import DiagonalJacobian
 from .sparse_jacobians import SparseJacobian

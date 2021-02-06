@@ -1,6 +1,8 @@
 """The class for diagonal jacobians"""
 
-from .jacobian_base import BaseJacobian
+import numpy as np
+
+from .base_jacobian import BaseJacobian
 # Seeing as we cast to sparse so often, we'll import it globally
 from .sparse_jacobians import SparseJacobian
 
@@ -93,7 +95,7 @@ class DiagonalJacobian(BaseJacobian):
         self_sparse = SparseJacobian(self)
         return self_sparse.insert(obj, axis, dependent_shape)
 
-    def diff(self, n, axis, prepend, append):
+    def diff(self, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
         """diff method for diagonal jacobian"""
         # Again, the result will not be diagonal, so change to sparse and do diff in
         # that space.

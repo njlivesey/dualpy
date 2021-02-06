@@ -3,7 +3,7 @@ import scipy.sparse as sparse
 import numpy as np
 
 from .jacobian_helpers import _array_to_sparse_diagonal, _shapes_broadcastable
-from .jacobian_base import BaseJacobian
+from .base_jacobian import BaseJacobian
 
 __all__ = ["SparseJacobian"]
 
@@ -15,6 +15,7 @@ class SparseJacobian(BaseJacobian):
         """Create a new sparse jacobian"""
         from .dense_jacobians import DenseJacobian
         from .diagonal_jacobians import DiagonalJacobian
+
         # This kind of Jacobian can only be initialized using another
         # sparse jacobian or by a diagonal one.
         if isinstance(data, BaseJacobian):
@@ -75,9 +76,9 @@ class SparseJacobian(BaseJacobian):
         # that give odd errors down the road.
         # Append a "get the lot" slice for the independent variable dimension
         try:
-            jSlice = dependent_slice + (np.s_[:],)
+            jSlice = dependent_slice + (slice(None),)
         except TypeError:
-            jSlice = (dependent_slice, np.s_[:])
+            jSlice = (dependent_slice, slice(None))
         try:
             if len(jSlice) > 2:
                 raise TypeError("Dummy raise to fall back to dense")
@@ -371,6 +372,12 @@ class SparseJacobian(BaseJacobian):
                 result = SparseJacobian(template=self, data=result_coo.tocsc())
         return result
 
+    def diff(self, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
+        """diff method for sparse jacobian"""
+        # For now at least I'm going to have this go to dense.
+        self_dense = SparseJacobian(self)
+        return self_dense.diff(n, axis, prepend, append)
+
     def extract_diagonal(self):
         """Extract the diagonal from a sparse Jacobian"""
         if self.dependent_shape != self.independent_shape:
@@ -380,6 +387,7 @@ class SparseJacobian(BaseJacobian):
 
     def todensearray(self):
         from .dense_jacobians import DenseJacobian
+
         self_dense = DenseJacobian(self)
         return self_dense.todensearray()
 
