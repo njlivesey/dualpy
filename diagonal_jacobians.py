@@ -131,6 +131,7 @@ class DiagonalJacobian(BaseJacobian):
         return self.diagonal()
 
     def todensearray(self):
+        from .dense_jacobians import DenseJacobian
         self_dense = DenseJacobian(self)
         return self_dense.todensearray()
 
