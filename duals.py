@@ -690,9 +690,12 @@ def atleast_1d(*args):
 @implements(np.diff)
 def diff(array, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
     result_ = np.diff(array.value, n, axis, prepend, append) << array.unit
+    dependent_shape = result_.shape
     result = dlarray(result_)
     for name, jacobian in array.jacobians.items():
-        result.jacobians[name] = jacobian.diff(n, axis, prepend, append)
+        result.jacobians[name] = jacobian.diff(
+            dependent_shape, n, axis, prepend, append
+        )
     return result
 
 

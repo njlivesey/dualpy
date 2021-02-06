@@ -86,6 +86,25 @@ class BaseJacobian(object):
         result = copy.copy(self)  # or should this be deepcopy
         result.dependent_unit = unit
 
+    def _get_jaxis(self, axis, none="none"):
+        """Correct negative axis arguments so they're valid for jacobians"""
+        # Negative axis requests count backwards from the last index,
+        # but the Jacobians have the independent_shape appended to
+        # their shape, so we need to correct for that (or not if its positive)
+        if axis is None:
+            if none == "none":
+                return None
+            if none == "zero":
+                return 0
+            if none is "all":
+                return tuple(range(self.dependent_ndim))
+            else: ValueError('"none" argument must be one of "none", "zero", or "all"')
+        else:
+            try:
+                return tuple(a if a >= 0 else a - self.independent_ndim for a in axis)
+            except TypeError:
+                return axis if axis >= 0 else axis - self.independent_ndim
+    
     def real(self):
         return type(self)(np.real(self.data), template=self)
 

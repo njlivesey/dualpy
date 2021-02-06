@@ -14,6 +14,7 @@ class DenseJacobian(BaseJacobian):
     def __init__(self, data, template=None, **kwargs):
         from .sparse_jacobians import SparseJacobian
         from .diagonal_jacobians import DiagonalJacobian
+
         if isinstance(data, BaseJacobian):
             if template is None:
                 template = data
@@ -123,13 +124,7 @@ class DenseJacobian(BaseJacobian):
 
     def insert(self, obj, axis, dependent_shape):
         """insert method for dense Jacobian"""
-        # print (f"Doing insert on {self}")
-        # print (f"obj is {obj}")
-        # print (f"axis is {axis}")
-        if axis is None:
-            jaxis = 0
-        else:
-            jaxis = axis
+        jaxis = self._get_jaxis(axis, none="zero")
         data = np.insert(self.data, obj, 0.0, jaxis)
         # print (f"data comes back as {data.shape}")
         return DenseJacobian(data, template=self, dependent_shape=dependent_shape)
@@ -139,13 +134,7 @@ class DenseJacobian(BaseJacobian):
         # Negative axis requests count backwards from the last index,
         # but the Jacobians have the independent_shape appended to
         # their shape, so we need to correct for that (or not if its positive)
-        if axis is None:
-            jaxis = tuple(range(self.dependent_ndim))
-        else:
-            try:
-                jaxis = tuple(a if a >= 0 else a - self.independent_ndim for a in axis)
-            except TypeError:
-                jaxis = axis if axis >= 0 else axis - self.independent_ndim
+        jaxis = self._get_jaxis(axis, none="all")
         return DenseJacobian(
             data=np.sum(self.data, axis=jaxis, dtype=dtype, keepdims=keepdims),
             template=self,
@@ -156,7 +145,25 @@ class DenseJacobian(BaseJacobian):
         """Perform cumsum for a dense Jacobian"""
         return DenseJacobian(template=self, data=np.cumsum(self.data, axis))
 
-    
+    def diff(
+        self, dependent_shape, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue
+    ):
+        """diff method for dense jacobian"""
+        jaxis = self._get_jaxis(axis)
+        if prepend is not np._NoValue:
+            prepend = np.expand_dims(
+                prepend,
+                range(self.dependent_ndim, self.dependent_ndim + self.independent_ndim),
+            )
+        if append is not np._NoValue:
+            append = np.expand_dims(
+                append,
+                range(self.dependent_ndim, self.dependent_ndim + self.independent_ndim),
+            )
+        result_ = np.diff(self.data, n, jaxis, prepend, append)
+        return DenseJacobian(
+            data=result_, template=self, dependent_shape=dependent_shape
+        )
 
     def extract_diagonal(self):
         """Extract the diagonal from a dense Jacobian"""

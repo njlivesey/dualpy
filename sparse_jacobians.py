@@ -196,11 +196,8 @@ class SparseJacobian(BaseJacobian):
         self_coo = self.data2d.tocoo()
         # OK, unravel the multi index that makes up the rows
         all_indices = list(np.unravel_index(self_coo.row, self.dependent_shape))
-        if axis is None:
-            axis_ = 0
-        else:
-            axis_ = axis
-        i = all_indices[axis_]
+        axis = self.get_jaxis(axis, none="zero")
+        i = all_indices[axis]
         # Convert insertion requests to list
         try:
             obj_ = obj.tolist()
@@ -213,7 +210,7 @@ class SparseJacobian(BaseJacobian):
         # Loop over those insertion requests
         for j in obj_:
             i[j:] += 1
-        all_indices[axis_] = i
+        all_indices[axis] = i
         row = np.ravel_multi_index(all_indices, dependent_shape)
         dependent_size = int(np.prod(dependent_shape))
         self_coo = sparse.coo_matrix(
@@ -372,11 +369,15 @@ class SparseJacobian(BaseJacobian):
                 result = SparseJacobian(template=self, data=result_coo.tocsc())
         return result
 
-    def diff(self, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
+    def diff(
+        self, dependent_shape, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue
+    ):
         """diff method for sparse jacobian"""
+        from .dense_jacobians import DenseJacobian
         # For now at least I'm going to have this go to dense.
-        self_dense = SparseJacobian(self)
-        return self_dense.diff(n, axis, prepend, append)
+        self_dense = DenseJacobian(self)
+        result_dense = self_dense.diff(dependent_shape, n, axis, prepend, append)
+        return SparseJacobian(result_dense)
 
     def extract_diagonal(self):
         """Extract the diagonal from a sparse Jacobian"""

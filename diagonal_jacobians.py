@@ -95,12 +95,12 @@ class DiagonalJacobian(BaseJacobian):
         self_sparse = SparseJacobian(self)
         return self_sparse.insert(obj, axis, dependent_shape)
 
-    def diff(self, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
+    def diff(self, dependent_shape, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
         """diff method for diagonal jacobian"""
         # Again, the result will not be diagonal, so change to sparse and do diff in
         # that space.
         self_sparse = SparseJacobian(self)
-        return self_sparse.diff(n, axis, prepend, append)
+        return self_sparse.diff(dependent_shape, n, axis, prepend, append)
 
     def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):
         """Performs sum for the diagonal Jacobians"""
