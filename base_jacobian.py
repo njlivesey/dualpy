@@ -22,6 +22,7 @@ class BaseJacobian(object):
         independent_unit=None,
         dependent_shape=None,
         independent_shape=None,
+        dtype=None,
     ):
         """Define a new jacobian"""
 
@@ -55,6 +56,7 @@ class BaseJacobian(object):
         self.shape2d = (self.dependent_size, self.independent_size)
         self._dummy_dependent = (1,) * self.dependent_ndim
         self._dummy_independent = (1,) * self.independent_ndim
+        self.dtype = dtype
 
     def __str__(self):
         return (
@@ -96,15 +98,21 @@ class BaseJacobian(object):
                 return None
             if none == "zero":
                 return 0
-            if none is "all":
-                return tuple(range(self.dependent_ndim))
-            else: ValueError('"none" argument must be one of "none", "zero", or "all"')
+            if none == "all":
+                return list(range(self.dependent_ndim))
+            if none == "transpose":
+                return list(range(self.dependent_ndim)[::-1])
+            else:
+                ValueError(
+                    '"none" argument must be one of '
+                    + '"none", "zero", "all", or "transpose"'
+                )
         else:
             try:
                 return tuple(a if a >= 0 else a - self.independent_ndim for a in axis)
             except TypeError:
                 return axis if axis >= 0 else axis - self.independent_ndim
-    
+
     def real(self):
         return type(self)(np.real(self.data), template=self)
 

@@ -5,6 +5,7 @@ import astropy.units as units
 import fnmatch
 
 from .dual_helpers import _setup_dual_operation, _per_rad, _broadcast_jacobians
+from .jacobians import _setitem_jacobians
 
 
 __all__ = ["dlarray", "nan_to_num_jacobians"]
@@ -119,10 +120,11 @@ class dlarray(units.Quantity):
         return out
 
     def __setitem__(self, key, value):
-        s_, v_, sj, vj, out_ = _setup_dual_operation(self, value)
-        s_.__setitem__(key, value)
-        for name, jacobian in sj.items():
-            jacobian._setjitem(key, vj.get(name, None))
+        s, v, sj, vj, out_ = _setup_dual_operation(self, value, broadcast=False)
+        s.__setitem__(key, value)
+        # Doing a setitem on the Jacobians requires some more intimate knowledge so let
+        # the jacobians module handle it.
+        s = _setitem_jacobians(key, s, sj, vj)
 
     def _check(self, name="<unknown>"):
         # A routine to check that a dual is OK
@@ -406,6 +408,13 @@ class dlarray(units.Quantity):
     def log10(a):
         return (1.0 / np.log(10.0)) * np.log(a)
 
+    def transpose(a, axes=None):
+        out = dlarray(units.Quantity(a).transpose(axes))
+        for name, jacobian in a.jacobians.items():
+            out.jacobians[name] = jacobian.transpose(axes, out.shape)
+        return out
+
+            
     # A note on the trigonometric cases, we'll cut out the middle man
     # here and go straight to numpy, forcing the argument into
     # radians.

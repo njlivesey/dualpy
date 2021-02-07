@@ -16,9 +16,10 @@ def _broadcast_jacobians(js, new):
     return out
 
 
-def _setup_dual_operation(*args, out=None):
+def _setup_dual_operation(*args, out=None, broadcast=True):
     arrays_ = [np.asarray(x) for x in args]
-    arrays_ = np.broadcast_arrays(*arrays_)
+    if broadcast:
+        arrays_ = np.broadcast_arrays(*arrays_)
     # Put units back on after all that
     arrays_ = [
         x << orig.unit if hasattr(orig, "unit") else x for x, orig in zip(arrays_, args)
@@ -27,7 +28,7 @@ def _setup_dual_operation(*args, out=None):
     jacobians = []
     for x, orig in zip(arrays_, args):
         if hasattr(orig, "jacobians"):
-            if orig.shape != x.shape:
+            if orig.shape != x.shape and broadcast:
                 j = _broadcast_jacobians(orig.jacobians, x.shape)
             else:
                 j = orig.jacobians

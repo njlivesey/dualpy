@@ -3,6 +3,7 @@
 import numpy as np
 
 from .base_jacobian import BaseJacobian
+
 # Seeing as we cast to sparse so often, we'll import it globally
 from .sparse_jacobians import SparseJacobian
 
@@ -31,6 +32,8 @@ class DiagonalJacobian(BaseJacobian):
                 raise ValueError(
                     "Can only create diagonal Jacobians from other diagonals"
                 )
+        elif data is None:
+            data_ = np.zeros(shape=self.shape, dtype=self.dtype)
         else:
             data_ = data
         if data_.shape != self.dependent_shape:
@@ -38,6 +41,7 @@ class DiagonalJacobian(BaseJacobian):
                 "Attempt to create a diagonal Jacobian using wrong-shaped input"
             )
         self.data = data_
+        self.dtype = self.data.dtype
 
     def __str__(self):
         return super().__str__() + f"\ndata is {self.data.shape}"
@@ -95,12 +99,21 @@ class DiagonalJacobian(BaseJacobian):
         self_sparse = SparseJacobian(self)
         return self_sparse.insert(obj, axis, dependent_shape)
 
-    def diff(self, dependent_shape, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
+    def diff(
+        self, dependent_shape, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue
+    ):
         """diff method for diagonal jacobian"""
         # Again, the result will not be diagonal, so change to sparse and do diff in
         # that space.
         self_sparse = SparseJacobian(self)
         return self_sparse.diff(dependent_shape, n, axis, prepend, append)
+
+    def transpose(self, axes, dependent_shape):
+        return DiagonalJacobian(
+            data=self.data.transpose(axes),
+            template=self,
+            dependent_shape=dependent_shape,
+        )
 
     def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):
         """Performs sum for the diagonal Jacobians"""
@@ -132,6 +145,7 @@ class DiagonalJacobian(BaseJacobian):
 
     def todensearray(self):
         from .dense_jacobians import DenseJacobian
+
         self_dense = DenseJacobian(self)
         return self_dense.todensearray()
 

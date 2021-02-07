@@ -34,6 +34,8 @@ class SparseJacobian(BaseJacobian):
             data2d_ = sparse.csc_matrix(data.data2d)
         elif type(data) is sparse.csc_matrix:
             data2d_ = data
+        elif data is None:
+            data2d_ = sparse.csc_matrix(shape=self.shape2d)
         else:
             raise TypeError("Values supplied to SparseJacobian are not suitable")
         if data2d_.shape != self.shape2d:
@@ -293,6 +295,8 @@ class SparseJacobian(BaseJacobian):
 
     def cumsum(self, axis, heroic=False):
         """Perform cumsum for a sparse Jacobian"""
+        from .dense_jacobians import DenseJacobian
+
         # Cumulative sums by definitiona severly reduce sparsity.
         # However, there may be cases where we're effectively doing
         # lots of parallel sums here, so the "off-diagonal blocks" may
@@ -374,10 +378,17 @@ class SparseJacobian(BaseJacobian):
     ):
         """diff method for sparse jacobian"""
         from .dense_jacobians import DenseJacobian
+
         # For now at least I'm going to have this go to dense.
         self_dense = DenseJacobian(self)
         result_dense = self_dense.diff(dependent_shape, n, axis, prepend, append)
         return SparseJacobian(result_dense)
+
+    def transpose(axes):
+        """Transpose a sparse jacobian"""
+        raise NotImplementedError(
+            "Not yet coded up a transpose for the sparse jacobian"
+        )
 
     def extract_diagonal(self):
         """Extract the diagonal from a sparse Jacobian"""

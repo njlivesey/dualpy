@@ -1,7 +1,10 @@
 """Class for dense jacobians"""
 import numpy as np
 
-from .jacobian_helpers import _array_to_sparse_diagonal
+from .jacobian_helpers import (
+    _array_to_sparse_diagonal,
+    _prepare_jacobians_for_binary_op,
+)
 from .base_jacobian import BaseJacobian
 
 
@@ -11,7 +14,7 @@ __all__ = ["DenseJacobian"]
 class DenseJacobian(BaseJacobian):
     """A dljacobian that's a full on ndarray"""
 
-    def __init__(self, data, template=None, **kwargs):
+    def __init__(self, data=None, template=None, **kwargs):
         from .sparse_jacobians import SparseJacobian
         from .diagonal_jacobians import DiagonalJacobian
 
@@ -34,6 +37,8 @@ class DenseJacobian(BaseJacobian):
                 data_ = np.reshape(data.data2d.toarray(), template.shape)
             else:
                 raise ValueError("Unrecognized type for input jacobian")
+        elif data is None:
+            data_ = np.zeros(shape=self.shape, dtype=self.dtype)
         else:
             data_ = data
         if data_.shape != self.shape:
@@ -42,6 +47,7 @@ class DenseJacobian(BaseJacobian):
         self.data2d = np.reshape(
             self.data, [self.dependent_size, self.independent_size]
         )
+        self.dtype = self.data.dtype
 
     def __str__(self):
         return (
@@ -163,6 +169,15 @@ class DenseJacobian(BaseJacobian):
         result_ = np.diff(self.data, n, jaxis, prepend, append)
         return DenseJacobian(
             data=result_, template=self, dependent_shape=dependent_shape
+        )
+
+    def transpose(self, axes, dependent_shape):
+        jaxes = self._get_jaxis(axes, none="transpose")
+        jaxes += list(range(self.dependent_ndim, self.ndim))
+        return DenseJacobian(
+            data=self.data.transpose(jaxes),
+            template=self,
+            dependent_shape=dependent_shape,
         )
 
     def extract_diagonal(self):
