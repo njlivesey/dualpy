@@ -109,7 +109,14 @@ class dlarray(units.Quantity):
         if func in HANDLED_FUNCTIONS:
             return HANDLED_FUNCTIONS[func](*args, **kwargs)
         elif func in FALLTHROUGH_FUNCTIONS:
-            return super().__array_function__(self, func, types, args, kwargs)
+            return super().__array_function__(func, types, args, kwargs)
+        elif func in RECAST_FUNCTIONS:
+            # This doesn't work and generates a weird c-runtime error. I've obviated the
+            # need for it in any case (thus far).
+            if types != (dlarray,):
+                return NotImplemented
+            qargs = (units.Quantity(arg) for arg in args)
+            return super().__array_function__(func, (units.Quantity,), qargs, kwargs)
         else:
             return NotImplemented
 
@@ -414,7 +421,6 @@ class dlarray(units.Quantity):
             out.jacobians[name] = jacobian.transpose(axes, out.shape)
         return out
 
-            
     # A note on the trigonometric cases, we'll cut out the middle man
     # here and go straight to numpy, forcing the argument into
     # radians.
@@ -613,7 +619,8 @@ class dlarray(units.Quantity):
 
 # -------------------------------------- Now the array functions
 HANDLED_FUNCTIONS = {}
-FALLTHROUGH_FUNCTIONS = []  # [np.diff]
+FALLTHROUGH_FUNCTIONS = []
+RECAST_FUNCTIONS = []  # [np.empty_like, np.zeros_like, np.ones_like]
 
 
 def implements(numpy_function):
@@ -800,6 +807,28 @@ def real(a):
         out.jacobians[name] = jacobian.real()
     return out
 
+
+@implements(np.empty_like)
+def empty_like(prototype, dtype=None, order="K", subok=True, shape=None):
+    return np.empty_like(units.Quantity(prototype), dtype, order, subok, shape)
+
+
+@implements(np.zeros_like)
+def zeros_like(prototype, dtype=None, order="K", subok=True, shape=None):
+    return np.zeros_like(units.Quantity(prototype), dtype, order, subok, shape)
+
+
+@implements(np.ones_like)
+def ones_like(prototype, dtype=None, order="K", subok=True, shape=None):
+    return np.ones_like(units.Quantity(prototype), dtype, order, subok, shape)
+
+
+@implements(np.expand_dims)
+def expand_dims(a, axis):
+    result = dlarray(np.expand_dims(units.Quantity(a), axis))
+    for name, jacobian in a.jacobians.items():
+        result.jacobians[name] = jacobian.reshape(result.shape)
+    return result
 
 def nan_to_num_jacobians(x, copy=True, nan=0.0, posinf=None, neginf=None):
     return nan_to_num(

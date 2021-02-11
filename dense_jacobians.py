@@ -79,7 +79,7 @@ class DenseJacobian(BaseJacobian):
             self_, value_, result_type = _prepare_jacobians_for_binary_op(self, value)
             if result_type != type(self):
                 return TypeError(
-                    "Jacobian is not of correct time to receive new contents"
+                    "Jacobian is not of correct type to receive new contents"
                 )
         else:
             value_ = 0.0
@@ -179,6 +179,7 @@ class DenseJacobian(BaseJacobian):
             template=self,
             dependent_shape=dependent_shape,
         )
+        
 
     def extract_diagonal(self):
         """Extract the diagonal from a dense Jacobian"""

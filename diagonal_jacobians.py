@@ -4,7 +4,7 @@ import numpy as np
 
 from .base_jacobian import BaseJacobian
 
-# Seeing as we cast to sparse so often, we'll import it globally
+# eeing as we cast to sparse so often, we'll import it globally
 from .sparse_jacobians import SparseJacobian
 
 
@@ -50,7 +50,7 @@ class DiagonalJacobian(BaseJacobian):
         """A getitem type method for diagonal Jacobians"""
         # OK, once we extract items, this will no longer be diagonal,
         # so we convert to sparse before doing the subset.
-        self_sparse = SparseJacobian(data=self)
+        self_sparse = SparseJacobian(self)
         result = self_sparse._getjitem(new_shape, key)
         return result
 
@@ -58,7 +58,7 @@ class DiagonalJacobian(BaseJacobian):
         """A setitem type method for diagonal Jacobians"""
         # OK, once we insert items, this will no longer be diagonal,
         # so we convert to sparse before doing the subset
-        self = SparseJacobian(data=self)
+        self = SparseJacobian(self)
         self._setjitem(key, value)
 
     def broadcast_to(self, shape):

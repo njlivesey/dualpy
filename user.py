@@ -24,7 +24,7 @@ def seed(value, name, force=False, overwrite=False, reset=False):
     # regular basis.  It takes an astropy.Quantity and adds a diagonal
     # unit jacobian for it.  From that point on, anything computed from
     # the resulting dual will track Jacobians appropriately.
-    """Return a dual for a quantity populated with a unitary Jacobian matrix"""
+    """Rebturn a dual for a quantity populated with a unitary Jacobian matrix"""
 
     if type(value) is dlarray:
         if not force:
@@ -214,7 +214,10 @@ def wofz(z):
             "Can only apply wofz function to dimensionless quantities"
         )
     out_ = special.wofz(z_.value) << units.dimensionless_unscaled
-    out = dlarray(out_)
+    if isinstance(z,dlarray):
+        out = dlarray(out_)
+    else:
+        out = out_
     # The derivative actually comes out of the definition of the
     # Fadeeva function pretty easily
     if hasattr(z, "jacobians"):
