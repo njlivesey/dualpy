@@ -97,5 +97,5 @@ def _prepare_jacobians_for_binary_op(a, b):
     # If needed, put them in the same units by scaling b to be in a's
     # units
     if scale != 1.0:
-        b_ = b_.copy() * scale
+        b_ = b_ * scale
     return a_, b_, result_type

@@ -3,6 +3,7 @@
 import numpy as np
 import astropy.units as units
 import fnmatch
+from itertools import accumulate
 
 from .dual_helpers import _setup_dual_operation, _per_rad, _broadcast_jacobians
 from .jacobians import _setitem_jacobians
@@ -120,6 +121,21 @@ class dlarray(units.Quantity):
         else:
             return NotImplemented
 
+    def copy(self):
+        return self.__copy__()
+
+    def __copy__(self):
+        out = dlarray(units.Quantity(self))
+        for name, jacobian in self.jacobians.items():
+            out.jacobians[name] = jacobian
+        return out
+
+    def __deepcopy__(self, memo):
+        # If we don't define this, ``copy.deepcopy(quantity)`` will
+        # return a bare Numpy array.
+        result = self.copy()
+        return result
+
     def __getitem__(self, key):
         out = dlarray(units.Quantity(self).__getitem__(key))
         for name, jacobian in self.jacobians.items():
@@ -131,7 +147,31 @@ class dlarray(units.Quantity):
         s.__setitem__(key, value)
         # Doing a setitem on the Jacobians requires some more intimate knowledge so let
         # the jacobians module handle it.
-        s = _setitem_jacobians(key, s, sj, vj)
+        _setitem_jacobians(key, s, sj, vj)
+
+    def __eq__(a, b):
+        a_, b_, aj, bj, out = _setup_dual_operation(a, b)
+        return a_ == b_
+
+    def __ne__(a, b):
+        a_, b_, aj, bj, out = _setup_dual_operation(a, b)
+        return a_ != b_
+
+    def __gt__(a, b):
+        a_, b_, aj, bj, out = _setup_dual_operation(a, b)
+        return a_ > b_
+
+    def __gt__(a, b):
+        a_, b_, aj, bj, out = _setup_dual_operation(a, b)
+        return a_ >= b_
+
+    def __lt__(a, b):
+        a_, b_, aj, bj, out = _setup_dual_operation(a, b)
+        return a_ < b_
+
+    def __le__(a, b):
+        a_, b_, aj, bj, out = _setup_dual_operation(a, b)
+        return a_ <= b_
 
     def _check(self, name="<unknown>"):
         # A routine to check that a dual is OK
@@ -156,8 +196,8 @@ class dlarray(units.Quantity):
             out._chain_rule(self, scale)
         return out
 
-    # def decompose(self):
-    #     return self.to(self.unit.decompose())
+    def decompose(self):
+        return self.to(self.unit.decompose())
 
     def _ones_like(a):
         result_ = np.ones_like(units.Quantity(a))
@@ -828,6 +868,34 @@ def expand_dims(a, axis):
     result = dlarray(np.expand_dims(units.Quantity(a), axis))
     for name, jacobian in a.jacobians.items():
         result.jacobians[name] = jacobian.reshape(result.shape)
+    return result
+
+
+@implements(np.concatenate)
+def concatenate(values, axis=0, out=None):
+    if out is not None:
+        raise ValueError("Cannot concatenate duals into an out")
+    n = len(values)
+    everything = _setup_dual_operation(*values, broadcast=False)
+    all_values = everything[:n]
+    all_jacobians = everything[n:-1]
+    out = everything[-1]
+    # Populate the result
+    result_ = np.concatenate(all_values, axis, out)
+    result = dlarray(result_)
+    # Work out the spans of each set of values concatenated
+    sizes = [values.shape[axis] for values in all_values]
+    sizes.insert(0, 0)
+    spans = list(accumulate(sizes))
+    # Get _setitem_jacobians to do the dirty work
+    for i, jacobians in enumerate(all_jacobians):
+        # Work out where in the result this slice is going go
+        key = (
+            [slice(None)] * axis
+            + [slice(spans[i], spans[i + 1])]
+            + [slice(None)] * (result.ndim - axis - 1)
+        )
+        _setitem_jacobians(key, result, result.jacobians, jacobians)
     return result
 
 def nan_to_num_jacobians(x, copy=True, nan=0.0, posinf=None, neginf=None):

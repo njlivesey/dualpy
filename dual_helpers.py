@@ -38,8 +38,7 @@ def _setup_dual_operation(*args, out=None, broadcast=True):
 
     # Handle the case where an "out" is provided. I originally had some intelligence
     # about tracking whether out shares memory with any of the arguments but that got
-    # complicated (not least because there is no working "copy" for an astropy
-    # quantity). In the end I've recognized that we can code up the binary operations
+    # complicated. In the end I've recognized that we can code up the binary operations
     # such that we don't need to worry about such cases.
     if out is not None:
         if isinstance(out, tuple):

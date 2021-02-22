@@ -113,6 +113,13 @@ class BaseJacobian(object):
             except TypeError:
                 return axis if axis >= 0 else axis - self.independent_ndim
 
+    def _slice_axis(self, axis, s, none="none"):
+        """Return a key that has full slices for all axes, but s for axis"""
+        axis = self._get_jaxis(axis, none=none)
+        if axis is None:
+            raise ValueError("Axis cannot be None in this context")
+        return [slice(None)] * axis + [s] + [slice(none)] * (self.ndim - axis - 1)
+
     def real(self):
         return type(self)(np.real(self.data), template=self)
 
