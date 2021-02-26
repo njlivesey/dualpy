@@ -225,6 +225,7 @@ class SparseJacobian(BaseJacobian):
 
     def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):
         """Perform sum for the sparse Jacobians"""
+        from .dense_jacobians import DenseJacobian
         # Two different approaches, depending on whether axis is supplied
         if axis is None:
             # OK, here we want to sum over all the dependent elements,
