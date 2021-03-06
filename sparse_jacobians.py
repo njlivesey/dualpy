@@ -226,6 +226,7 @@ class SparseJacobian(BaseJacobian):
     def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):
         """Perform sum for the sparse Jacobians"""
         from .dense_jacobians import DenseJacobian
+
         # Two different approaches, depending on whether axis is supplied
         if axis is None:
             # OK, here we want to sum over all the dependent elements,
@@ -394,7 +395,10 @@ class SparseJacobian(BaseJacobian):
     def extract_diagonal(self):
         """Extract the diagonal from a sparse Jacobian"""
         if self.dependent_shape != self.independent_shape:
-            raise ValueError("Sparse Jacobian is not square")
+            raise ValueError(
+                f"Sparse Jacobian is not square "
+                + f"{self.dependent_shape};{self.independent_shape}"
+            )
         result_ = np.reshape(self.data2d.diagonal(), self.dependent_shape)
         return result_ << (self.dependent_unit / self.independent_unit)
 

@@ -2,20 +2,23 @@ import numpy as np
 import astropy.units as units
 import scipy.special as special
 import scipy.constants as constants
+import copy
 
 from .jacobians import DenseJacobian, DiagonalJacobian, SparseJacobian
 from .duals import dlarray
 from .dual_helpers import _setup_dual_operation
 
 __all__ = [
-    "seed",
     "_seed_dense",
-    "_seed_sparse",
     "_seed_diagonal",
+    "_seed_sparse",
     "compute_jacobians_numerically",
+    "cumulative_trapezoid",
+    "has_jacobians",
+    "multi_newton_raphson",
+    "seed",
     "solve_quadratic",
     "voigt_profile",
-    "cumulative_trapezoid",
 ]
 
 
@@ -215,7 +218,7 @@ def wofz(z):
             "Can only apply wofz function to dimensionless quantities"
         )
     out_ = special.wofz(z_.value) << units.dimensionless_unscaled
-    if isinstance(z,dlarray):
+    if isinstance(z, dlarray):
         out = dlarray(out_)
     else:
         out = out_
@@ -228,17 +231,9 @@ def wofz(z):
 
 
 def voigt_profile(x, sigma, gamma):
-    if hasattr(x, "_check"):
-        x._check("x")
-    if hasattr(sigma, "_check"):
-        sigma._check("sigma")
-    if hasattr(gamma, "_check"):
-        gamma._check("gamma")
     i = complex(0, 1)
     z = ((x + gamma * i) / (sigma * np.sqrt(2))).to(units.dimensionless_unscaled)
     outZ = wofz(z) / (sigma * np.sqrt(2 * constants.pi))
-    if hasattr(outZ, "_check"):
-        outZ._check("outZ")
     out = np.real(outZ)
     return out
 
@@ -247,6 +242,7 @@ def _tupleset(t, i, value):
     l = list(t)
     l[i] = value
     return tuple(l)
+
 
 def cumulative_trapezoid(y, x=None, dx=1.0, axis=-1, initial=None):
     """
@@ -313,18 +309,18 @@ def cumulative_trapezoid(y, x=None, dx=1.0, axis=-1, initial=None):
             shape[axis] = -1
             d = d.reshape(shape)
         elif len(x.shape) != len(y.shape):
-            raise ValueError("If given, shape of x must be 1-D or the "
-                             "same as y.")
+            raise ValueError("If given, shape of x must be 1-D or the " "same as y.")
         else:
             d = np.diff(x, axis=axis)
 
         if d.shape[axis] != y.shape[axis] - 1:
-            raise ValueError("If given, length of x along axis must be the "
-                             "same as y.")
+            raise ValueError(
+                "If given, length of x along axis must be the " "same as y."
+            )
 
     nd = len(y.shape)
-    slice1 = _tupleset((slice(None),)*nd, axis, slice(1, None))
-    slice2 = _tupleset((slice(None),)*nd, axis, slice(None, -1))
+    slice1 = _tupleset((slice(None),) * nd, axis, slice(1, None))
+    slice2 = _tupleset((slice(None),) * nd, axis, slice(None, -1))
     res = np.cumsum(d * (y[slice1] + y[slice2]) / 2.0, axis=axis)
     if initial is not None:
         if not np.isscalar(initial):
@@ -332,7 +328,56 @@ def cumulative_trapezoid(y, x=None, dx=1.0, axis=-1, initial=None):
 
         shape = list(res.shape)
         shape[axis] = 1
-        res = np.concatenate([np.full(shape, initial, dtype=res.dtype), res],
-                             axis=axis)
+        res = np.concatenate([np.full(shape, initial, dtype=res.dtype), res], axis=axis)
 
     return res
+
+
+def has_jacobians(a):
+    """Return true if a is a dual with Jacobians"""
+    if not isinstance(a, dlarray):
+        return False
+    return a.hasJ()
+
+
+def multi_newton_raphson(
+    func, y, x0, args=[], kwargs={}, dy_tolerance=None, dx_tolerance=None, max_iter=None
+):
+    # Remove Jacobians from x0 and add our own
+    jname = "_mnr_x"
+    if max_iter is None:
+        max_iter = -1
+    else:
+        if max_iter < 0:
+            raise ValueError("Bad value for max_iter: {max_iter}")
+    i = 0
+    # Take off any input jacobians.
+    x = units.Quantity(x0)
+    y_ = units.Quantity(y)
+    finish = False
+    reason = ""
+    while (i < max_iter or max_iter < 0) and not finish:
+        # Seed our special Jacobian
+        x = seed(x, jname)
+        delta_y = func(x, *args, **kwargs) - y_
+        if dy_tolerance is not None:
+            finish = np.all(abs(delta_y) < dy_tolerance)
+            reason = "dy"
+        # Compute the Newton-Raphson step, drop the Jacibians we don't want to carry
+        # round from iteration to interation
+        j = delta_y.jacobians[jname].extract_diagonal()
+        delta_x = units.Quantity(delta_y) / j
+        if dx_tolerance is not None:
+            finish = finish or np.all(abs(delta_x < dx_tolerance))
+            reason = "dx"
+        x = units.Quantity(x) - delta_x
+        i += 1
+    if reason == "":
+        reason = "max_iter"
+
+    # OK, we're done iterating.  Now we have to think about any Jacobians on the output
+    if has_jacobians(x0):
+        raise NotImplementedError(
+            "Not coded up the output Jacobian capability for multi_newton_raphson yet"
+        )
+    return x
