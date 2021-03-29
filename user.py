@@ -341,25 +341,78 @@ def has_jacobians(a):
 
 
 def multi_newton_raphson(
-    func, y, x0, args=[], kwargs={}, dy_tolerance=None, dx_tolerance=None, max_iter=None
+    x0,
+    func,
+    args=[],
+    kwargs={},
+    y=None,
+    dy_tolerance=None,
+    dx_tolerance=None,
+    max_iter=None,
 ):
-    # Remove Jacobians from x0 and add our own
-    jname = "_mnr_x"
+    """Solve for func(x)=y using the Newton-Raphson method in a dual-aware manner
+
+    x0: array-like
+        Initial guess for x
+
+    func: function to solve.
+        First argument must be x, and must return y.  Other arguments can be suppled
+        (see args and kwargs below). func(x) should be the same shape as x.
+
+    args, kwargs:
+        Optional additional arguments for func
+
+    y: array_like, optional, default None
+        Target result of func(x) for which value of x is sought.  If None, zero assumed
+
+    dy_tolerance: float or array-like, optional
+        If supplied solutions where func(x) is within dy_tolerance of y for all elements
+        are acceptable.
+
+    dx_tolerance: float or array_like, optional
+        If supplied, if all values of x move by an ammount smaller than dx_tolerance,
+        then the system is deemed to have converged.
+
+    max_iter: int, optional
+        Maximum number of iterations to be performed before giving up
+
+    Returns:
+    --------
+
+    Value of x that satisfy func(x)=y within supplied tolerances.  If y has Jacobian
+    information, then x is returned with corresponding Jacobian information.
+
+    To-do:
+    ------
+
+    Make it so it returns more useful information (optionally?)
+
+    Get the Jacobians working on the output.
+
+    """
+    # Set defaults
     if max_iter is None:
         max_iter = -1
     else:
         if max_iter < 0:
             raise ValueError("Bad value for max_iter: {max_iter}")
-    i = 0
+    # Remove Jacobians from x0 and add our own
+    jname = "_mnr_x"
     # Take off any input jacobians.
     x = units.Quantity(x0)
-    y_ = units.Quantity(y)
+    if y is not None:
+        y_ = units.Quantity(y)
+    # Other starup issues
+    i = 0
     finish = False
     reason = ""
     while (i < max_iter or max_iter < 0) and not finish:
         # Seed our special Jacobian
         x = seed(x, jname)
-        delta_y = func(x, *args, **kwargs) - y_
+        if y is None:
+            delta_y = func(x, *args, **kwargs)
+        else:
+            delta_y = func(x, *args, **kwargs) - y_
         if dy_tolerance is not None:
             finish = np.all(abs(delta_y) < dy_tolerance)
             reason = "dy"
@@ -376,7 +429,7 @@ def multi_newton_raphson(
         reason = "max_iter"
 
     # OK, we're done iterating.  Now we have to think about any Jacobians on the output
-    if has_jacobians(x0):
+    if has_jacobians(y):
         raise NotImplementedError(
             "Not coded up the output Jacobian capability for multi_newton_raphson yet"
         )
