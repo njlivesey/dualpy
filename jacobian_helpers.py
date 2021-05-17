@@ -71,8 +71,8 @@ def _prepare_jacobians_for_binary_op(a, b):
             b_ = b.data
         result_type = type(a)
     elif type(a) is DiagonalJacobian:
-        # If a is diagonal (and by implication b is not otherwise the
-        # above code would have handled things), then prompte a to
+        # If a is diagonal (and by implication b is not, otherwise the
+        # above code would have handled things), then promote a to
         # sparse and use the 2d view of b
         a_ = _array_to_sparse_diagonal(a.data)
         b_ = b.data2d

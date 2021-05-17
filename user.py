@@ -2,11 +2,14 @@ import numpy as np
 import astropy.units as units
 import scipy.special as special
 import scipy.constants as constants
-import copy
+import scipy.interpolate as interpolate
+import warnings
+from typing import Union
 
 from .jacobians import DenseJacobian, DiagonalJacobian, SparseJacobian
 from .duals import dlarray
 from .dual_helpers import _setup_dual_operation
+
 
 __all__ = [
     "_seed_dense",
@@ -19,7 +22,11 @@ __all__ = [
     "seed",
     "solve_quadratic",
     "voigt_profile",
+    "interp1d",
+    "PossibleDual"
 ]
+
+PossibleDual = Union[units.Quantity, dlarray]
 
 
 def seed(value, name, force=False, overwrite=False, reset=False):
@@ -434,3 +441,63 @@ def multi_newton_raphson(
             "Not coded up the output Jacobian capability for multi_newton_raphson yet"
         )
     return x
+
+
+def interp1d(
+    x,
+    y,
+    kind="linear",
+    axis=-1,
+    copy=True,
+    bounds_error=None,
+    fill_value=np.nan,
+    assume_sorted=False,
+):
+    """A dual/units.Quantity wrapper for scipy.interpoalte.interp1d"""
+    if has_jacobians(x):
+        raise ValueError("dualpy.interp1d cannot (yet) handle Jacobians for x-old")
+    y_interpolator = interpolate.interp1d(
+        x,
+        y,
+        kind=kind,
+        axis=axis,
+        copy=copy,
+        bounds_error=bounds_error,
+        fill_value=fill_value,
+        assume_sorted=assume_sorted,
+    )
+    if has_jacobians(y):
+        j_interpolators = dict()
+        for name, jacobian in y.jacobians.items():
+            jacobian = DenseJacobian(jacobian)
+            j_interpolators[name] = interpolate.interp1d(
+                x,
+                jacobian.data,
+                kind=kind,
+                axis=jacobian._get_jaxis(axis),
+                copy=copy,
+                bounds_error=bounds_error,
+                fill_value=fill_value,
+                assume_sorted=assume_sorted,
+            )
+
+    # Result - interpolator function
+    def result(x_new):
+        """Interpolator from dualpy.interp1d"""
+        if has_jacobians(x_new):
+            raise ValueError("dualpy.interp1d cannot (yet?) handle Jacobians on x-new")
+        y_new = y_interpolator(x_new.to(x.unit).value)
+        if has_jacobians(y):
+            y_new = dlarray(y_new * y.unit)
+            for name, j_interpolator in j_interpolators.items():
+                j_original = y.jacobians[name]
+                new_data = j_interpolator(x_new)
+                y_new.jacobians[name] = DenseJacobian(
+                    data=new_data,
+                    template=j_original,
+                    dependent_shape=y_new.shape,
+                )
+        return y_new
+
+    # End of result interpolator function.
+    return result
