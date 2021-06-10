@@ -17,16 +17,22 @@ __all__ = [
     "_seed_sparse",
     "compute_jacobians_numerically",
     "cumulative_trapezoid",
+    "dedual",
     "has_jacobians",
     "multi_newton_raphson",
     "seed",
     "solve_quadratic",
     "voigt_profile",
     "interp1d",
-    "PossibleDual"
+    "PossibleDual",
 ]
 
 PossibleDual = Union[units.Quantity, dlarray]
+
+
+def dedual(*args):
+    """Demote all arguments from dual back to astropy.Quantities"""
+    return (units.Quantity(arg) for arg in args)
 
 
 def seed(value, name, force=False, overwrite=False, reset=False):
