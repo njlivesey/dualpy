@@ -3,6 +3,7 @@ import astropy.units as units
 import scipy.special as special
 import scipy.constants as constants
 import scipy.interpolate as interpolate
+import scipy.fft as fft
 import warnings
 from typing import Union
 
@@ -12,6 +13,7 @@ from .dual_helpers import _setup_dual_operation
 
 
 __all__ = [
+    "PossibleDual",
     "_seed_dense",
     "_seed_diagonal",
     "_seed_sparse",
@@ -19,12 +21,13 @@ __all__ = [
     "cumulative_trapezoid",
     "dedual",
     "has_jacobians",
+    "interp1d",
+    "irfft",
     "multi_newton_raphson",
+    "rfft",
     "seed",
     "solve_quadratic",
     "voigt_profile",
-    "interp1d",
-    "PossibleDual",
 ]
 
 PossibleDual = Union[units.Quantity, dlarray]
@@ -483,7 +486,7 @@ def interp1d(
                 axis=jacobian._get_jaxis(axis),
                 copy=copy,
                 bounds_error=bounds_error,
-                fill_value=fill_value,
+                fill_value=(0, 0),  # fill_value,
                 assume_sorted=assume_sorted,
             )
 
@@ -506,4 +509,34 @@ def interp1d(
         return y_new
 
     # End of result interpolator function.
+    return result
+
+
+def rfft(x, axis=-1):
+    """Compute the 1-D discrete Fourier Transform for real input (includes duals)"""
+    result = fft.rfft(np.array(x), axis=axis) << x.unit
+    if has_jacobians(x):
+        result = dlarray(result)
+        for name, jacobian in x.jacobians.items():
+            jacobian = DenseJacobian(jacobian)
+            jaxis = jacobian._get_jaxis(axis)
+            jfft = fft.rfft(jacobian.data, axis=jaxis)
+            result.jacobians[name] = DenseJacobian(
+                jfft, template=jacobian, dependent_shape=result.shape
+            )
+    return result
+
+
+def irfft(x, axis=-1):
+    """Compute the 1-D discrete inverse Fourier Transform for real input (includes duals)"""
+    result = fft.irfft(np.array(x), axis=axis) << x.unit
+    if has_jacobians(x):
+        result = dlarray(result)
+        for name, jacobian in x.jacobians.items():
+            jacobian = DenseJacobian(jacobian)
+            jaxis = jacobian._get_jaxis(axis)
+            jfft = fft.irfft(jacobian.data, axis=jaxis)
+            result.jacobians[name] = DenseJacobian(
+                jfft, template=jacobian, dependent_shape=result.shape
+            )
     return result

@@ -11,7 +11,7 @@ __all__ = ["SparseJacobian"]
 class SparseJacobian(BaseJacobian):
     """A dljacobian that's stored as sparse 2D array under the hood"""
 
-    def __init__(self, data, template=None, **kwargs):
+    def __init__(self, data=None, template=None, **kwargs):
         """Create a new sparse jacobian"""
         from .dense_jacobians import DenseJacobian
         from .diagonal_jacobians import DiagonalJacobian
@@ -35,7 +35,7 @@ class SparseJacobian(BaseJacobian):
         elif type(data) is sparse.csc_matrix:
             data2d_ = data
         elif data is None:
-            data2d_ = sparse.csc_matrix(shape=self.shape2d)
+            data2d_ = sparse.csc_matrix(self.shape2d)
         else:
             raise TypeError("Values supplied to SparseJacobian are not suitable")
         if data2d_.shape != self.shape2d:
@@ -198,7 +198,7 @@ class SparseJacobian(BaseJacobian):
         self_coo = self.data2d.tocoo()
         # OK, unravel the multi index that makes up the rows
         all_indices = list(np.unravel_index(self_coo.row, self.dependent_shape))
-        axis = self.get_jaxis(axis, none="zero")
+        axis = self._get_jaxis(axis, none="zero")
         i = all_indices[axis]
         # Convert insertion requests to list
         try:
@@ -429,3 +429,66 @@ class SparseJacobian(BaseJacobian):
         self.dependent_unit *= scale.unit
         self.data2d *= scale.value
         return self
+
+    def _join(self, other, location, axis, result_dependent_shape):
+        """Insert/append sparse Jacobians"""
+        nd = self.dependent_ndim
+        try:
+            n_self = self.dependent_shape[axis]
+        except IndexError:
+            n_self = 1
+        try:
+            n_other = other.dependent_shape[axis]
+        except IndexError:
+            n_other = 1
+        # For now at least, we demand a scalar location here.
+        scalar_only = "insert/append only supported for scalar indices, for now"
+        try:
+            if location.size != 1 or len(location) != 1:
+                raise NotImplementedError(scalar_only)
+        except (AttributeError, TypeError):
+            pass
+        # Force the dependent shapes to be arrays
+        if len(self.dependent_shape) == 0:
+            self_dependent_shape = tuple([1])
+        else:
+            self_dependent_shape = self.dependent_shape
+        if len(other.dependent_shape) == 0:
+            other_dependent_shape = tuple([1])
+        else:
+            other_dependent_shape = other.dependent_shape
+        # Convert both to coo-based sparse matrices
+        self_coo = sparse.coo_matrix(self.data2d)
+        other_coo = sparse.coo_matrix(other.data2d)
+        # Unravel the row indices
+        self_row_indices = np.unravel_index(self_coo.row, shape=self_dependent_shape)
+        other_row_indices = np.unravel_index(other_coo.row, shape=other_dependent_shape)
+        # Now create the result indices, join the two sparse arrays, the relevant axis
+        # needs renumbering, others can remain the same.
+        result_row_indices = list()
+        for i, sri, ori in zip(range(nd), self_row_indices, other_row_indices):
+            if i == axis:
+                self_index_map = np.arange(n_self)
+                self_index_map[location:] += n_other
+                other_index_map = np.arange(n_other) + location
+                result_row_indices.append(
+                    np.concatenate((self_index_map[sri], other_index_map[ori]))
+                )
+            else:
+                result_row_indices.append(np.concatenate((sri, ori)))
+        # Re-reavel the row indcies
+        result_row = np.ravel_multi_index(result_row_indices, result_dependent_shape)
+        # The column indices are a straight forward concatenation
+        result_col = np.concatenate((self_coo.col, other_coo.col))
+        # Merge the two data arrays
+        result_coo_data = np.concatenate((self_coo.data, other_coo.data))
+        # Create the result
+        result_dependent_size = np.prod(result_dependent_shape)
+        result_j_shape2d = (result_dependent_size, self.independent_size)
+        result_coo = sparse.coo_matrix(
+            (result_coo_data, (result_row, result_col)), result_j_shape2d
+        )
+        result_csc = sparse.csc_matrix(result_coo)
+        return SparseJacobian(
+            result_csc, template=self, dependent_shape=result_dependent_shape
+        )

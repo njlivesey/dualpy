@@ -35,3 +35,59 @@ def _setitem_jacobians(key, target, target_jacobians, source_jacobians):
             )
         # Now insert the values
         target_jacobians[name]._setjitem(key, source_j)
+
+
+def _join_jacobians(a, b, location, axis, result_dependent_shape):
+    """Used by insert, append, others? to merge jacobians"""
+    from .user import has_jacobians
+
+    # Get a list of all the jacobans in a and b
+    jnames = set()
+    if has_jacobians(a):
+        jnames = jnames.union(set(a.jacobians.keys()))
+    if has_jacobians(b):
+        jnames = jnames.union(set(b.jacobians.keys()))
+    # Now loop over all these jacobians and try to formulate a result.
+    result = {}
+    for name in jnames:
+        # Find the jacobians in a and b, make them None if not included
+        js = []
+        for x in [a, b]:
+            try:
+                j = x.jacobians[name]
+                # Any diagonal Jacobians should be converted to sparse
+                if isinstance(j, DiagonalJacobian):
+                    j = SparseJacobian(j)
+            except (AttributeError, KeyError):
+                j = None
+            js.append(j)
+        aj, bj = js
+        # Now, if we did get a jacobian for both, make sure they're compatible
+        if isinstance(aj, BaseJacobian) and isinstance(bj, BaseJacobian):
+            if not aj.independents_compatible(bj):
+                raise ValueError("The independent variables are not compatible")
+        # Now we try to work out whether we're going to end up with a dense or sparse
+        # result
+        result_type = None
+        if isinstance(aj, DenseJacobian) or isinstance(bj, DenseJacobian):
+            result_type = DenseJacobian
+        else:
+            result_type = SparseJacobian
+        # Now make sure aj and bj are of type result_type (they still might be None)
+        if aj is None:
+            aj = result_type(
+                dependent_shape=a.shape,
+                dependent_unit=a.unit,
+                independent_shape=bj.independent_shape,
+                independent_unit=bj.independent_unit,
+            )
+        if bj is None:
+            bj = result_type(
+                dependent_shape=b.shape,
+                dependent_unit=b.unit,
+                independent_shape=aj.independent_shape,
+                independent_unit=aj.independent_unit,
+            )
+        # Now, finally, we're able to call upon the join method
+        result[name] = aj._join(bj, location, axis, result_dependent_shape)
+    return result

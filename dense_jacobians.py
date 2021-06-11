@@ -128,9 +128,9 @@ class DenseJacobian(BaseJacobian):
             dependent_shape=dependent_shape,
         )
 
-    def insert(self, obj, axis, dependent_shape):
+    def insert(self, obj, values, axis, dependent_shape):
         """insert method for dense Jacobian"""
-        jaxis = self._get_jaxis(axis, none="zero")
+        jaxis = self._get_jaxis(axis, none="flatten")
         data = np.insert(self.data, obj, 0.0, jaxis)
         # print (f"data comes back as {data.shape}")
         return DenseJacobian(data, template=self, dependent_shape=dependent_shape)
@@ -179,7 +179,6 @@ class DenseJacobian(BaseJacobian):
             template=self,
             dependent_shape=dependent_shape,
         )
-        
 
     def extract_diagonal(self):
         """Extract the diagonal from a dense Jacobian"""
@@ -196,3 +195,16 @@ class DenseJacobian(BaseJacobian):
 
     def to2darray(self):
         return self.to2ddensearray()
+
+    def _join(self, other, location, axis, result_dependent_shape):
+        """Insert/append dense Jacobians"""
+        n = self.dependent_shape[axis]
+        if location < n:
+            # This is an insert
+            result_ = np.insert(self.data, location, other.data, axis)
+        elif location == n:
+            # This is an append
+            result_ = np.append(self.data, other.data, axis)
+        return DenseJacobian(
+            result_, template=self, dependent_shape=result_dependent_shape
+        )

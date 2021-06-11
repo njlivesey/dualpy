@@ -6,7 +6,7 @@ import fnmatch
 from itertools import accumulate
 
 from .dual_helpers import _setup_dual_operation, _per_rad, _broadcast_jacobians
-from .jacobians import _setitem_jacobians
+from .jacobians import _setitem_jacobians, _join_jacobians
 
 
 __all__ = ["dlarray", "nan_to_num_jacobians"]
@@ -205,7 +205,7 @@ class dlarray(units.Quantity):
         return result
 
     def hasJ(self):
-        return self.jacobians
+        return len(self.jacobians) != 0
 
     # Update all the Jacobians in a dlarray by premultiplying them by
     # a diagonal.  Most of the work is done by the premul_diag method
@@ -311,6 +311,8 @@ class dlarray(units.Quantity):
         # Note that, the way this is constructed, it's OK if out
         # shares memory with a and/or b, neither a or b are used after
         # out is filled. We do need to keep 1/b though.
+        if b_.dtype.char in np.typecodes['AllInteger']:
+            b_ = 1.0*b_
         r_ = np.reciprocal(b_)
         if out is None:
             out = dlarray(a_ * r_)
@@ -777,22 +779,39 @@ def where(condition, a=None, b=None):
 
 @implements(np.insert)
 def insert(arr, obj, values, axis=None):
-    # Note that this is supposed to flatten the array first if axis is None
+    # Note that this is supposed to flatten the array first if axis is None.  By doing
+    # that here rather than relying on the original np.insert to do it, we can handle
+    # the issue with the Jacobians.
     if axis is None:
+        axis = 0
         arr = arr.flatten()
-    # print (type(arr), arr.jacobians)
-    result = dlarray(np.insert(units.Quantity(arr), obj, values, axis))
-    # In principal the user could want to insert a dual, that is that
-    # the values inserted have derivatives.  However, managing that
-    # will be a bit of a pain, so I'll skip it for now, and thus
-    # assert that we will not insert any values in the jacobians,
-    # because the inserted Jacobian values should be zero.
-    if isinstance(values, dlarray):
-        raise NotImplementedError("The values inserted cannot be a dual")
-    for name, jacobian in arr.jacobians.items():
-        result.jacobians[name] = jacobian.insert(obj, axis, result.shape)
+        try:
+            # Try to flatten values also
+            values = values.flatten()
+        except AttributeError:
+            pass
+    result = dlarray(np.insert(units.Quantity(arr), obj, units.Quantity(values), axis))
+    # Now deal with the Jacobians, first deal with anythat are in the values to add
+    result.jacobians = _join_jacobians(arr, values, obj, axis, result.shape)
     return result
 
+@implements(np.append)
+def append(arr, values, axis=None):
+    """Append values to the end of an array"""
+    # Note that this is supposed to flatten the array first if axis is None.  By doing
+    # that here rather than relying on the original np.insert to do it, we can handle
+    # the issue with the Jacobians.
+    if axis is None:
+        axis = 0
+        arr = arr.flatten()
+        try:
+            # Try to flatten values also
+            values = values.flatten()
+        except AttributeError:
+            pass
+    result = dlarray(np.append(units.Quantity(arr), units.Quantity(values), axis))
+    result.jacobians = _join_jacobians(arr, values, arr.shape[axis], axis, result.shape)
+    return result
 
 @implements(np.searchsorted)
 def searchsorted(a, v, side="left", sorter=None):
@@ -850,17 +869,26 @@ def real(a):
 
 @implements(np.empty_like)
 def empty_like(prototype, dtype=None, order="K", subok=True, shape=None):
-    return np.empty_like(units.Quantity(prototype), dtype, order, subok, shape)
+    return dlarray(
+        np.empty_like(units.Quantity(prototype), dtype, order, subok, shape)
+        << prototype.unit
+    )
 
 
 @implements(np.zeros_like)
 def zeros_like(prototype, dtype=None, order="K", subok=True, shape=None):
-    return np.zeros_like(units.Quantity(prototype), dtype, order, subok, shape)
+    return dlarray(
+        np.zeros_like(units.Quantity(prototype), dtype, order, subok, shape)
+        << prototype.unit
+    )
 
 
 @implements(np.ones_like)
 def ones_like(prototype, dtype=None, order="K", subok=True, shape=None):
-    return np.ones_like(units.Quantity(prototype), dtype, order, subok, shape)
+    return dlarray(
+        np.ones_like(units.Quantity(prototype), dtype, order, subok, shape)
+        << prototype.unit
+    )
 
 
 @implements(np.expand_dims)
@@ -897,6 +925,7 @@ def concatenate(values, axis=0, out=None):
         )
         _setitem_jacobians(key, result, result.jacobians, jacobians)
     return result
+
 
 def nan_to_num_jacobians(x, copy=True, nan=0.0, posinf=None, neginf=None):
     return nan_to_num(

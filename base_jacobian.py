@@ -96,16 +96,20 @@ class BaseJacobian(object):
         if axis is None:
             if none == "none":
                 return None
-            if none == "zero":
+            if none == "flatten":
                 return 0
+            if none == "first":
+                return 0
+            if none == "last":
+                return self.dependent_ndim - 1
             if none == "all":
-                return list(range(self.dependent_ndim))
+                return tuple(range(self.dependent_ndim))
             if none == "transpose":
-                return list(range(self.dependent_ndim)[::-1])
+                return tuple(range(self.dependent_ndim)[::-1])
             else:
                 ValueError(
                     '"none" argument must be one of '
-                    + '"none", "zero", "all", or "transpose"'
+                    + '"none", "first", "last", "all", or "transpose"'
                 )
         else:
             try:
@@ -173,3 +177,12 @@ class BaseJacobian(object):
         self.dependent_unit *= scale.unit
         self.data *= scale.value
         return self
+
+    def independents_compatible(self, other):
+        """Return true if the independent variables for two jacobians are compatible"""
+        if self.independent_shape != other.independent_shape:
+            return False
+        if self.independent_unit != other.independent_unit:
+            return False
+        return True
+    
