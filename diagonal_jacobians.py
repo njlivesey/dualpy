@@ -108,11 +108,11 @@ class DiagonalJacobian(BaseJacobian):
         self_sparse = SparseJacobian(self)
         return self_sparse.diff(dependent_shape, n, axis, prepend, append)
 
-    def transpose(self, axes, dependent_shape):
+    def transpose(self, axes, result_dependent_shape):
         return DiagonalJacobian(
             data=self.data.transpose(axes),
             template=self,
-            dependent_shape=dependent_shape,
+            dependent_shape=result_dependent_shape,
         )
 
     def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):

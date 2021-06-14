@@ -77,11 +77,19 @@ class BaseJacobian(object):
         return type(self)(-self.data, template=self)
 
     def __add__(self, other):
+        from .dense_jacobians import DenseJacobian
         s_, o_, result_type = _prepare_jacobians_for_binary_op(self, other)
-        return result_type(data=s_ + o_, template=self)
+        result_ = s_ + o_
+        if result_type is DenseJacobian:
+            result_ = np.reshape(np.array(result_), self.shape)
+        return result_type(data=result_, template=self)
 
-    def __subtract__(self, other):
+    def __sub__(self, other):
+        from .dense_jacobians import DenseJacobian
         s_, o_, result_type = _prepare_jacobians_for_binary_op(self, other)
+        result_ = s_ - o_
+        if result_type is DenseJacobian:
+            result_ = np.reshape(np.array(result_), self.shape)
         return result_type(data=s_ - o_, template=self)
 
     def __lshift__(self, unit):
@@ -131,7 +139,6 @@ class BaseJacobian(object):
     # premul_diag.  It works out the units issues and sets up for
     # broadcasting.
     def _prepare_premul_diag(self, diag):
-        # print (f"Asked for premul_diag on {self}\n.... with {diag.shape}")
         if hasattr(diag, "unit"):
             dependent_unit = diag.unit * self.dependent_unit
             diag_ = diag.value
@@ -139,7 +146,6 @@ class BaseJacobian(object):
             dependent_unit = self.dependent_unit
             diag_ = diag
         dependent_shape = _broadcasted_shape(self.dependent_shape, diag_.shape)
-        # print (f"Will return dependent_shape={dependent_shape}")
         return diag_, dependent_unit, dependent_shape
 
     def flatten(self, order="C"):
@@ -159,17 +165,13 @@ class BaseJacobian(object):
         if unit == self.dependent_unit:
             return self
         scale = self.dependent_unit._to(unit) * (unit / self.dependent_unit)
-        # print (f"Scaling from {self.dependent_unit} to {unit}, factor={scale}")
         return self.scalar_multiply(scale)
 
     def decompose(self):
         """Decompose the dependent_unit for a Jacobian"""
         raise NotImplementedError("Should not be needed")
-        print(f"In decompose comes in with {self.dependent_unit}")
         unit = self.dependent_unit.decompose()
-        print(f"In decompose, try to give unit {unit}")
         result = self.to(unit)
-        print(f"In decompose goes out with {self.dependent_unit}")
         return result
 
     def scalar_multiply(self, scale):

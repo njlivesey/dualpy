@@ -3,6 +3,7 @@
 import numpy as np
 import scipy.sparse as sparse
 import itertools
+import astropy.units as units
 
 __all__ = [
     "_array_to_sparse_diagonal",
@@ -78,7 +79,7 @@ def _prepare_jacobians_for_binary_op(a, b):
         b_ = b.data2d
         result_type = type(b)
     elif type(b) is DiagonalJacobian:
-        # This is the converse case
+        # This is the converse caseb
         a_ = a.data2d
         b_ = _array_to_sparse_diagonal(b.data)
         result_type = type(a)
@@ -99,3 +100,43 @@ def _prepare_jacobians_for_binary_op(a, b):
     if scale != 1.0:
         b_ = b_ * scale
     return a_, b_, result_type
+
+
+def matrix_multiply_jacobians(a, b):
+    """Perform a matrix multiply on two Jacobians"""
+    from .base_jacobian import BaseJacobian
+    from .dense_jacobians import DenseJacobian
+    from .diagonal_jacobians import DiagonalJacobian
+    from .sparse_jacobians import SparseJacobian
+    
+    # I need this rarely enough that I'm not going to do it as an operator, in order to
+    # avoid doing it by mistake.
+    # First check that things are going to make sense.
+    scale = 1.0
+    if a.independent_unit != b.dependent_unit:
+        try:
+            scale *= b.dependent_unit.to(a.dependent_unit)
+        except units.UnitsError:
+            raise ValueError("Units not compatible for Jacobian matrix multiply")
+    if a.dependent_shape != b.dependent_shape:
+        raise ValueError("Shapes not compatible for Jacobian matrix multiply")
+    # If any Jacobians are diagonal, make them sparse for an easier time.
+    if isinstance(a, DiagonalJacobian):
+        a = SparseJacobian(a)
+    if isinstance(b, DiagonalJacobian):
+        b = SparseJacobian(b)
+    # Now work out what the reuslt will be
+    if isinstance(a, DenseJacobian) or isinstance(b, DenseJacobian):
+        result_type = DenseJacobian
+    else:
+        result_type = SparseJacobian
+    result_values = a.data2d @ b.data2d
+    result_template = BaseJacobian(
+        dependent_shape=a.dependent_shape,
+        dependent_unit=a.dependent_unit,
+        independent_shape=b.independent_shape,
+        independent_unit=b.independent_unit,
+    )
+    if result_type is DenseJacobian:
+        result_values = np.reshape(result_values, result_template.shape)
+    return result_type(result_values, template=result_template)

@@ -64,17 +64,6 @@ class dlarray(units.Quantity):
         # We do not need to return anything
 
     def __array_ufunc__(self, ufunc, method, *args, **kwargs):
-        # print(f"----------------- In __array_ufunc__")
-        # print(f"type(self): {type(self)}")
-        # print(f"self: {self}")
-        # print(f"type(ufunc): {type(ufunc)}")
-        # print(f"ufunc: {ufunc}")
-        # print(f"type(method): {type(method)}")
-        # print(f"method: {method}")
-        # print(f"self: {self}")
-        # for a,i in zip(args,np.arange(len(args))):
-        #     print (f"args[{i}]: {a}")
-
         # The comparators can just call their numpy equivalents, I'm
         # going to blythely assert that we don't care to compare
         # jacobians.  Later, we may decide that other operators fall
@@ -93,14 +82,10 @@ class dlarray(units.Quantity):
             return ufunc(np.asarray(self))
         # Otherwise, we look for this same ufunc in our own type and
         # try to invoke that.
-        # if method == "reduce":
-        #     print (args)
-        #     print (kwargs)
-        #     return 0
-        # elif method == "__call__":
         # However, first some intervention
         dlufunc = getattr(dlarray, ufunc.__name__, None)
         if dlufunc is None:
+            raise NotImplementedError("No implementation for {method}")
             return NotImplemented
         result = dlufunc(*args, **kwargs)
         result._check()
@@ -176,12 +161,16 @@ class dlarray(units.Quantity):
     def _check(self, name="<unknown>"):
         # A routine to check that a dual is OK
         for jname, jacobian in self.jacobians.items():
-            if self.unit != jacobian.dependent_unit:
-                raise units.UnitsError(
-                    f"The {jname} Jacobian for {name} has the wrong dependent"
-                    f"units ({jacobian.dependent_unit} rather"
-                    f"than {self.unit})"
-                )
+            assert self.unit == jacobian.dependent_unit, (
+                f"The {jname} Jacobian for {name} has the wrong dependent "
+                f"units ({jacobian.dependent_unit} rather "
+                f"than {self.unit})"
+            )
+            assert self.shape == jacobian.dependent_shape, (
+                f"The {jname} Jacobian for {name} has the wrong dependent "
+                f"size ({jacobian.dependent_shape} rather "
+                f"than {self.shape})"
+            )
 
     def to(self, unit, **kwargs):
         # If it's a no-op, then take advantage of that
@@ -311,8 +300,8 @@ class dlarray(units.Quantity):
         # Note that, the way this is constructed, it's OK if out
         # shares memory with a and/or b, neither a or b are used after
         # out is filled. We do need to keep 1/b though.
-        if b_.dtype.char in np.typecodes['AllInteger']:
-            b_ = 1.0*b_
+        if b_.dtype.char in np.typecodes["AllInteger"]:
+            b_ = 1.0 * b_
         r_ = np.reciprocal(b_)
         if out is None:
             out = dlarray(a_ * r_)
@@ -625,6 +614,13 @@ class dlarray(units.Quantity):
             result.jacobians[name] = jacobian.flatten(order)
         return result
 
+    def squeeze(self, axis=None):
+        """Remove axis of length 1 from self"""
+        result = dlarray(units.Quantity(self).squeeze(axis))
+        for name, jacobian in self.jacobians.items():
+            result.jacobians[name] = jacobian.reshape(result.shape)
+        return result
+
     def remove_jacobian(self, name=None, wildcard=None, remain_dual=False):
         # Remove a named jacobian from a dual.  If none are left, then
         # possibly demote back to an astropy quantity, unless
@@ -795,6 +791,7 @@ def insert(arr, obj, values, axis=None):
     result.jacobians = _join_jacobians(arr, values, obj, axis, result.shape)
     return result
 
+
 @implements(np.append)
 def append(arr, values, axis=None):
     """Append values to the end of an array"""
@@ -812,6 +809,7 @@ def append(arr, values, axis=None):
     result = dlarray(np.append(units.Quantity(arr), units.Quantity(values), axis))
     result.jacobians = _join_jacobians(arr, values, arr.shape[axis], axis, result.shape)
     return result
+
 
 @implements(np.searchsorted)
 def searchsorted(a, v, side="left", sorter=None):
@@ -912,9 +910,9 @@ def concatenate(values, axis=0, out=None):
     result_ = np.concatenate(all_values, axis, out)
     result = dlarray(result_)
     # Work out the spans of each set of values concatenated
-    sizes = [values.shape[axis] for values in all_values]
-    sizes.insert(0, 0)
-    spans = list(accumulate(sizes))
+    lengths = [values.shape[axis] for values in all_values]
+    lengths.insert(0, 0)
+    spans = list(accumulate(lengths))
     # Get _setitem_jacobians to do the dirty work
     for i, jacobians in enumerate(all_jacobians):
         # Work out where in the result this slice is going go

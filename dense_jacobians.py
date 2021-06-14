@@ -1,4 +1,4 @@
-"""Class for dense jacobians"""
+b"""Class for dense jacobians"""
 import numpy as np
 
 from .jacobian_helpers import (
@@ -132,7 +132,6 @@ class DenseJacobian(BaseJacobian):
         """insert method for dense Jacobian"""
         jaxis = self._get_jaxis(axis, none="flatten")
         data = np.insert(self.data, obj, 0.0, jaxis)
-        # print (f"data comes back as {data.shape}")
         return DenseJacobian(data, template=self, dependent_shape=dependent_shape)
 
     def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):
@@ -171,13 +170,13 @@ class DenseJacobian(BaseJacobian):
             data=result_, template=self, dependent_shape=dependent_shape
         )
 
-    def transpose(self, axes, dependent_shape):
+    def transpose(self, axes, result_dependent_shape):
         jaxes = self._get_jaxis(axes, none="transpose")
         jaxes += list(range(self.dependent_ndim, self.ndim))
         return DenseJacobian(
             data=self.data.transpose(jaxes),
             template=self,
-            dependent_shape=dependent_shape,
+            dependent_shape=result_dependent_shape,
         )
 
     def extract_diagonal(self):

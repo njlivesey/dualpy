@@ -4,13 +4,16 @@ import scipy.special as special
 import scipy.constants as constants
 import scipy.interpolate as interpolate
 import scipy.fft as fft
-import warnings
 from typing import Union
 
-from .jacobians import DenseJacobian, DiagonalJacobian, SparseJacobian
+from .jacobians import (
+    DenseJacobian,
+    DiagonalJacobian,
+    SparseJacobian,
+    matrix_multiply_jacobians,
+)
 from .duals import dlarray
 from .dual_helpers import _setup_dual_operation
-
 
 __all__ = [
     "PossibleDual",
@@ -19,7 +22,7 @@ __all__ = [
     "_seed_sparse",
     "compute_jacobians_numerically",
     "cumulative_trapezoid",
-    "dedual",
+    "eliminate_jacobians",
     "has_jacobians",
     "interp1d",
     "irfft",
@@ -33,9 +36,12 @@ __all__ = [
 PossibleDual = Union[units.Quantity, dlarray]
 
 
-def dedual(*args):
-    """Demote all arguments from dual back to astropy.Quantities"""
-    return (units.Quantity(arg) for arg in args)
+def eliminate_jacobians(a):
+    """Demote argument from dual back to astropy.Quantity if needed"""
+    if isinstance(a, dlarray):
+        return units.Quantity(a)
+    else:
+        return a
 
 
 def seed(value, name, force=False, overwrite=False, reset=False):
@@ -44,7 +50,7 @@ def seed(value, name, force=False, overwrite=False, reset=False):
     # regular basis.  It takes an astropy.Quantity and adds a diagonal
     # unit jacobian for it.  From that point on, anything computed from
     # the resulting dual will track Jacobians appropriately.
-    """Rebturn a dual for a quantity populated with a unitary Jacobian matrix"""
+    """Return a dual for a quantity populated with a unitary Jacobian matrix"""
 
     if type(value) is dlarray:
         if not force:
@@ -412,32 +418,53 @@ def multi_newton_raphson(
     else:
         if max_iter < 0:
             raise ValueError("Bad value for max_iter: {max_iter}")
-    # Remove Jacobians from x0 and add our own
-    jname = "_mnr_x"
+    # Define some prefixes we'll use to track Jacobians
+    j_prefix = "_mnr_"
+    j_name_x = j_prefix + "x"
+    j_prefix_arg = j_prefix + "arg_"
+    j_prefix_kwarg = j_prefix + "kwarg_"
     # Take off any input jacobians.
     x = units.Quantity(x0)
+    # Note if there are jacobians on the target, and take them off in any case
+    y_has_jacobians = has_jacobians(y)
     if y is not None:
-        y_ = units.Quantity(y)
+        y_ = eliminate_jacobians(y)
+    # Do the same for args and kwargs
+    args_have_jacobians = False
+    args_ = []
+    for arg in args:
+        if has_jacobians(arg):
+            args_have_jacobians = True
+            arg = eliminate_jacobians(arg)
+        args_.append(arg)
+    kwargs_have_jacobians = False
+    kwargs_ = {}
+    for name, kwarg in kwargs.items():
+        if has_jacobians(kwarg):
+            kwargs_have_jacobians = True
+            kwarg = eliminate_jacobians(kwarg)
+        kwargs_[name] = kwarg
     # Other starup issues
     i = 0
     finish = False
     reason = ""
     while (i < max_iter or max_iter < 0) and not finish:
         # Seed our special Jacobian
-        x = seed(x, jname)
-        if y is None:
-            delta_y = func(x, *args, **kwargs)
+        x = seed(x, j_name_x)
+        if y is not None:
+            delta_y = func(x, *args_, **kwargs_) - y_
         else:
-            delta_y = func(x, *args, **kwargs) - y_
+            delta_y = func(x, *args_, **kwargs_)
         if dy_tolerance is not None:
             finish = np.all(abs(delta_y) < dy_tolerance)
             reason = "dy"
-        # Compute the Newton-Raphson step, drop the Jacibians we don't want to carry
+        # Compute the Newton-Raphson step and drop the Jacobians we don't want to carry
         # round from iteration to interation
-        j = delta_y.jacobians[jname].extract_diagonal()
-        delta_x = units.Quantity(delta_y) / j
+        j = delta_y.jacobians[j_name_x].extract_diagonal()
+        delta_y = eliminate_jacobians(delta_y)
+        delta_x = delta_y / j
         if dx_tolerance is not None:
-            finish = finish or np.all(abs(delta_x < dx_tolerance))
+            finish = finish or np.all(abs(delta_x) < dx_tolerance)
             reason = "dx"
         x = units.Quantity(x) - delta_x
         i += 1
@@ -445,10 +472,66 @@ def multi_newton_raphson(
         reason = "max_iter"
 
     # OK, we're done iterating.  Now we have to think about any Jacobians on the output
-    if has_jacobians(y):
-        raise NotImplementedError(
-            "Not coded up the output Jacobian capability for multi_newton_raphson yet"
-        )
+    if y_has_jacobians or args_have_jacobians or kwargs_have_jacobians:
+        # If args and/or kwargs have Jacobians, we need to do one more run of the
+        # function, this time with Jacobians re-enabled to get the final Jacobian terms.
+        # Furthermore, we need to add our own Jacobians for every single argument to use
+        # in the chain rule stuff.
+        tracking_args = []
+        tracking_kwargs = {}
+        for i, arg in enumerate(args):
+            if has_jacobians(arg):
+                arg = seed(arg, j_prefix_arg + str(i), force=True)
+            tracking_args.append(arg)
+        for name, kwarg in kwargs.items():
+            if has_jacobians(kwarg):
+                kwarg = seed(kwarg, j_prefix_kwarg + name, force=True)
+            tracking_kwargs[name] = kwarg
+        x = seed(x, j_name_x)
+        dummy_y = func(x, *tracking_args, **tracking_kwargs)
+        # Start building the terms that will make up the Jacobians.
+        accumulator = {}
+        # These are in terms of dy/d<thing>, let's use "t" to denote a generic <thing>
+        # here.  First deal with any Jacobians on the target y (dy/dt)
+        if has_jacobians(y):
+            for name, jacobian in y.jacobians.items():
+                accumulator[name] = jacobian
+        # Now deal with any contributions from Jacobians in args and kwargs.  We
+        # subtract each dy/da*da/dt from the dy/dt we started with where "a" is an arg
+        # or kwarg.
+        for i, arg in enumerate(tracking_args):
+            # Get the dy/d<arg> term
+            j_arg_name = j_prefix_arg + str(i)
+            j_arg = dummy_y.jacobians[j_arg_name]
+            # Now chain rule with all the d<arg>/d<t> terms, skip the one we put in
+            # ourselves.
+            for j_name, jacobian in arg.jacobians.items():
+                if j_name != j_arg_name:
+                    term = matrix_multiply_jacobians(j_arg, jacobian)
+                    if j_name in accumulator:
+                        accumulator[j_name] -= term
+                    else:
+                        accumulator[j_name] = -term
+        # Now subtract any terms from kwargs
+        for k_name, kwarg in tracking_kwargs.items():
+            # Get the dy/d<kwarg> term
+            j_kwarg_name = j_prefix_kwarg + k_name
+            j_kwarg = dummy_y.jacobians[j_kwarg_name]
+            # Now chain rule with all the d<kwarg>/d<t> terms, skip the one we put in
+            # ourselves
+            for j_name, jacobian in kwarg.jacobians.items():
+                if j_name != j_kwarg_name:
+                    term = matrix_multiply_jacobians(j_kwarg, jacobian)
+                    if j_name in accumulator:
+                        accumulator[j_name] -= term
+                    else:
+                        accumulator[j_name] = -term
+        # OK, we're finnally ready to add Jacobians to the result
+        x = dlarray(x)
+        j_reciprocal = 1.0 / dummy_y.jacobians[j_name_x].extract_diagonal()
+        for j_name, jacobian in accumulator.items():
+            x.jacobians[j_name] = jacobian.premul_diag(j_reciprocal)
+        del x.jacobians[j_name_x]
     return x
 
 
