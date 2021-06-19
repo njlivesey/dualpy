@@ -146,10 +146,6 @@ class dlarray(units.Quantity):
         a_, b_, aj, bj, out = _setup_dual_operation(a, b)
         return a_ > b_
 
-    def __gt__(a, b):
-        a_, b_, aj, bj, out = _setup_dual_operation(a, b)
-        return a_ >= b_
-
     def __lt__(a, b):
         a_, b_, aj, bj, out = _setup_dual_operation(a, b)
         return a_ < b_
@@ -174,7 +170,7 @@ class dlarray(units.Quantity):
 
     def to(self, unit, **kwargs):
         # If it's a no-op, then take advantage of that
-        if self.unit == unit:
+        if self.unit is unit:
             return self
         out_ = units.Quantity(self).to(unit, **kwargs)
         out = dlarray(out_)

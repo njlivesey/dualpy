@@ -58,19 +58,15 @@ class DenseJacobian(BaseJacobian):
 
     def _getjitem(self, new_shape, key):
         """A getitem type method for dense Jacobians"""
-        try:
-            jkey = list(key)
-        except TypeError:
-            jkey = [key]
-        extra = [slice(None)] * self.independent_ndim
-        jkey = tuple(jkey + extra)
+        key = self._preprocess_getsetitem_key(key)
+        jkey = key + (slice(None),) * self.independent_ndim
         result_ = self.data.__getitem__(jkey)
         new_full_shape = new_shape + self.independent_shape
-        # try:
-        result_.shape = new_full_shape
-        # except AttributeError:
-        #    warnings.warn("dljacogian_dense._getjitem had to make a copy")
-        #    result_ = np.reshape(result_, new_full_shape)
+        if result_.shape != new_full_shape:
+            raise NotImplementedError(
+                "Looks like we do need to do a reshape after all!"
+            )
+        # result_ = np.reshape(result_, new_full_shape)
         return DenseJacobian(data=result_, template=self, dependent_shape=new_shape)
 
     def _setjitem(self, key, value):
@@ -172,7 +168,7 @@ class DenseJacobian(BaseJacobian):
 
     def transpose(self, axes, result_dependent_shape):
         jaxes = self._get_jaxis(axes, none="transpose")
-        jaxes += list(range(self.dependent_ndim, self.ndim))
+        jaxes = tuple(jaxes) + tuple(range(self.dependent_ndim, self.ndim))
         return DenseJacobian(
             data=self.data.transpose(jaxes),
             template=self,

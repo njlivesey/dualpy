@@ -78,6 +78,7 @@ class BaseJacobian(object):
 
     def __add__(self, other):
         from .dense_jacobians import DenseJacobian
+
         s_, o_, result_type = _prepare_jacobians_for_binary_op(self, other)
         result_ = s_ + o_
         if result_type is DenseJacobian:
@@ -86,6 +87,7 @@ class BaseJacobian(object):
 
     def __sub__(self, other):
         from .dense_jacobians import DenseJacobian
+
         s_, o_, result_type = _prepare_jacobians_for_binary_op(self, other)
         result_ = s_ - o_
         if result_type is DenseJacobian:
@@ -187,4 +189,30 @@ class BaseJacobian(object):
         if self.independent_unit != other.independent_unit:
             return False
         return True
-    
+
+    def _preprocess_getsetitem_key(self, key):
+        """Get it into the right shape for the dependent variable"""
+        # Most likely key is a tuple
+        if isinstance(key, tuple):
+            # If it's too short, then add a ..., unless we already have one, in which
+            # case we're fine.
+            if len(key) < self.dependent_ndim and Ellipsis not in key:
+                key = key + (Ellipsis,)
+            # If it's too long, then we have to hope that that is because the user has
+            # added some np.newaxis terms.
+            elif len(key) > self.dependent_ndim:
+                n_extra = len(key) - self.dependent_ndim
+                if sum(x is np.newaxis or x is Ellipsis for x in key) != n_extra:
+                    raise ValueError(
+                        "Dual key for getitem/setitem has extra entries "
+                        "that are not np.newaxis (i.e., not None) or Ellipsis"
+                    )
+            # Otherwise, it's fine as is.
+        else:
+            if self.dependent_ndim > 1:
+                key = (key, Ellipsis)
+            else:
+                # Don't say "tuple(key)" here, as it will convert a list to a tuple,
+                # which is not what we want.
+                key = (key,)
+        return key

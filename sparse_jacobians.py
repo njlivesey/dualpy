@@ -1,6 +1,7 @@
 """Class for sparse jacobians"""
 import scipy.sparse as sparse
 import numpy as np
+import warnings
 
 from .jacobian_helpers import _array_to_sparse_diagonal, _shapes_broadcastable
 from .base_jacobian import BaseJacobian
@@ -53,44 +54,27 @@ class SparseJacobian(BaseJacobian):
 
     def _getjitem(self, new_shape, key):
         """A getitem type method for sparse Jacobians"""
-        from .dense_jacobians import DenseJacobian
-
-        # OK, getjitem for sparse is a bit more complicated than for
-        # the others.  This is mainly because matplotlib seems to put
-        # in some funny getitem requests to its arguments.  If that
-        # happens we'll fall back to dense and provide that as the
-        # result.  scipy.sparse is fussier about indexing than regular
-        # arrays too, so there's some choreography associated with
-        # that too.
+        key = self._preprocess_getsetitem_key(key)
+        # Now we're going to collapse all the dependent key into a 1D index array.
         if self.dependent_ndim > 1:
-            # This thing to remember is that there is no shame in
-            # handling things that are the length of the dependent
-            # vector (or independent one come to that), just avoid
-            # things that are the cartesian product of them.
-            iold = np.reshape(np.arange(self.dependent_size), self.dependent_shape)
-            inew = iold.__getitem__(key).ravel()
-            dependent_slice = (inew,)
+            # There are probably more efficient ways in which to handle this, particular
+            # for the cases where key is filled entirely with slices. Howeve, the thing
+            # to remember is that there is no shame in handling things that are the
+            # length of the dependent vector (or independent one come to that), just
+            # avoid things that are the cartesian product of them.  Accordingly this
+            # straightforward approach is probably good enough.
+            i_full = np.reshape(np.arange(self.dependent_size), self.dependent_shape)
+            i_subset = i_full[key].ravel()
+            dependent_slice = (i_subset,)
         else:
+            # If this is already a 1D dependent quantity, then the key is good as is.
             dependent_slice = key
-        # OK, so now we have the option to fall back to a dense case
-        # because matplotlib makes some strange __getitem__ requests
-        # that give odd errors down the road.
         # Append a "get the lot" slice for the independent variable dimension
-        try:
-            jSlice = dependent_slice + (slice(None),)
-        except TypeError:
-            jSlice = (dependent_slice, slice(None))
-        try:
-            if len(jSlice) > 2:
-                raise TypeError("Dummy raise to fall back to dense")
-            result_ = self.data2d.__getitem__(jSlice)
-            return SparseJacobian(
-                data=result_, template=self, dependent_shape=new_shape
-            )
-        except TypeError:
-            # warnings.warn("SparseJacobian._getjitem had to fall back to dense")
-            self_dense = DenseJacobian(self)
-            return self_dense._getjitem(new_shape, key)
+        jkey = dependent_slice + (slice(None),)
+        result_ = self.data2d.__getitem__(jkey)
+        return SparseJacobian(
+            data=result_, template=self, dependent_shape=new_shape
+        )
 
     def _setjitem(self, key, value):
         """A setitem type method for dense Jacobians"""

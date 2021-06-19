@@ -419,10 +419,7 @@ def multi_newton_raphson(
         if max_iter < 0:
             raise ValueError("Bad value for max_iter: {max_iter}")
     # Define some prefixes we'll use to track Jacobians
-    j_prefix = "_mnr_"
-    j_name_x = j_prefix + "x"
-    j_prefix_arg = j_prefix + "arg_"
-    j_prefix_kwarg = j_prefix + "kwarg_"
+    j_name_x = "_mnr_x"
     # Take off any input jacobians.
     x = units.Quantity(x0)
     # Note if there are jacobians on the target, and take them off in any case
@@ -471,67 +468,54 @@ def multi_newton_raphson(
     if reason == "":
         reason = "max_iter"
 
-    # OK, we're done iterating.  Now we have to think about any Jacobians on the output
-    if y_has_jacobians or args_have_jacobians or kwargs_have_jacobians:
-        # If args and/or kwargs have Jacobians, we need to do one more run of the
-        # function, this time with Jacobians re-enabled to get the final Jacobian terms.
-        # Furthermore, we need to add our own Jacobians for every single argument to use
-        # in the chain rule stuff.
-        tracking_args = []
-        tracking_kwargs = {}
-        for i, arg in enumerate(args):
-            if has_jacobians(arg):
-                arg = seed(arg, j_prefix_arg + str(i), force=True)
-            tracking_args.append(arg)
-        for name, kwarg in kwargs.items():
-            if has_jacobians(kwarg):
-                kwarg = seed(kwarg, j_prefix_kwarg + name, force=True)
-            tracking_kwargs[name] = kwarg
-        x = seed(x, j_name_x)
-        dummy_y = func(x, *tracking_args, **tracking_kwargs)
-        # Start building the terms that will make up the Jacobians.
+    # OK, we're done iterating.  Now we have to think about any Jacobians on the output.
+    # This is acutally both more and less complicated than it seems.  We're after dx/dt
+    # where t is a quantity we're differentiating by, and all derivatives here are
+    # partial.  The complexity arrives that there may be contributions to df/dt from the
+    # other arguments to f, or indeed to something buried in f itself.  I spent a lot of
+    # time thinking I'd have to compute these terms one by one (and unbury them, which
+    # was annoying).  However, we can work out what the sum of these is by calling the
+    # function on more time, at our solution x, but without any Jacobian tracking for t
+    # in the solution x itself, but intrinsically keeping all the Jacobian tracking in
+    # the other arguments and anything related to t buried in f itself.  This gives us
+    # the sum of all those other terms.  We can then subtract that from any dy/dt from
+    # the target, and use our knowledge of df/dx to get dx/dt.
+
+    # If args and/or kwargs have Jacobians, we need to do one more run of the
+    # function, this time with Jacobians re-enabled to get the final Jacobian terms.
+    # As before, we'll keep our extra jacobian to keep track of df/dx directly.
+    x_solution = seed(x, j_name_x)
+    y_solution = func(x_solution, *args, **kwargs)
+    # If the target has Jacobians, or this last call has added more Jacobians, then we
+    # need to provide Jacobians on the output
+    if has_jacobians(y) or len(y_solution.jacobians) > 1:
+        # Now, as x_solution only has Jacobians with respect to x, this means that any
+        # Jacobians that emerge with respect to anything else must have come from other
+        # (possibly hidden) arguments to the function. That is they are the sum of
+        # df/db*db/dy, where the derivatives here are partial, so we'll need to factor
+        # them in.
+        #
+        # We're after dx/dt, get it as [dy/dt-(all df/db*db/dt)]/(dy/dx), start with
+        # dy/dt terms.
         accumulator = {}
-        # These are in terms of dy/d<thing>, let's use "t" to denote a generic <thing>
-        # here.  First deal with any Jacobians on the target y (dy/dt)
-        if has_jacobians(y):
+        if y_has_jacobians:
             for name, jacobian in y.jacobians.items():
+                print(f"jacobian for {name} is {type(jacobian)}")
                 accumulator[name] = jacobian
-        # Now deal with any contributions from Jacobians in args and kwargs.  We
-        # subtract each dy/da*da/dt from the dy/dt we started with where "a" is an arg
-        # or kwarg.
-        for i, arg in enumerate(tracking_args):
-            # Get the dy/d<arg> term
-            j_arg_name = j_prefix_arg + str(i)
-            j_arg = dummy_y.jacobians[j_arg_name]
-            # Now chain rule with all the d<arg>/d<t> terms, skip the one we put in
-            # ourselves.
-            for j_name, jacobian in arg.jacobians.items():
-                if j_name != j_arg_name:
-                    term = matrix_multiply_jacobians(j_arg, jacobian)
-                    if j_name in accumulator:
-                        accumulator[j_name] -= term
+        if has_jacobians(y_solution):
+            for name, jacobian in y_solution.jacobians.items():
+                # Skip over the Jacobian we put in by hand.
+                if name != j_name_x:
+                    print(f"jacobian for {name} is {type(jacobian)}")
+                    if name in accumulator:
+                        accumulator[name] -= jacobian
                     else:
-                        accumulator[j_name] = -term
-        # Now subtract any terms from kwargs
-        for k_name, kwarg in tracking_kwargs.items():
-            # Get the dy/d<kwarg> term
-            j_kwarg_name = j_prefix_kwarg + k_name
-            j_kwarg = dummy_y.jacobians[j_kwarg_name]
-            # Now chain rule with all the d<kwarg>/d<t> terms, skip the one we put in
-            # ourselves
-            for j_name, jacobian in kwarg.jacobians.items():
-                if j_name != j_kwarg_name:
-                    term = matrix_multiply_jacobians(j_kwarg, jacobian)
-                    if j_name in accumulator:
-                        accumulator[j_name] -= term
-                    else:
-                        accumulator[j_name] = -term
+                        accumulator[name] = -jacobian
         # OK, we're finnally ready to add Jacobians to the result
         x = dlarray(x)
-        j_reciprocal = 1.0 / dummy_y.jacobians[j_name_x].extract_diagonal()
+        j_reciprocal = 1.0 / y_solution.jacobians[j_name_x].extract_diagonal()
         for j_name, jacobian in accumulator.items():
             x.jacobians[j_name] = jacobian.premul_diag(j_reciprocal)
-        del x.jacobians[j_name_x]
     return x
 
 
@@ -576,14 +560,15 @@ def interp1d(
     # Result - interpolator function
     def result(x_new):
         """Interpolator from dualpy.interp1d"""
+        x_new_np = x_new.to(x.unit).value
         if has_jacobians(x_new):
             raise ValueError("dualpy.interp1d cannot (yet?) handle Jacobians on x-new")
-        y_new = y_interpolator(x_new.to(x.unit).value)
+        y_new = y_interpolator(x_new_np) << y.unit
         if has_jacobians(y):
-            y_new = dlarray(y_new * y.unit)
+            y_new = dlarray(y_new)
             for name, j_interpolator in j_interpolators.items():
                 j_original = y.jacobians[name]
-                new_data = j_interpolator(x_new)
+                new_data = j_interpolator(x_new_np)
                 y_new.jacobians[name] = DenseJacobian(
                     data=new_data,
                     template=j_original,
