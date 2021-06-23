@@ -7,6 +7,7 @@ import scipy.fft as fft
 from typing import Union
 
 from .jacobians import (
+    BaseJacobian,
     DenseJacobian,
     DiagonalJacobian,
     SparseJacobian,
@@ -16,6 +17,7 @@ from .duals import dlarray
 from .dual_helpers import _setup_dual_operation
 
 __all__ = [
+    "CubicSpline",
     "PossibleDual",
     "_seed_dense",
     "_seed_diagonal",
@@ -500,13 +502,11 @@ def multi_newton_raphson(
         accumulator = {}
         if y_has_jacobians:
             for name, jacobian in y.jacobians.items():
-                print(f"jacobian for {name} is {type(jacobian)}")
                 accumulator[name] = jacobian
         if has_jacobians(y_solution):
             for name, jacobian in y_solution.jacobians.items():
                 # Skip over the Jacobian we put in by hand.
                 if name != j_name_x:
-                    print(f"jacobian for {name} is {type(jacobian)}")
                     if name in accumulator:
                         accumulator[name] -= jacobian
                     else:
@@ -608,3 +608,67 @@ def irfft(x, axis=-1):
                 jfft, template=jacobian, dependent_shape=result.shape
             )
     return result
+
+
+class CubicSpline:
+    """This basically wraps scipy.interpolate.CubicSpline"""
+
+    def __init__(self, x, y, axis=0, bc_type="not-a-knot", extrapolate=None):
+        """Setup a dual/unit aware CubicSpline interpolator"""
+        if has_jacobians(x):
+            raise ValueError("Cannot (yet) handle Jacobians for input x")
+        self.x_unit = x.unit
+        self.y_unit = y.unit
+        self.x_min = np.min(x)
+        self.x_max = np.max(x)
+        self.y_interpolator = interpolate.CubicSpline(
+            x.value,
+            y.value,
+            axis=axis,
+            bc_type=bc_type,
+            extrapolate=extrapolate,
+        )
+        if has_jacobians(y):
+            self.j_interpolators = dict()
+            self.j_templates = dict()
+            for name, jacobian in y.jacobians.items():
+                # Not going to try anything silly interms of non-dense jacobians
+                jacobian = DenseJacobian(jacobian)
+                self.j_interpolators[name] = interpolate.CubicSpline(
+                    x.value,
+                    jacobian.data,
+                    axis=jacobian._get_jaxis(axis),
+                    bc_type=bc_type,
+                    extrapolate=extrapolate,
+                )
+                self.j_templates[name] = BaseJacobian(template=jacobian)
+        else:
+            self.j_interpolators = {}
+        # Leave a space to cache the derivative interpolators
+        self.dydx_interpolator = None
+
+    def __call__(self, x):
+        """Return a dual/unit aware spline interpolation"""
+        # Make sure x is in the right units and bounded, then take units off
+        x_fixed = np.clip(x.to(self.x_unit), self.x_min, self.x_max).value
+        # Get the intpolated value of y, make it a dual
+        y = dlarray(self.y_interpolator(x_fixed) << self.y_unit)
+        # Now deal with any jacobians with regard to the original y
+        for name, j_interpolator in self.j_interpolators.items():
+            y.jacobians[name] = DenseJacobian(
+                template=self.j_templates[name],
+                dependent_shape=y.shape,
+                data=j_interpolator(x_fixed),
+            )
+        # Now deal with any jacobians with regard to x
+        if has_jacobians(x):
+            # Get the dydx_interolator if it's not already been generated
+            if self.dydx_interpolator is None:
+                self.dydx_interpolator = self.y_interpolator.derivative()
+            dydx = self.dydx_interpolator(x_fixed)
+            # Now multiply all the dx/dt terms by dy/dx to get dy/dt
+            y._chain_rule(x, dydx)
+        # Now, if the result doesn't have Jacobians make it not a dual
+        if not has_jacobians(y):
+            y = units.Quantity(y)
+        return y

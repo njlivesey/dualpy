@@ -6,7 +6,7 @@ import fnmatch
 from itertools import accumulate
 
 from .dual_helpers import _setup_dual_operation, _per_rad, _broadcast_jacobians
-from .jacobians import _setitem_jacobians, _join_jacobians
+from .jacobians import _setitem_jacobians, _join_jacobians, _concatenate_jacobians
 
 
 __all__ = ["dlarray", "nan_to_num_jacobians"]
@@ -40,11 +40,11 @@ class dlarray(units.Quantity):
         # i.e. those of a standard ndarray.
         #
         # We could have got to the ndarray.__new__ call in 3 ways:
-        # From an explicit constructor - e.g. dual():
+        # From an explicit constructor - e.g. dlarray():
         #    jacobians is None
         #    (we're in the middle of the dual.__new__
-        #    constructor, and dual.jacobians will be set when we return to
-        #    dual.__new__)
+        #    constructor, and dlarray.jacobians will be set when we return to
+        #    dlarray.__new__)
         if obj is None:
             return
         # From view casting - e.g arr.view(dual):
@@ -897,27 +897,16 @@ def expand_dims(a, axis):
 def concatenate(values, axis=0, out=None):
     if out is not None:
         raise ValueError("Cannot concatenate duals into an out")
-    n = len(values)
-    everything = _setup_dual_operation(*values, broadcast=False)
-    all_values = everything[:n]
-    all_jacobians = everything[n:-1]
-    out = everything[-1]
+    # If axis is zero, flatten the inputs
+    if axis is None:
+        values = [value.flatten() for value in values]
+        axis = 0
     # Populate the result
-    result_ = np.concatenate(all_values, axis, out)
+    values_ = [units.Quantity(value) for value in values]
+    result_ = np.concatenate(values_, axis, out)
     result = dlarray(result_)
-    # Work out the spans of each set of values concatenated
-    lengths = [values.shape[axis] for values in all_values]
-    lengths.insert(0, 0)
-    spans = list(accumulate(lengths))
-    # Get _setitem_jacobians to do the dirty work
-    for i, jacobians in enumerate(all_jacobians):
-        # Work out where in the result this slice is going go
-        key = (
-            [slice(None)] * axis
-            + [slice(spans[i], spans[i + 1])]
-            + [slice(None)] * (result.ndim - axis - 1)
-        )
-        _setitem_jacobians(key, result, result.jacobians, jacobians)
+    # Get the Jacobians concatenated
+    result.jacobians = _concatenate_jacobians(values, axis, result.shape)
     return result
 
 

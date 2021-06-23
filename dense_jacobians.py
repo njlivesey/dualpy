@@ -79,13 +79,8 @@ class DenseJacobian(BaseJacobian):
                 )
         else:
             value_ = 0.0
-        try:
-            jkey = list(key)
-        except TypeError:
-            jkey = [key]
-        extra = [slice(None)] * self.independent_ndim
-        jkey = tuple(jkey + extra)
-        self.data.__setitem__(jkey, value_)
+        key = self._preprocess_getsetitem_key(key)
+        self.data.__setitem__(key, value_)
 
     def broadcast_to(self, shape):
         """Broadcast dense Jacobian to new dependent_shape"""

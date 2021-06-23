@@ -5,11 +5,13 @@ __all__ = [
     "DiagonalJacobian",
     "DenseJacobian",
     "SparseJacobian",
+    "_concatenate_jacobians",
     "matrix_multiply_jacobians",
 ]
 
 import astropy.units as units
 import numpy as np
+import scipy.sparse as sparse
 
 from .base_jacobian import BaseJacobian
 from .dense_jacobians import DenseJacobian
@@ -83,7 +85,7 @@ def _prep_jacobians_for_join(*args, result_dependent_shape):
         these_prepped_jacobians = []
         for arg in args:
             try:
-                j = arg.jacobans[name]
+                j = arg.jacobians[name]
             except (AttributeError, KeyError):
                 j = None
             if j is not None:
@@ -112,6 +114,47 @@ def _join_jacobians(a, b, location, axis, result_dependent_shape):
         aj, bj = prepped_jacobians[name]
         result_jacobians[name] = aj._join(bj, location, axis, result_dependent_shape)
     return result_jacobians
+
+
+def _concatenate_jacobians(values, axis, result_dependent_shape):
+    """Concatenate the Jacobians, supports dual concatenation"""
+    prepped_jacobians, result_types, result_jacobians = _prep_jacobians_for_join(
+        *values, result_dependent_shape=result_dependent_shape
+    )
+    # Loop over the Jacobians in the result.
+    result = {}
+    for name in result_jacobians.keys():
+        # Identify the correspondign axis in the jacobian
+        result_type = result_types[name]
+        jaxis = result_jacobians[name]._get_jaxis(axis)
+        # This is cumbersome, but the best way to do this is separately for dense and
+        # sparse
+        if result_types[name] is DenseJacobian:
+            j_ins_ = [j_in.data for j_in in prepped_jacobians[name]]
+            j_out_ = np.concatenate(j_ins_, axis=jaxis)
+            result[name] = result_type(template=result_jacobians[name], data=j_out_)
+        elif result_types[name] is SparseJacobian:
+            i = 0
+            j_out = result_type(template=result_jacobians[name])
+            for j_in in prepped_jacobians[name]:
+                # Use the coo form of sparse matrices to move the values up to the right
+                # place in the stacked axis
+                j_in_coo = sparse.coo_matrix(j_in.data2d)
+                row_indices = list(
+                    np.unravel_index(j_in_coo.row, shape=j_in.dependent_shape)
+                )
+                row_indices[jaxis] += i
+                out_row = np.ravel_multi_index(row_indices, j_out.dependent_shape)
+                j_out_contribution = sparse.coo_matrix(
+                    (j_in_coo.data, (out_row, j_in_coo.col)), shape=j_out.shape2d
+                )
+                j_out.data2d += sparse.csc_matrix(j_out_contribution)
+                # Increment the start index
+                i += j_in.dependent_shape[jaxis]
+            result[name] = j_out
+        else:
+            raise TypeError(f"Unexpcted Jacobian type in result {result_types[name]}")
+    return result
 
 
 def matrix_multiply_jacobians(a, b):

@@ -56,19 +56,17 @@ class SparseJacobian(BaseJacobian):
         """A getitem type method for sparse Jacobians"""
         key = self._preprocess_getsetitem_key(key)
         # Now we're going to collapse all the dependent key into a 1D index array.
-        if self.dependent_ndim > 1:
-            # There are probably more efficient ways in which to handle this, particular
-            # for the cases where key is filled entirely with slices. Howeve, the thing
-            # to remember is that there is no shame in handling things that are the
-            # length of the dependent vector (or independent one come to that), just
-            # avoid things that are the cartesian product of them.  Accordingly this
-            # straightforward approach is probably good enough.
-            i_full = np.reshape(np.arange(self.dependent_size), self.dependent_shape)
-            i_subset = i_full[key].ravel()
-            dependent_slice = (i_subset,)
-        else:
-            # If this is already a 1D dependent quantity, then the key is good as is.
-            dependent_slice = key
+        # There are probably more efficient ways in which to handle this, particular
+        # for the cases where key is filled entirely with slices. Howeve, the thing
+        # to remember is that there is no shame in handling things that are the
+        # length of the dependent vector (or independent one come to that), just
+        # avoid things that are the cartesian product of them.  Accordingly this
+        # straightforward approach is probably good enough.
+        i_full = np.reshape(np.arange(self.dependent_size), self.dependent_shape)
+        i_subset = i_full[key].ravel()
+        dependent_slice = (i_subset,)
+        # Note, I originally tried to sidestep the null-operation for the above, but it
+        # didn't work when adding np.newaxes.  Simpler just to do it all the time.
         # Append a "get the lot" slice for the independent variable dimension
         jkey = dependent_slice + (slice(None),)
         result_ = self.data2d.__getitem__(jkey)
