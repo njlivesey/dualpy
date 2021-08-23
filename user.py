@@ -632,7 +632,7 @@ class CubicSpline:
             self.j_interpolators = dict()
             self.j_templates = dict()
             for name, jacobian in y.jacobians.items():
-                # Not going to try anything silly interms of non-dense jacobians
+                # Not going to try anything silly in terms of non-dense jacobians
                 jacobian = DenseJacobian(jacobian)
                 self.j_interpolators[name] = interpolate.CubicSpline(
                     x.value,
