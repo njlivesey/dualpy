@@ -156,6 +156,44 @@ def _concatenate_jacobians(values, axis, result_dependent_shape):
             raise TypeError(f"Unexpcted Jacobian type in result {result_types[name]}")
     return result
 
+def _stack_jacobians(arrays, axis, result_dependent_shape):
+    """Support the numpy.stack operationf for Jacobians"""
+    prepped_jacobians, result_types, result_jacobians = _prep_jacobians_for_join(
+        *arrays, result_dependent_shape=result_dependent_shape
+    )
+    # Loop over the jacobians in the result
+    result = {}
+    for name in result_jacobians.keys():
+        # Identify teh corresponding axis in the jacobian
+        result_type = result_types[name]
+        jaxis = result_jacobians[name]._get_jaxis(axis)
+        # This is cumbersome, but the best way to do this is separately for dense and
+        # sparse
+        if result_types[name] is DenseJacobian:
+            j_ins_ = [j_in.data for j_in in prepped_jacobians[name]]
+            j_out_ = np.stack(j_ins_, axis=jaxis)
+            result[name] = result_type(template=result_jacobians[name], data=j_out_)
+        elif result_types[name] is SparseJacobian:
+            j_out = result_type(template=result_jacobians[name])
+            for i, j_in in enumerate(prepped_jacobians[name]):
+                # Use the coo form of sparse matrices to move the values up to the right
+                # place in the stacked axis
+                j_in_coo = sparse.coo_matrix(j_in.data2d)
+                row_indices = list(
+                    np.unravel_index(j_in_coo.row, shape=j_in.dependent_shape)
+                )
+                row_indices.insert(jaxis, i)
+                out_row = np.ravel_multi_index(row_indices, j_out.dependent_shape)
+                j_out_contribution = sparse.coo_matrix(
+                    (j_in_coo.data, (out_row, j_in_coo.col)), shape=j_out.shape2d
+                )
+                j_out.data2d += sparse.csc_matrix(j_out_contribution)
+            result[name] = j_out
+        else:
+            raise TypeError(f"Unexpcted Jacobian type in result {result_types[name]}")
+    return result
+
+
 
 def matrix_multiply_jacobians(a, b):
     """Perform a matrix multiply on two Jacobians"""

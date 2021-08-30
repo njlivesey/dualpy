@@ -6,7 +6,12 @@ import fnmatch
 from itertools import accumulate
 
 from .dual_helpers import _setup_dual_operation, _per_rad, _broadcast_jacobians
-from .jacobians import _setitem_jacobians, _join_jacobians, _concatenate_jacobians
+from .jacobians import (
+    _setitem_jacobians,
+    _join_jacobians,
+    _concatenate_jacobians,
+    _stack_jacobians,
+)
 
 
 __all__ = ["dlarray", "nan_to_num_jacobians"]
@@ -85,10 +90,12 @@ class dlarray(units.Quantity):
         # However, first some intervention
         dlufunc = getattr(dlarray, ufunc.__name__, None)
         if dlufunc is None:
-            raise NotImplementedError("No implementation for {method}")
+            raise NotImplementedError(
+                f"No implementation for ufunc {ufunc}, method {method}"
+            )
             return NotImplemented
         result = dlufunc(*args, **kwargs)
-        result._check()
+        # result._check()
         return result
 
     def __array_function__(self, func, types, args, kwargs):
@@ -320,6 +327,15 @@ class dlarray(units.Quantity):
                 out.jacobians[name] = -jacobian.premul_diag(c_).to(out.unit)
         return out
 
+    def remainder(a, b, out=None):
+        raise NotImplementedError("Pretty sure this is wrong")
+        a_, b_, aj, bj, out = _setup_dual_operation(a, b, out=out)
+        out = dlarray(a_ % b_)
+        # The resulting Jacobian is simply a copy of the jacobian for a, b has no impact
+        for name, jacobian in aj.items():
+            out.jacobians[name] = jacobian
+        return out
+
     def power(a, b):
         # In case it's more efficient this divides up according to
         # whether either a or b or both are duals.  Note that the
@@ -447,6 +463,10 @@ class dlarray(units.Quantity):
         for name, jacobian in a.jacobians.items():
             out.jacobians[name] = jacobian.transpose(axes, out.shape)
         return out
+
+    @property
+    def T(self):
+        return self.transpose()
 
     # A note on the trigonometric cases, we'll cut out the middle man
     # here and go straight to numpy, forcing the argument into
@@ -603,6 +623,10 @@ class dlarray(units.Quantity):
             if hasattr(b, "jacobians"):
                 out._chain_rule(b, np.logical_not(factor).astype(int))
         return out
+
+    def floor(a):
+        # For now, when we take the floor, let's assume no Jacobians survive
+        return np.floor(units.Quantity(a))
 
     def flatten(self, order="C"):
         result = dlarray(units.Quantity(self).flatten(order))
@@ -907,6 +931,19 @@ def concatenate(values, axis=0, out=None):
     result = dlarray(result_)
     # Get the Jacobians concatenated
     result.jacobians = _concatenate_jacobians(values, axis, result.shape)
+    return result
+
+
+@implements(np.stack)
+def stack(arrays, axis=0, out=None):
+    if out is not None:
+        raise ValueError("Cannot stack duals into an out")
+    # Populate the result
+    arrays_ = [units.Quantity(array) for array in arrays]
+    result_ = np.stack(arrays_, axis, out)
+    result = dlarray(result_)
+    # Get the Jacobians stacked
+    result.jacobians = _stack_jacobians(arrays, axis, result.shape)
     return result
 
 

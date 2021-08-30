@@ -46,9 +46,10 @@ class SparseJacobian(BaseJacobian):
 
     def __str__(self):
         """Provide a string summary of a sparse Jacobian"""
+        percent = 100.0 * self.data2d.nnz / (self.dependent_size * self.independent_size)
         suffix = (
             f"\ndata2d is {self.data2d.shape}"
-            + f" with {self.data2d.nnz} numbers stored"
+            + f" with {self.data2d.nnz} numbers stored ({percent:.2g}%)"
         )
         return super().__str__() + suffix
 
@@ -93,20 +94,20 @@ class SparseJacobian(BaseJacobian):
         # than a broadcast (shame)
 
         # Get a 1D vector indexing original dependent vector
-        iold = np.arange(self.dependent_size)
+        i_old = np.arange(self.dependent_size)
         # Turn into an nD array
-        iold = np.reshape(iold, self.dependent_shape)
+        i_old = np.reshape(i_old, self.dependent_shape)
         # Broadcast this to the new shape
-        iold = np.broadcast_to(iold, shape)
+        i_old = np.broadcast_to(i_old, shape)
         # Now convert to a 1D array
-        iold = iold.ravel()
-        # Get a matching inew array
-        inew = np.arange(iold.size)
-        # Now put a 1 at every [inew,iold] point in a sparse matrix
-        one = np.ones((iold.size,), dtype=np.int64)
+        i_old = i_old.ravel()
+        # Get a matching i_new array
+        i_new = np.arange(i_old.size)
+        # Now put a 1 at every [i_new,i_old] point in a sparse matrix
+        one = np.ones((i_old.size,), dtype=np.int64)
         M = sparse.csc_matrix(
             sparse.coo_matrix(
-                (one, (inew, iold)), shape=(inew.size, self.dependent_size)
+                (one, (i_new, i_old)), shape=(i_new.size, self.dependent_size)
             )
         )
         # Now do a matrix multiply to accomplish what broadcast tries
@@ -237,7 +238,7 @@ class SparseJacobian(BaseJacobian):
                 axis = (axis,)
             # Take the orginal shape and replace the summed-over axes
             # with one.  In the case where keepdims is set, that would
-            # be in dependent_shape of course, but we can't rely on
+            # be independent_shape of course, but we can't rely on
             # that.
             reduced_shape = list(self.dependent_shape)
             # Note that the below code implicitly handles the case
@@ -247,20 +248,20 @@ class SparseJacobian(BaseJacobian):
             reduced_size = int(np.prod(reduced_shape))
             # Get a 1D vector indexing over the elements in the
             # desired result vector
-            ireduced = np.arange(reduced_size)
+            i_reduced = np.arange(reduced_size)
             # Turn into an nD array
-            ireduced = np.reshape(ireduced, reduced_shape)
+            i_reduced = np.reshape(i_reduced, reduced_shape)
             # Broadcast this to the original shape
-            ireduced = np.broadcast_to(ireduced, self.dependent_shape)
+            i_reduced = np.broadcast_to(i_reduced, self.dependent_shape)
             # Turn this into a 1D vector
-            ireduced = ireduced.ravel()
+            i_reduced = i_reduced.ravel()
             # Get a matching index into the original array
-            ioriginal = np.arange(self.dependent_size)
-            # Now put a 1 at every [ireduced, ioriginal] in a sparse matrix
-            one = np.ones((ioriginal.size,), dtype=np.int64)
+            i_original = np.arange(self.dependent_size)
+            # Now put a 1 at every [i_reduced, i_original] in a sparse matrix
+            one = np.ones((i_original.size,), dtype=np.int64)
             M = sparse.csc_matrix(
                 sparse.coo_matrix(
-                    (one, (ireduced, ioriginal)), shape=(reduced_size, ioriginal.size)
+                    (one, (i_reduced, i_original)), shape=(reduced_size, i_original.size)
                 )
             )
             result_ = M @ self.data2d
@@ -273,7 +274,7 @@ class SparseJacobian(BaseJacobian):
             pass
         return result
 
-    def cumsum(self, axis, heroic=False):
+    def cumsum(self, axis, heroic=True):
         """Perform cumsum for a sparse Jacobian"""
         from .dense_jacobians import DenseJacobian
 
@@ -282,7 +283,7 @@ class SparseJacobian(BaseJacobian):
         # lots of parallel sums here, so the "off-diagonal blocks" may
         # well still be absent.  Depending on how things work out,
         # ultimately the user may still prefer to just densify, indeed
-        # that's proven to be faster thus far, and so is default.
+        # that's proven to be faster for non 3D retrievals.
         if not heroic:
             self_dense = DenseJacobian(self)
             result = self_dense.cumsum(axis)
