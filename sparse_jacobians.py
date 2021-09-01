@@ -3,6 +3,8 @@ import scipy.sparse as sparse
 import numpy as np
 import warnings
 
+from memory_profiler import profile
+
 from .jacobian_helpers import _array_to_sparse_diagonal, _shapes_broadcastable
 from .base_jacobian import BaseJacobian
 
@@ -46,7 +48,9 @@ class SparseJacobian(BaseJacobian):
 
     def __str__(self):
         """Provide a string summary of a sparse Jacobian"""
-        percent = 100.0 * self.data2d.nnz / (self.dependent_size * self.independent_size)
+        percent = (
+            100.0 * self.data2d.nnz / (self.dependent_size * self.independent_size)
+        )
         suffix = (
             f"\ndata2d is {self.data2d.shape}"
             + f" with {self.data2d.nnz} numbers stored ({percent:.2g}%)"
@@ -71,9 +75,7 @@ class SparseJacobian(BaseJacobian):
         # Append a "get the lot" slice for the independent variable dimension
         jkey = dependent_slice + (slice(None),)
         result_ = self.data2d.__getitem__(jkey)
-        return SparseJacobian(
-            data=result_, template=self, dependent_shape=new_shape
-        )
+        return SparseJacobian(data=result_, template=self, dependent_shape=new_shape)
 
     def _setjitem(self, key, value):
         """A setitem type method for dense Jacobians"""
@@ -81,6 +83,7 @@ class SparseJacobian(BaseJacobian):
             "Not (yet) written the setitem capability for sparse Jacobians"
         )
 
+    @profile
     def broadcast_to(self, shape):
         """Broadcast the dependent vector part of a sparse Jacobian to another shape"""
         # Don't bother doing anything if the shape is already good
@@ -106,9 +109,7 @@ class SparseJacobian(BaseJacobian):
         # Now put a 1 at every [i_new,i_old] point in a sparse matrix
         one = np.ones((i_old.size,), dtype=np.int64)
         M = sparse.csc_matrix(
-            sparse.coo_matrix(
-                (one, (i_new, i_old)), shape=(i_new.size, self.dependent_size)
-            )
+            (one, (i_new, i_old)), shape=(i_new.size, self.dependent_size)
         )
         # Now do a matrix multiply to accomplish what broadcast tries
         # to do.
@@ -197,12 +198,12 @@ class SparseJacobian(BaseJacobian):
         all_indices[axis] = i
         row = np.ravel_multi_index(all_indices, dependent_shape)
         dependent_size = int(np.prod(dependent_shape))
-        self_coo = sparse.coo_matrix(
+        result_csc = sparse.csc_matrix(
             (self_coo.data, (row, self_coo.col)),
             shape=(dependent_size, self.independent_size),
         )
         return SparseJacobian(
-            template=self, data=self_coo.tocsc(), dependent_shape=dependent_shape
+            template=self, data=result_csc, dependent_shape=dependent_shape
         )
 
     def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):
@@ -260,9 +261,8 @@ class SparseJacobian(BaseJacobian):
             # Now put a 1 at every [i_reduced, i_original] in a sparse matrix
             one = np.ones((i_original.size,), dtype=np.int64)
             M = sparse.csc_matrix(
-                sparse.coo_matrix(
-                    (one, (i_reduced, i_original)), shape=(reduced_size, i_original.size)
-                )
+                (one, (i_reduced, i_original)),
+                shape=(reduced_size, i_original.size),
             )
             result_ = M @ self.data2d
             # Note that by specifying dependent_shape here, supplied
@@ -271,7 +271,6 @@ class SparseJacobian(BaseJacobian):
             result = SparseJacobian(
                 template=self, data=result_, dependent_shape=dependent_shape
             )
-            pass
         return result
 
     def cumsum(self, axis, heroic=True):
@@ -315,13 +314,10 @@ class SparseJacobian(BaseJacobian):
                 row = i.pop(axis)
                 # And merging the remainder into a column index
                 col = np.ravel_multi_index(i, shape_shuff[1:])
-                # Make this a new coo matrix - this is what actually
-                # performs the transpose
-                new_coo = sparse.coo_matrix(
+                # Make this a new matrix - this is what actually performs the transpose
+                new_csc = sparse.csc_matrix(
                     (self_coo.data, (row, col)), shape=shape_shuff_2d
                 )
-                # Turn this to a csc matrix, this will be what we cumsum over the rows
-                new_csc = new_coo.tocsc()
                 nrows = shape_shuff[0]
             # We have two choices here, we could do a python loop to build up and store
             # cumulative sums, but I suspect that, while on paper more efficient
@@ -348,10 +344,10 @@ class SparseJacobian(BaseJacobian):
                 i = np.ravel_multi_index(i, self.shape)
                 # And now make row and column indices out of them
                 row, col = np.unravel_index(i, self.shape2d)
-                result_coo = sparse.coo_matrix(
+                result_csc = sparse.csc_matrix(
                     (intermediate_coo.data, (row, col)), shape=self.shape2d
                 )
-                result = SparseJacobian(template=self, data=result_coo.tocsc())
+                result = SparseJacobian(template=self, data=result_csc)
         return result
 
     def diff(
@@ -374,11 +370,11 @@ class SparseJacobian(BaseJacobian):
         new_indices = [row_indices[i] for i in axes]
         new_row = np.ravel_multi_index(new_indices, result_dependent_shape)
         result_shape2d = (np.prod(result_dependent_shape), self.independent_size)
-        new_coo = sparse.coo_matrix(
+        new_csc = sparse.csc_matrix(
             (coo.data, (new_row, coo.col)), shape=result_shape2d
         )
         return SparseJacobian(
-            sparse.csc_matrix(new_coo),
+            new_csc,
             template=self,
             dependent_shape=result_dependent_shape,
         )
@@ -472,10 +468,9 @@ class SparseJacobian(BaseJacobian):
         # Create the result
         result_dependent_size = np.prod(result_dependent_shape)
         result_j_shape2d = (result_dependent_size, self.independent_size)
-        result_coo = sparse.coo_matrix(
+        result_csc = sparse.csc_matrix(
             (result_coo_data, (result_row, result_col)), result_j_shape2d
         )
-        result_csc = sparse.csc_matrix(result_coo)
         return SparseJacobian(
             result_csc, template=self, dependent_shape=result_dependent_shape
         )
