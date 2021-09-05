@@ -14,7 +14,7 @@ from .jacobians import (
 )
 
 
-__all__ = ["dlarray", "nan_to_num_jacobians"]
+__all__ = ["dlarray", "nan_to_num_jacobians", "_setup_dual_operation"]
 
 
 class dlarray(units.Quantity):
