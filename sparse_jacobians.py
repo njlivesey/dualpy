@@ -3,8 +3,6 @@ import scipy.sparse as sparse
 import numpy as np
 import warnings
 
-from memory_profiler import profile
-
 from .jacobian_helpers import _array_to_sparse_diagonal, _shapes_broadcastable
 from .base_jacobian import BaseJacobian
 
@@ -83,7 +81,6 @@ class SparseJacobian(BaseJacobian):
             "Not (yet) written the setitem capability for sparse Jacobians"
         )
 
-    @profile
     def broadcast_to(self, shape):
         """Broadcast the dependent vector part of a sparse Jacobian to another shape"""
         # Don't bother doing anything if the shape is already good
