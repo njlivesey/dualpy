@@ -81,10 +81,10 @@ class dlarray(units.Quantity):
             np.greater_equal,
             np.less_equal,
         ):
-            return ufunc(np.asarray(self), np.asarray(args[1]))
+            return ufunc(units.Quantity(self), units.Quantity(args[1]))
         # Also, do the same for some unary operators
         if ufunc in (np.isfinite,):
-            return ufunc(np.asarray(self))
+            return ufunc(units.Quantity(self))
         # Otherwise, we look for this same ufunc in our own type and
         # try to invoke that.
         # However, first some intervention
@@ -380,10 +380,10 @@ class dlarray(units.Quantity):
         out = dlarray(np.arctan2(a_, b_))
         rr2 = units.rad * np.reciprocal(a_ ** 2 + b_ ** 2)
         for name, jacobian in aj.items():
-            out.jacobians[name] = jacobian.premul_diag(b_ * rr2)
+            out.jacobians[name] = jacobian.premul_diag(b_ * rr2).to(out.unit)
         for name, jacobian in bj.items():
             if name in out.jacobians:
-                out.jacobians[name] += jacobian.premul_diag(-a_ * rr2)
+                out.jacobians[name] += jacobian.premul_diag(-a_ * rr2).to(out.unit)
             else:
                 out.jacobians[name] = jacobian.premul_diag(-a_ * rr2).to(out.unit)
         return out
