@@ -5,13 +5,13 @@ import scipy.constants as constants
 import scipy.interpolate as interpolate
 import scipy.fft as fft
 from typing import Union
+import copy
 
 from .jacobians import (
     BaseJacobian,
     DenseJacobian,
     DiagonalJacobian,
     SparseJacobian,
-    matrix_multiply_jacobians,
 )
 from .duals import dlarray
 from .dual_helpers import _setup_dual_operation
@@ -19,12 +19,9 @@ from .dual_helpers import _setup_dual_operation
 __all__ = [
     "CubicSpline",
     "PossibleDual",
-    "_seed_dense",
-    "_seed_diagonal",
-    "_seed_sparse",
     "compute_jacobians_numerically",
     "cumulative_trapezoid",
-    "eliminate_jacobians",
+    "delete_jacobians",
     "has_jacobians",
     "interp1d",
     "irfft",
@@ -38,22 +35,59 @@ __all__ = [
 PossibleDual = Union[units.Quantity, dlarray]
 
 
-def eliminate_jacobians(a):
-    """Demote argument from dual back to astropy.Quantity if needed"""
-    if isinstance(a, dlarray):
-        return units.Quantity(a)
-    else:
-        return a
-
-
-def seed(value, name, force=False, overwrite=False, reset=False):
+def seed(
+    value,
+    name,
+    force=False,
+    overwrite=False,
+    reset=False,
+    initial_type="diagonal",
+    **kwargs,
+):
     # In some senses, this is the most important routine in the package,
     # as it's probably the only one most users will knowingly invoke on a
     # regular basis.  It takes an astropy.Quantity and adds a diagonal
     # unit jacobian for it.  From that point on, anything computed from
     # the resulting dual will track Jacobians appropriately.
-    """Return a dual for a quantity populated with a unitary Jacobian matrix"""
+    """Return a dual for a quantity populated, with a unitary Jacobian matrix
 
+    Parameters
+    ----------
+    value : array-like (or class having _seed_ method)
+        The quantity to have a dual seed added to it.  Note, if value has a _seed_
+        method, then that is invoked to do all the work instead.
+    name : str
+        The name for the seed
+    force : bool
+        If set, make it seed even if it already has other Jacobians
+    overwrite : bool
+        If set, overwrite an existing Jacobian already called by proposed name (required
+        force to be set also).
+    reset : bool
+        Convert result to a dual even if it is one already (not sure why this is needed)
+    initial_type : str, optional
+        "diagonal" (default), "dense", or "sparse"
+
+    Other options may be passed to the _seed_ method
+
+    Result
+    ------
+    returns quantity as dual with named seed added
+
+    """
+    # First see if the quantity has a _seed_ method, and, if so, invoke that to do the
+    # work.
+    if hasattr(value, "_seed_"):
+        return value._seed_(
+            name=name,
+            force=force,
+            overwrite=overwrite,
+            reset=reset,
+            initial_type=initial_type,
+        )
+    # Otherwise, kwargs is illegal
+    if kwargs:
+        raise ValueError("No additional arguements to seed allowed for this quantity")
     if type(value) is dlarray:
         if not force:
             raise ValueError("Proposed seed is already a dual (set force?)")
@@ -66,6 +100,7 @@ def seed(value, name, force=False, overwrite=False, reset=False):
         out = dlarray(value)
     else:
         out = value
+    # Create the Jacobian as diaongal initially
     jacobian = DiagonalJacobian(
         np.ones(out.shape),
         dependent_unit=value.unit,
@@ -73,27 +108,50 @@ def seed(value, name, force=False, overwrite=False, reset=False):
         dependent_shape=value.shape,
         independent_shape=value.shape,
     )
+    # Possibly cast it to other forms
+    if initial_type == "diagonal":
+        pass
+    elif initial_type == "sparse":
+        jacobian = SparseJacobian(jacobian)
+    elif initial_type == "dense":
+        jacobian = DenseJacobian(jacobian)
+    else:
+        raise ValueError(f"Illegal initial_type ({initial_type})")
     out.jacobians[name] = jacobian
     return out
 
 
-# These two are used for testing purposes, to explore functionality
-# perhaps not otherwise ventured into.
-def _seed_dense(value, name, **kwargs):
-    result = seed(value, name, **kwargs)
-    result.jacobians[name] = DenseJacobian(result.jacobians[name])
+def delete_jacobians(a, names=None, **kwargs):
+    """Remove all or selected Jacobians from a quantity, if non left de-dual
+
+    Parameters:
+
+    a : array_like (notably dual)
+        Quantity from which Jacobians are to be removed.  If it has a _delete_jacobians_
+        method, then that is invoked to do this work instead.
+    names : list[str], optional
+        If provided, the names of the jacobians to be removed.  If absent, all are removed.
+
+    Other arguments may be passed to _delete_jacobians_ method
+    """
+    # First see if this quantity has a _delete_jacobians_ method.  If so, use it.
+    if hasattr(a, "_delete_jacobians_"):
+        return a._delete_jacobians_(names, **kwargs)
+    if kwargs:
+        raise ValueError(
+            "No additional arguments alloed to delete_jacobians for this quantity"
+        )
+    # Otherwise do it by hand
+    result = copy.copy(a)
+    if names is None:
+        result.jacobians = {}
+    else:
+        for name in names:
+            del result.jacobians[name]
+    # If no Jacobians are left, make this no longer a dual
+    if not result.jacobians:
+        result = units.Quantity(result)
     return result
-
-
-def _seed_sparse(value, name, **kwargs):
-    result = seed(value, name, **kwargs)
-    result.jacobians[name] = SparseJacobian(result.jacobians[name])
-    return result
-
-
-# And this one for completeness
-def _seed_diagonal(value, name, **kwargs):
-    return seed(value, name, **kwargs)
 
 
 def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None):
@@ -427,21 +485,21 @@ def multi_newton_raphson(
     # Note if there are jacobians on the target, and take them off in any case
     y_has_jacobians = has_jacobians(y)
     if y is not None:
-        y_ = eliminate_jacobians(y)
+        y_ = delete_jacobians(y)
     # Do the same for args and kwargs
     args_have_jacobians = False
     args_ = []
     for arg in args:
         if has_jacobians(arg):
             args_have_jacobians = True
-            arg = eliminate_jacobians(arg)
+            arg = delete_jacobians(arg)
         args_.append(arg)
     kwargs_have_jacobians = False
     kwargs_ = {}
     for name, kwarg in kwargs.items():
         if has_jacobians(kwarg):
             kwargs_have_jacobians = True
-            kwarg = eliminate_jacobians(kwarg)
+            kwarg = delete_jacobians(kwarg)
         kwargs_[name] = kwarg
     # Other starup issues
     i = 0
@@ -460,7 +518,7 @@ def multi_newton_raphson(
         # Compute the Newton-Raphson step and drop the Jacobians we don't want to carry
         # round from iteration to interation
         j = delta_y.jacobians[j_name_x].extract_diagonal()
-        delta_y = eliminate_jacobians(delta_y)
+        delta_y = delete_jacobians(delta_y)
         delta_x = delta_y / j
         if dx_tolerance is not None:
             finish = finish or np.all(abs(delta_x) < dx_tolerance)
@@ -621,6 +679,7 @@ class CubicSpline:
         self.y_unit = y.unit
         self.x_min = np.min(x)
         self.x_max = np.max(x)
+        self.axis = axis
         self.y_interpolator = interpolate.CubicSpline(
             x.value,
             y.value,
@@ -650,15 +709,15 @@ class CubicSpline:
     def __call__(self, x):
         """Return a dual/unit aware spline interpolation"""
         # Make sure x is in the right units and bounded, then take units off
-        x_fixed = np.clip(x.to(self.x_unit), self.x_min, self.x_max).value
+        x_fixed = np.clip(x.to(self.x_unit), self.x_min, self.x_max)
         # Get the intpolated value of y, make it a dual
-        y = dlarray(self.y_interpolator(x_fixed) << self.y_unit)
+        y = dlarray(self.y_interpolator(x_fixed.value) << self.y_unit)
         # Now deal with any jacobians with regard to the original y
         for name, j_interpolator in self.j_interpolators.items():
             y.jacobians[name] = DenseJacobian(
                 template=self.j_templates[name],
                 dependent_shape=y.shape,
-                data=j_interpolator(x_fixed),
+                data=j_interpolator(x_fixed.value),
             )
         # Now deal with any jacobians with regard to x
         if has_jacobians(x):
@@ -667,7 +726,10 @@ class CubicSpline:
                 self.dydx_interpolator = self.y_interpolator.derivative()
             dydx = self.dydx_interpolator(x_fixed)
             # Now multiply all the dx/dt terms by dy/dx to get dy/dt
-            y._chain_rule(x, dydx)
+            x_new_shape = [1] * y.ndim
+            x_new_shape[self.axis] = x.size
+            x_fixed = x_fixed.reshape(x_new_shape)
+            y._chain_rule(x_fixed, dydx)
         # Now, if the result doesn't have Jacobians make it not a dual
         if not has_jacobians(y):
             y = units.Quantity(y)

@@ -60,7 +60,7 @@ class SparseJacobian(BaseJacobian):
         key = self._preprocess_getsetitem_key(key)
         # Now we're going to collapse all the dependent key into a 1D index array.
         # There are probably more efficient ways in which to handle this, particular
-        # for the cases where key is filled entirely with slices. Howeve, the thing
+        # for the cases where key is filled entirely with slices. However, the thing
         # to remember is that there is no shame in handling things that are the
         # length of the dependent vector (or independent one come to that), just
         # avoid things that are the cartesian product of them.  Accordingly this
@@ -77,9 +77,30 @@ class SparseJacobian(BaseJacobian):
 
     def _setjitem(self, key, value):
         """A setitem type method for dense Jacobians"""
-        raise NotImplementedError(
-            "Not (yet) written the setitem capability for sparse Jacobians"
+        if not isinstance(value, SparseJacobian):
+            raise NotImplementedError(
+                "Not implemented SparseJacobian._setjitem for {type(value)}"
+            )
+        # Key point to recall here is that, for each of the dependent indices in key,
+        # we're replacing all of its Jacobians, not just those that are present in
+        # value.  Those Jacobian elements in value that are zero should trump anything
+        # present in self.  This is an overwrite (for the dependent elements in key) not
+        # an add/merge.  First we're going to map between the dependent indices in self
+        # and those in value, using key.
+        i_dependent_full = np.reshape(
+            np.arange(self.dependent_size), self.dependent_shape
         )
+        i_dependent_subset = i_dependent_full[key].ravel()
+        # Now, the dependent index is the "rows" for the sparse Jacobian.  Transform
+        # both self and value into lil sparse matrices.
+        self_lil = self.data2d.tolil()
+        value_lil = value.data2d.tolil()
+        # Replace all affected rows in self with the rows in value
+        for i, (r, d) in enumerate(zip(value_lil.rows, value_lil.data)):
+            ii = i_dependent_subset[i]
+            self_lil.rows[ii] = r
+            self_lil.data[ii] = d
+        self.data2d = self_lil.tocsc()
 
     def broadcast_to(self, shape):
         """Broadcast the dependent vector part of a sparse Jacobian to another shape"""

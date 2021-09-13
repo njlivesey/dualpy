@@ -947,6 +947,11 @@ def stack(arrays, axis=0, out=None):
     return result
 
 
+@implements(np.ndim)
+def dim(array):
+    return array.ndim
+
+
 def nan_to_num_jacobians(x, copy=True, nan=0.0, posinf=None, neginf=None):
     return nan_to_num(
         x, copy=copy, nan=nan, posinf=posinf, neginf=neginf, jacobians_only=True

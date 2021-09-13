@@ -29,6 +29,7 @@ def _setitem_jacobians(key, target, target_jacobians, source_jacobians):
             elif isinstance(source_j, SparseJacobian):
                 newj = SparseJacobian
             elif isinstance(source_j, DiagonalJacobian):
+                source_j = SparseJacobian(source_j)
                 newj = SparseJacobian
             else:
                 raise TypeError(f"Unrecognized type for jacobian {type(source_j)}")
