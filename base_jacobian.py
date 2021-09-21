@@ -137,10 +137,11 @@ class BaseJacobian(object):
     def real(self):
         return type(self)(np.real(self.data), template=self)
 
-    # This routine is called by the child classes to set up for a
-    # premul_diag.  It works out the units issues and sets up for
-    # broadcasting.
     def _prepare_premul_diag(self, diag):
+        """This routine is called by the child classes to set up for a
+        premul_diag.  It works out the units issues and sets up for
+        broadcasting.
+        """
         if hasattr(diag, "unit"):
             dependent_unit = diag.unit * self.dependent_unit
             diag_ = diag.value
@@ -168,6 +169,18 @@ class BaseJacobian(object):
             return self
         scale = self.dependent_unit._to(unit) * (unit / self.dependent_unit)
         return self.scalar_multiply(scale)
+
+    def make_dense(self):
+        """Return a dense version of self"""
+        from .dense_jacobians import DenseJacobian
+
+        return DenseJacobian(self)
+
+    def make_sparse(self):
+        """Retrun a sparse version of self"""
+        from .sparse_jacobians import SparseJacobian
+
+        return SparseJacobian(self)
 
     def decompose(self):
         """Decompose the dependent_unit for a Jacobian"""

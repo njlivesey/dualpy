@@ -58,10 +58,9 @@ class dlarray(units.Quantity):
         # From new-from-template - e.g a_dual[:3]
         #    type(obj) is dual
         #
-        # Note that it is here, rather than in the __new__ method,
-        # that we set the default value for 'jacobians', because this
-        # method sees all creation of default objects - with the
-        # dual.__new__ constructor, but also with
+        # Note that it is here, rather than in the __new__ method, that we set the
+        # default value for 'jacobians', because this method sees all creation of
+        # default objects - with the dual.__new__ constructor, but also with
         # arr.view(dual).
         self.jacobians = getattr(obj, "jacobians", {})
         # We might need to put more here once we're doing reshapes and
@@ -69,10 +68,9 @@ class dlarray(units.Quantity):
         # We do not need to return anything
 
     def __array_ufunc__(self, ufunc, method, *args, **kwargs):
-        # The comparators can just call their numpy equivalents, I'm
-        # going to blythely assert that we don't care to compare
-        # jacobians.  Later, we may decide that other operators fall
-        # into this category.
+        # The comparators can just call their astropy.Quantity equivalents, I'm going to
+        # blythely assert that we don't care to compare jacobians.  Later, we may decide
+        # that other operators fall into this category.
         if ufunc in (
             np.equal,
             np.not_equal,
@@ -463,6 +461,16 @@ class dlarray(units.Quantity):
         for name, jacobian in a.jacobians.items():
             out.jacobians[name] = jacobian.transpose(axes, out.shape)
         return out
+
+    def matmul(a, b):
+        raise NotImplementedError(
+            "No implementation of matmul for duals, consider tensordot?"
+        )
+
+    def rmatmul(a, b):
+        raise NotImplementedError(
+            "No implementation of rmatmul for duals, consider tensordot?"
+        )
 
     @property
     def T(self):
@@ -948,8 +956,41 @@ def stack(arrays, axis=0, out=None):
 
 
 @implements(np.ndim)
-def dim(array):
+def ndim(array):
     return array.ndim
+
+
+@implements(np.transpose)
+def transpose(array, axes=None):
+    return array.transpose(axes)
+
+
+@implements(np.tensordot)
+def tensordot(a, b, axes):
+    a_, b_, aj, bj, out = _setup_dual_operation(a, b, out=None, broadcast=False)
+    a_unit = getattr(a_, "unit", units.dimensionless_unscaled)
+    b_unit = getattr(b_, "unit", units.dimensionless_unscaled)
+    result = dlarray(
+        np.tensordot(np.asarray(a_), np.asarray(b_), axes) * a_unit * b_unit
+    )
+    # Now deal with the Jacobians.  For this, we need to ensure that axes are in the
+    # (2,) array-like form that is the second version np.tensordot can accept them.
+    if isinstance(axes, int):
+        axes = [list(range(a.ndim - axes, a.ndim)), list(range(axes))]
+    for name, jacobian in aj.items():
+        result.jacobians[name] = jacobian.tensordot(
+            np.asarray(b_), axes, dependent_unit=result.unit
+        )
+    for name, jacobian in bj.items():
+        if name in result.jacobians:
+            result.jacobains[name] += jacobian.tensordot(
+                np.asarray(a_), axes, dependent_unit=result.unit, reverse_order=True
+            )
+        else:
+            result.jacobians[name] = jacobian.tensordot(
+                np.asarray(a_), axes, dependent_unit=result.unit, reverse_order=True
+            )
+    return result
 
 
 def nan_to_num_jacobians(x, copy=True, nan=0.0, posinf=None, neginf=None):
