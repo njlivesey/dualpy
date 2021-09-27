@@ -53,8 +53,8 @@ def seed(
 
     Parameters
     ----------
-    value : array-like (or class having _seed_ method)
-        The quantity to have a dual seed added to it.  Note, if value has a _seed_
+    value : array-like (or class having _seed method)
+        The quantity to have a dual seed added to it.  Note, if value has a _seed
         method, then that is invoked to do all the work instead.
     name : str
         The name for the seed
@@ -68,17 +68,17 @@ def seed(
     initial_type : str, optional
         "diagonal" (default), "dense", or "sparse"
 
-    Other options may be passed to the _seed_ method
+    Other options may be passed to the _seed method
 
     Result
     ------
     returns quantity as dual with named seed added
 
     """
-    # First see if the quantity has a _seed_ method, and, if so, invoke that to do the
+    # First see if the quantity has a _seed method, and, if so, invoke that to do the
     # work.
-    if hasattr(value, "_seed_"):
-        return value._seed_(
+    if hasattr(value, "_seed"):
+        return value._seed(
             name=name,
             force=force,
             overwrite=overwrite,
@@ -127,19 +127,19 @@ def delete_jacobians(a, names=None, **kwargs):
     Parameters:
 
     a : array_like (notably dual)
-        Quantity from which Jacobians are to be removed.  If it has a _delete_jacobians_
+        Quantity from which Jacobians are to be removed.  If it has a _delete_jacobians
         method, then that is invoked to do this work instead.
     names : list[str], optional
         If provided, the names of the jacobians to be removed.  If absent, all are removed.
 
-    Other arguments may be passed to _delete_jacobians_ method
+    Other arguments may be passed to _delete_jacobians method
     """
-    # First see if this quantity has a _delete_jacobians_ method.  If so, use it.
-    if hasattr(a, "_delete_jacobians_"):
-        return a._delete_jacobians_(names, **kwargs)
+    # First see if this quantity has a _delete_jacobians method.  If so, use it.
+    if hasattr(a, "_delete_jacobians"):
+        return a._delete_jacobians(names, **kwargs)
     if kwargs:
         raise ValueError(
-            "No additional arguments alloed to delete_jacobians for this quantity"
+            "No additional arguments allowed to delete_jacobians for this quantity"
         )
     # Otherwise do it by hand
     result = copy.copy(a)
