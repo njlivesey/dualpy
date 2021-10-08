@@ -1,4 +1,4 @@
-b"""Class for dense jacobians"""
+"""Class for dense jacobians"""
 import numpy as np
 
 from .jacobian_helpers import (

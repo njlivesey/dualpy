@@ -64,7 +64,7 @@ def seed(
         If set, overwrite an existing Jacobian already called by proposed name (required
         force to be set also).
     reset : bool
-        Convert result to a dual even if it is one already (not sure why this is needed)
+        If it's a dual already, then blow away any previous Jacobians
     initial_type : str, optional
         "diagonal" (default), "dense", or "sparse"
 
@@ -96,8 +96,11 @@ def seed(
                 f"Proposed seed already has a jacobian named '{name}'"
                 + " (set overwrite as well as force?)"
             )
-    if type(value) is not dlarray or reset:
+    if not isinstance(value, dlarray):
         out = dlarray(value)
+    elif reset:
+        # Blow away any previous Jacobians
+        out.jacobians = {}
     else:
         out = value
     # Create the Jacobian as diaongal initially
@@ -734,3 +737,4 @@ class CubicSpline:
         if not has_jacobians(y):
             y = units.Quantity(y)
         return y
+

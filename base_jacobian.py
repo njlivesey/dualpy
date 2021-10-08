@@ -229,3 +229,41 @@ class BaseJacobian(object):
                 # which is not what we want.
                 key = (key,)
         return key
+
+    def matrix_multiply(self, other):
+        """Matrix multiply Jacobian with another (other on the right)"""
+        from .dense_jacobians import DenseJacobian
+        from .sparse_jacobians import SparseJacobian
+        from .diagonal_jacobians import DiagonalJacobian
+        # Check that the dimensions and units are agreeable
+        if self.independent_shape != other.dependent_shape:
+            raise ValueError("Shape mismatch for dense Jacobian matrix multiply")
+        if self.independent_unit != other.dependent_unit:
+            raise ValueError("Units mismatch for dense Jacobian matrix multiply")
+        # Recast any diagonal Jacobians into sparse
+        if isinstance(self, DiagonalJacobian):
+            self = SparseJacobian(other)
+        if isinstance(other, DiagonalJacobian):
+            other = SparseJacobian(other)
+        # Decide what our result type will be
+        if isinstance(self, SparseJacobian) and isinstance(other, SparseJacobian):
+            result_type = SparseJacobian
+        else:
+            result_type = DenseJacobian
+        # OK, do the matrix multiplication
+        result_data2d = self.data2d @ other.data2d
+        # Work out its true shape
+        result_shape = self.dependent_shape + other.independent_shape
+        if result_type is DenseJacobian:
+            result_data = result_data2d.reshape(result_shape)
+            result_data2d = None
+        else:
+            result_data = None
+        return result_type(
+            data=result_data,
+            data2d=result_data2d,
+            dependent_shape=self.dependent_shape,
+            independent_shape=other.independent_shape,
+            dependent_unit=self.dependent_unit,
+            independent_unit=other.independent_unit,
+        )

@@ -682,7 +682,6 @@ class dlarray(units.Quantity):
     def uvalue(self):
         return units.Quantity(self)
 
-
 # -------------------------------------- Now the array functions
 HANDLED_FUNCTIONS = {}
 FALLTHROUGH_FUNCTIONS = []
