@@ -3,6 +3,7 @@
 import astropy.units as units
 
 from .duals import dlarray
+from .user import has_jacobians
 
 
 class Stash:
@@ -32,8 +33,29 @@ class Stash:
         # Return a freshly seeded version of the dual
         return seed(dual, name, initial_type=initial_type, reset=True)
 
-    def unstash(self, dual):
-        """Remap Jacobians in a dual according to this stash"""
+    def unstash(self, dual, collisions="forbid"):
+        """Remap Jacobians in a dual according to this stash.
+
+        Parameters
+        ----------
+
+        dual: dlarray
+            Dual that is to have its Jacobians updated
+
+        collisions: str, default="forbid"
+            Action to take if more than one Jacbian result in the same name.  Default is
+            "forbid", which raises an error.  "overwrite" replaces earlier Jacobians
+            with any new ones.  "add" accumulates contributions.
+
+        Result
+        ------
+
+        Returns an updated version of the dual. Is pass through if result is not a dual.
+
+        """
+        # If there are no Jacobians to update, simply act as a passthrough.
+        if not has_jacobians(dual):
+            return dual
         original_jacobians = dual.jacobians
         # Create a jacobian-less version of dual for the result
         result = dlarray(units.Quantity(dual))
@@ -42,14 +64,30 @@ class Stash:
         for original_name, original_jacobian in original_jacobians.items():
             # See if this Jacbian is for an independent variable that is in our stash
             if original_name in self._all_stashed_jacobians:
-                # If it is, we want to replace with with mapped versions of ourself,
-                # which is just the chain rule, and actually just a matrix multiply of
-                # the data2Ds for each Jacobian.
+                # If it is, we want to replace (or perhaps add) with with mapped
+                # versions of ourself, which is just the chain rule, and actually just a
+                # matrix multiply of the data2Ds for each Jacobian.
                 stashed_jacobians = self._all_stashed_jacobians[original_name]
                 for component_name, component_jacobian in stashed_jacobians.items():
-                    result.jacobians[
-                        component_name
-                    ] = original_jacobian.matrix_multiply(component_jacobian)
+                    new_matrix = original_jacobian.matrix_multiply(component_jacobian)
+                    add_matrices = False
+                    if component_name in result.jacobians:
+                        if collisions == "forbid":
+                            raise ValueError(
+                                f"Collision for component {component_name}"
+                            )
+                        elif collisions == "add":
+                            add_matrices = True
+                        elif collisions == "overwrite":
+                            pass
+                        else:
+                            raise ValueError(
+                                f"Illegal value for collisions: {collisions}"
+                            )
+                    if add_matrices:
+                        result.jacobians[component_name] += new_matrix
+                    else:
+                        result.jacobians[component_name] = new_matrix
             else:
                 # If this Jacobian does not refer to an independent variable in our
                 # stash, then simply copy it over.
