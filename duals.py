@@ -678,6 +678,7 @@ class dlarray(units.Quantity):
     def reshape(array, *args, **kwargs):
         return _reshape(array, *args, **kwargs)
 
+
     @property
     def uvalue(self):
         return units.Quantity(self)
@@ -697,6 +698,19 @@ def implements(numpy_function):
 
     return decorator
 
+
+# @implements(np.amin)
+# def amin(a, axis=None, out=None, keepdims=False, initial=None, where=None):
+#     if out is not None:
+#         raise NotImplementedError("Cannot call np.amin on duals with out")
+#     if initial is not None:
+#         raise NotImplementedError("Cannot call np.amin on duals with initial")
+#     if where is not None:
+#         raise NotImplementedError("Cannot call np.amin on duals with where")
+#     i = np.argmin(np.array(a), axis=axis)
+#     if keepdims:
+#         pass
+    
 
 @implements(np.sum)
 def sum(a, axis=None, dtype=None, keepdims=False):

@@ -680,8 +680,8 @@ class CubicSpline:
             raise ValueError("Cannot (yet) handle Jacobians for input x")
         self.x_unit = x.unit
         self.y_unit = y.unit
-        self.x_min = np.min(x)
-        self.x_max = np.max(x)
+        self.x_min = np.min(units.Quantity(x))
+        self.x_max = np.max(units.Quantity(x))
         self.axis = axis
         self.y_interpolator = interpolate.CubicSpline(
             x.value,
@@ -727,7 +727,7 @@ class CubicSpline:
             # Get the dydx_interolator if it's not already been generated
             if self.dydx_interpolator is None:
                 self.dydx_interpolator = self.y_interpolator.derivative()
-            dydx = self.dydx_interpolator(x_fixed)
+            dydx = self.dydx_interpolator(x_fixed) << (self.y_unit / self.x_unit)
             # Now multiply all the dx/dt terms by dy/dx to get dy/dt
             x_new_shape = [1] * y.ndim
             x_new_shape[self.axis] = x.size
