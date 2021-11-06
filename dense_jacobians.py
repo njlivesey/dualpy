@@ -14,10 +14,14 @@ __all__ = ["DenseJacobian"]
 class DenseJacobian(BaseJacobian):
     """A dljacobian that's a full on ndarray"""
 
-    def __init__(self, data=None, template=None, **kwargs):
+    def __init__(self, data=None, template=None, data2d=None, **kwargs):
         from .sparse_jacobians import SparseJacobian
         from .diagonal_jacobians import DiagonalJacobian
 
+        if data is not None and data2d is not None:
+            raise ValueError(
+                "Cannot supply both data and data2d"
+            )
         if isinstance(data, BaseJacobian):
             if template is None:
                 template = data
@@ -37,10 +41,13 @@ class DenseJacobian(BaseJacobian):
                 data_ = np.reshape(data.data2d.toarray(), template.shape)
             else:
                 raise ValueError("Unrecognized type for input jacobian")
-        elif data is None:
-            data_ = np.zeros(shape=self.shape, dtype=self.dtype)
         else:
-            data_ = data
+            if data is not None:
+                data_ = data
+            elif data2d is not None:
+                data_ = np.reshape(data2d, self.shape)
+            else:
+                data_ = np.zeros(shape=self.shape, dtype=self.dtype)
         if data_.shape != self.shape:
             raise ValueError("Attempt to create jacobian_dense with wrong-shaped input")
         self.data = data_

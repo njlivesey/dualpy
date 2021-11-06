@@ -420,9 +420,9 @@ def cumulative_trapezoid(y, x=None, dx=1.0, axis=-1, initial=None):
 
 def has_jacobians(a):
     """Return true if a is a dual with Jacobians"""
-    if not isinstance(a, dlarray):
+    if not hasattr(a, "jacobians"):
         return False
-    return a.hasJ()
+    return bool(a.jacobians)
 
 
 def multi_newton_raphson(

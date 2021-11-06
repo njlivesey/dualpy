@@ -242,7 +242,7 @@ class BaseJacobian(object):
             raise ValueError("Units mismatch for dense Jacobian matrix multiply")
         # Recast any diagonal Jacobians into sparse
         if isinstance(self, DiagonalJacobian):
-            self = SparseJacobian(other)
+            self = SparseJacobian(self)
         if isinstance(other, DiagonalJacobian):
             other = SparseJacobian(other)
         # Decide what our result type will be
