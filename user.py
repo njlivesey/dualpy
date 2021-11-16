@@ -737,4 +737,3 @@ class CubicSpline:
         if not has_jacobians(y):
             y = units.Quantity(y)
         return y
-
