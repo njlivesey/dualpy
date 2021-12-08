@@ -52,6 +52,7 @@ class BaseJacobian(object):
         self.size = self.dependent_size * self.independent_size
         self.dependent_ndim = len(self.dependent_shape)
         self.independent_ndim = len(self.independent_shape)
+        self.independent_ndim_axis_corrrection = self.independent_ndim
         self.ndim = self.dependent_ndim + self.independent_ndim
         self.shape2d = (self.dependent_size, self.independent_size)
         self._dummy_dependent = (1,) * self.dependent_ndim
@@ -123,9 +124,14 @@ class BaseJacobian(object):
                 )
         else:
             try:
-                return tuple(a if a >= 0 else a - self.independent_ndim for a in axis)
+                return tuple(
+                    a if a >= 0 else self.ndim + a - self.independent_ndim
+                    for a in axis
+                )
             except TypeError:
-                return axis if axis >= 0 else axis - self.independent_ndim
+                return (
+                    axis if axis >= 0 else self.ndim + axis - self.independent_ndim
+                )
 
     def _slice_axis(self, axis, s, none="none"):
         """Return a key that has full slices for all axes, but s for axis"""
@@ -235,6 +241,7 @@ class BaseJacobian(object):
         from .dense_jacobians import DenseJacobian
         from .sparse_jacobians import SparseJacobian
         from .diagonal_jacobians import DiagonalJacobian
+
         # Check that the dimensions and units are agreeable
         if self.independent_shape != other.dependent_shape:
             raise ValueError("Shape mismatch for dense Jacobian matrix multiply")

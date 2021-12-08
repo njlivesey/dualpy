@@ -177,33 +177,31 @@ class DenseJacobian(BaseJacobian):
             dependent_shape=result_dependent_shape,
         )
 
-    def tensordot(self, other, axes, dependent_unit, reverse_order=False):
+    def tensordot(self, other, axes, dependent_unit):
+        """Compute self(.)other"""
+        # Note that axes here must be in the list of two lists form, with no negative
+        # numbers.
         n_contractions = len(axes[0])
-        if not reverse_order:
-            # Do the not-reversed order first, the annoying thing here is that we
-            # actually want our independent dimensions at the end, so will have to do a
-            # transpose.
-            result_ = np.tensordot(self.data, other, axes)
-            # Move the indepenent axes to the end.  First we want the non-contracted
-            # dependent dimensions from self, these are in the middle currently
-            new_axis_order = list(range(self.dependent_ndim - n_contractions))
-            # Then the non-contracted independent dimensions from other, currently
-            # at the end
-            new_axis_order += list(
-                range(result_.ndim - other.ndim + n_contractions, result_.ndim)
+        # With this order of the tensordot, the annoying thing here is that we actually
+        # want our independent dimensions (part of self) at the end, so will have to do
+        # a transpose.  Let's do the tensor dot anyway.
+        result_ = np.tensordot(self.data, other, axes)
+        # Move the indepenent axes to the end.  First we want the non-contracted
+        # dependent dimensions from self, these are in the middle currently
+        new_axis_order = list(range(self.dependent_ndim - n_contractions))
+        # Then the non-contracted independent dimensions from other, currently
+        # at the end
+        new_axis_order += list(
+            range(result_.ndim - other.ndim + n_contractions, result_.ndim)
+        )
+        # Finally the independent dimensions, currently in the middle
+        new_axis_order += list(
+            range(
+                self.dependent_ndim - n_contractions,
+                self.dependent_ndim - n_contractions + self.independent_ndim,
             )
-            # Finally the independent dimensions, currently in the middle
-            new_axis_order += list(
-                range(
-                    self.dependent_ndim - n_contractions,
-                    self.dependent_ndim - n_contractions + self.independent_ndim,
-                )
-            )
-            result_ = np.transpose(result_, new_axis_order)
-        else:
-            result_ = np.tensordot(other, self.data, axes[::-1])
-            # Here, the dimensions come out just right
-        # Do some housekeeping
+        )
+        result_ = np.transpose(result_, new_axis_order)
         result_dependent_shape = result_.shape[: -self.independent_ndim]
         return DenseJacobian(
             data=result_,
@@ -211,6 +209,17 @@ class DenseJacobian(BaseJacobian):
             dependent_unit=dependent_unit,
             independent_shape=self.independent_shape,
             independent_unit=self.independent_unit,
+        )
+
+    def rtensordot(self, other, axes, dependent_unit):
+        """Compute other(.)self"""
+        result_ = np.tensordot(other, self.data, axes)
+        result_dependent_shape = result_.shape[: -self.independent_ndim]
+        return DenseJacobian(
+            data=result_,
+            template=self,
+            dependent_shape=result_dependent_shape,
+            dependent_unit=dependent_unit,
         )
 
     def extract_diagonal(self):

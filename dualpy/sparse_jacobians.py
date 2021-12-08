@@ -9,6 +9,54 @@ from .base_jacobian import BaseJacobian
 __all__ = ["SparseJacobian"]
 
 
+def _rearrange_2d(matrix, original_shapes, axes):
+    """Rearrange a 2D sparse matrix representing a tensor into a different axis order
+
+    Parameters
+    ----------
+
+    matrix: (sparse) matrix-like
+        A 2D sparse matrix (typically csc format) that is really storing a sparse tensor
+        with the axes raveled into to sets.
+
+    original_shape: list of two lists of int
+        A list of two lists giving the shapes that ravel to make the rows and columns of
+        matrix.
+
+    axes: list of two lists of int
+        Which axes of the original should constitute the raveling of the result
+
+    """
+    # Work out what we've been asked to do
+    original_shape = original_shapes[0] + original_shapes[1]
+    n0, n1 = len(axes[0]), len(axes[1])
+    if n0 + n1 != len(original_shape):
+        raise ValueError("Mismatched dimensionality")
+    rearranged_shape = [original_shape[i] for i in axes[0] + axes[1]]
+    rearranged_shape_2d = [
+        np.prod(rearranged_shape[:n0]),
+        np.prod(rearranged_shape[n0:]),
+    ]
+    # Convert the matrix to coo form
+    matrix_coo = matrix.tocoo()
+    # Now get the raveled indices for all the elements
+    i_raveled = np.ravel_multi_index((matrix_coo.row, matrix_coo.col), matrix_coo.shape)
+    # Now get these all as unravelled indices across all the axes
+    i_all_original = np.unravel_index(i_raveled, original_shape)
+    # Now rearrange this list of indices according to the prescription supplied.
+    i_all_rearranged = [i_all_original[i] for i in axes[0] + axes[1]]
+    # Now ravel the new row/column indices
+    i0_new = np.ravel_multi_index(i_all_rearranged[:n0], rearranged_shape[:n0])
+    i1_new = np.ravel_multi_index(i_all_rearranged[n0:], rearranged_shape[n0:])
+    # Make the new matrix - this is what does the actual rearrangement
+    return (
+        sparse.csc_matrix(
+            (matrix_coo.data, (i0_new, i1_new)), shape=rearranged_shape_2d
+        ),
+        [rearranged_shape[0:n0], rearranged_shape[n0:]],
+    )
+
+
 class SparseJacobian(BaseJacobian):
     """A dljacobian that's stored as sparse 2D array under the hood"""
 
@@ -315,28 +363,15 @@ class SparseJacobian(BaseJacobian):
                 # OK, we want to take the current 2D matrix and pull it
                 # about so that the summed-over axis is now the rows, and
                 # the columns are all the remaining dependent axes plus
-                # the independent ones.  First, work out the shape of the
-                # shuffled array (and the 2D matrix it will be thought of
-                # as)
-                shape_shuff = list(self.shape)
-                shape_shuff.insert(0, shape_shuff.pop(axis))
-                shape_shuff_2d = (shape_shuff[0], int(np.prod(shape_shuff[1:])))
-                # Turn the matrix into coo
-                self_coo = self.data2d.tocoo()
-                # Now get the raveled indices for all the elements
-                i = np.ravel_multi_index((self_coo.row, self_coo.col), self_coo.shape)
-                # Now get these all as unravelled indices across all the axes
-                i = list(np.unravel_index(i, self.shape))
-                # Now rearrange this list of indices to pull the target one to the
-                # front.  Do this by popping the axis in question into a row axis
-                row = i.pop(axis)
-                # And merging the remainder into a column index
-                col = np.ravel_multi_index(i, shape_shuff[1:])
-                # Make this a new matrix - this is what actually performs the transpose
-                new_csc = sparse.csc_matrix(
-                    (self_coo.data, (row, col)), shape=shape_shuff_2d
+                # the independent ones.
+                remainder = list(range(self.ndim))
+                remainder.pop(axis)
+                new_csc, rearranged_shapes = _rearrange_2d(
+                    self.data2d,
+                    [self.dependent_shape, self.independent_shape],
+                    [[axis], remainder],
                 )
-                nrows = shape_shuff[0]
+                nrows = self.shape[axis]
             # We have two choices here, we could do a python loop to build up and store
             # cumulative sums, but I suspect that, while on paper more efficient
             # (reducing the number of additions, it would be slow in reality. Instead,
@@ -347,23 +382,15 @@ class SparseJacobian(BaseJacobian):
             if easy:
                 result = SparseJacobian(template=self, data=intermediate)
             else:
-                # Now we need to transpose this back to the original
-                # shape.  Reverse the steps above.
-                intermediate_coo = intermediate.tocoo()
-                # First ravel the combined row/column index
-                i = np.ravel_multi_index(
-                    (intermediate_coo.row, intermediate_coo.col), intermediate_coo.shape
-                )
-                # Now get these all as unravelled indices across the board
-                i = list(np.unravel_index(i, shape_shuff))
-                # Now rearrange this to put things back in their proper place
-                i.insert(axis, i.pop(0))
-                # Now ravel them all into one index again
-                i = np.ravel_multi_index(i, self.shape)
-                # And now make row and column indices out of them
-                row, col = np.unravel_index(i, self.shape2d)
-                result_csc = sparse.csc_matrix(
-                    (intermediate_coo.data, (row, col)), shape=self.shape2d
+                restored_order = list(range(1, self.ndim))
+                restored_order.insert(axis, 0)
+                result_csc, dummy_result_shapes = _rearrange_2d(
+                    intermediate,
+                    rearranged_shapes,
+                    [
+                        restored_order[: self.dependent_ndim],
+                        restored_order[self.dependent_ndim :],
+                    ],
                 )
                 result = SparseJacobian(template=self, data=result_csc)
         return result
@@ -395,6 +422,49 @@ class SparseJacobian(BaseJacobian):
             new_csc,
             template=self,
             dependent_shape=result_dependent_shape,
+        )
+
+    def tensordot(self, other, axes, dependent_unit):
+        """Compute self(.)other"""
+        from .dense_jacobians import DenseJacobian
+        # Note that axes here must be in the list of two lists form
+        print(f"Going in, other is {other.shape}, Jacobian is {self}")
+        if len(axes[0]) != 1:
+            raise ValueError(
+                "Not (yet?) worked out how to do multi-axis "
+                "tensordot for sparse Jacobians"
+            )
+        a_self, a_other = axes[0][0], axes[1][0]
+        # We're going to pull self.data2d around so that the common index is at the
+        # front.
+        remainder = list(range(self.ndim))
+        remainder.pop(a_self)
+        new_csc, rearranged_shapes = _rearrange_2d(
+            self.data2d,
+            [self.dependent_shape, self.independent_shape],
+            [[a_self], remainder],
+        )
+        # Now we can do similar things to other, making it a 2D matrix and putting
+        # it's key index at the back.
+        new_other_order = list(range(other.ndim))
+        new_other_order.append(new_other_order.pop(a_other))
+        other = other.transpose(new_other_order)
+        other = np.reshape(other, [np.prod(other.shape[:-1]), other.shape[-1]])
+        # OK, now we can finally do a matrix multiply
+        print(f"After rearrangement we have {other.shape} and {new_csc.shape}")
+        result_raw = other @ new_csc
+        # Result is now a 2D dense matrix, reshape it to its full dimensionality
+        rearranged_shapes[0][0] = other.shape[0]
+        result_ = np.reshape(result_raw, rearranged_shapes[0] + rearranged_shapes[1])
+        # ... and then put the result into the right arrangement
+        result_order = list(range(1, self.ndim))
+        result_order.insert(a_self, 0)
+        result_ = np.transpose(result_, result_order)
+        result_dependent_shape = result_.shape[0:self.dependent_ndim]
+        return DenseJacobian(
+            data=result_, template=self,
+            dependent_shape=result_dependent_shape,
+            dependent_unit=dependent_unit,
         )
 
     def extract_diagonal(self):

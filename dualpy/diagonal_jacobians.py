@@ -115,6 +115,12 @@ class DiagonalJacobian(BaseJacobian):
             dependent_shape=result_dependent_shape,
         )
 
+    def tensordot(self, other, axes, dependent_unit, reverse_order=False):
+        """Compute self(.)other, or other(.)self if reverse_order is True"""
+        # Once we do this, we will no longer be diagonal, so convert to sparse
+        self_sparse = SparseJacobian(self)
+        return self_sparse.tensordot(other, axes, dependent_unit, reverse_order)
+        
     def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):
         """Performs sum for the diagonal Jacobians"""
         # Once we take the sum, along any or all axes, the jacobian is

@@ -3,7 +3,6 @@
 import numpy as np
 import astropy.units as units
 import fnmatch
-from itertools import accumulate
 
 from .dual_helpers import _setup_dual_operation, _per_rad, _broadcast_jacobians
 from .jacobians import (

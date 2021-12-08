@@ -149,8 +149,11 @@ def delete_jacobians(a, names=None, **kwargs):
     if names is None:
         result.jacobians = {}
     else:
-        for name in names:
-            del result.jacobians[name]
+        if isinstance(names, str):
+            del result.jacobians[names]
+        else:
+            for name in names:
+                del result.jacobians[name]
     # If no Jacobians are left, make this no longer a dual
     if not result.jacobians:
         result = units.Quantity(result)
@@ -234,7 +237,7 @@ def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None)
             name = list(a.jacobians.keys())[0]
             template = a.jacobians[name]
             # Create the 2D matrix that will contain the numerical Jacobians
-            jacobian = np.ndarray((result0.size, a.size))
+            jacobian = np.ndarray((result0.size, a.size), dtype=result0.dtype)
             # There may be a more pythonic way to do this, but for now this works.
             for i in np.arange(a.size):
                 # Perturb one element, call the function, put the
@@ -645,30 +648,102 @@ def rfft(x, axis=-1):
     """Compute the 1-D discrete Fourier Transform for real input (includes duals)"""
     result = fft.rfft(np.array(x), axis=axis) << x.unit
     if has_jacobians(x):
+        # Preparet the result
         result = dlarray(result)
+        # Dense Jacobian's are simply handled as their own fourier transform.  Dense
+        # ones dictate a different (hopefully more efficient approach that recognizes
+        # that a Fourier transform is simply a matrix multiply (granted a multiplication
+        # by a matrix whose properties allow for the efficiencies implicit in the FFT
+        # algorithm, but may not be usefully exploited when chain ruling with a sparse
+        # Jacobians.  So first see if any of the subsequent matrices are sparse (or
+        # diagonal).
+        any_non_dense = any(
+            [
+                not isinstance(jacobian, DenseJacobian)
+                for jacobian in x.jacobians.values()
+            ]
+        )
+        if any_non_dense:
+            # Compute the matrix that is d<rfft>/dx
+            n_in = x.shape[axis]
+            n_out = n_in / 2 + 1 if n_in % 2 == 0 else (n_in + 1) / 2
+            p, q = np.mgrid[0:n_out, 0:n_in]
+            c = -2j * np.pi / n_in
+            D = np.exp(c * p * q)
+        # Now loop over the Jacobians and deal with them.
         for name, jacobian in x.jacobians.items():
-            jacobian = DenseJacobian(jacobian)
-            jaxis = jacobian._get_jaxis(axis)
-            jfft = fft.rfft(jacobian.data, axis=jaxis)
-            result.jacobians[name] = DenseJacobian(
-                jfft, template=jacobian, dependent_shape=result.shape
-            )
+            if isinstance(jacobian, DenseJacobian):
+                jaxis = jacobian._get_jaxis(axis)
+                jfft = fft.rfft(jacobian.data, axis=jaxis)
+                result.jacobians[name] = DenseJacobian(
+                    jfft,
+                    template=jacobian,
+                    dependent_shape=result.shape,
+                )
+            else:
+                if isinstance(jacobian, DiagonalJacobian):
+                    jacobian = SparseJacobian(jacobian)
+                jaxis = jacobian._get_jaxis(axis)
+                # Do it the matrix multiply way (note that the diagonal case invokes the
+                # sparse case under the hood).
+                print(f"For: {name}, {axis} has become {jaxis}, {type(jacobian)}")
+                result.jacobians[name] = jacobian.tensordot(
+                    D,
+                    axes=[[jaxis], [1]],
+                    dependent_unit=result.unit,
+                )
     return result
-
 
 def irfft(x, axis=-1):
-    """Compute the 1-D discrete inverse Fourier Transform for real input (includes duals)"""
+    """Compute the 1-D discrete inverse Fourier Transform giving real input (includes duals)"""
     result = fft.irfft(np.array(x), axis=axis) << x.unit
     if has_jacobians(x):
+        # Preparet the result
         result = dlarray(result)
+        # Dense Jacobian's are simply handled as their own fourier transform.  Dense
+        # ones dictate a different (hopefully more efficient approach that recognizes
+        # that a Fourier transform is simply a matrix multiply (granted a multiplication
+        # by a matrix whose properties allow for the efficiencies implicit in the FFT
+        # algorithm, but may not be usefully exploited when chain ruling with a sparse
+        # Jacobians.  So first see if any of the subsequent matrices are sparse (or
+        # diagonal).
+        any_non_dense = any(
+            [
+                not isinstance(jacobian, DenseJacobian)
+                for jacobian in x.jacobians.values()
+            ]
+        )
+        if any_non_dense:
+            # Compute the matrix that is d<rfft>/dx
+            n_in = x.shape[axis]
+            n_out = 2*(n_in-1)
+            p, q = np.mgrid[0:n_out, 0:n_in]
+            c = -2j * np.pi / n_in
+            D = np.exp(c * p * q)
+        # Now loop over the Jacobians and deal with them.
         for name, jacobian in x.jacobians.items():
-            jacobian = DenseJacobian(jacobian)
-            jaxis = jacobian._get_jaxis(axis)
-            jfft = fft.irfft(jacobian.data, axis=jaxis)
-            result.jacobians[name] = DenseJacobian(
-                jfft, template=jacobian, dependent_shape=result.shape
-            )
+            if isinstance(jacobian, DenseJacobian):
+                jaxis = jacobian._get_jaxis(axis)
+                jfft = fft.irfft(jacobian.data, axis=jaxis)
+                result.jacobians[name] = DenseJacobian(
+                    jfft,
+                    template=jacobian,
+                    dependent_shape=result.shape,
+                )
+            else:
+                if isinstance(jacobian, DiagonalJacobian):
+                    jacobian = SparseJacobian(jacobian)
+                jaxis = jacobian._get_jaxis(axis)
+                # Do it the matrix multiply way (note that the diagonal case invokes the
+                # sparse case under the hood).
+                print(f"For: {name}, {axis} has become {jaxis}, {type(jacobian)}")
+                result.jacobians[name] = jacobian.tensordot(
+                    D,
+                    axes=[[jaxis], [1]],
+                    dependent_unit=result.unit,
+                )
     return result
+
 
 
 class CubicSpline:
