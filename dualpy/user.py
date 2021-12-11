@@ -694,8 +694,9 @@ def rfft(x, axis=-1):
                 )
     return result
 
+
 def irfft(x, axis=-1):
-    """Compute the 1-D discrete inverse Fourier Transform giving real input (includes duals)"""
+    """Compute 1-D discrete inverse Fourier Transform giving real result (with duals)"""
     result = fft.irfft(np.array(x), axis=axis) << x.unit
     if has_jacobians(x):
         # Preparet the result
@@ -716,10 +717,12 @@ def irfft(x, axis=-1):
         if any_non_dense:
             # Compute the matrix that is d<rfft>/dx
             n_in = x.shape[axis]
-            n_out = 2*(n_in-1)
+            n_out = 2 * (n_in - 1)
             p, q = np.mgrid[0:n_out, 0:n_in]
-            c = -2j * np.pi / n_in
-            D = np.exp(c * p * q)
+            c = 2 * np.pi / n_out
+            D = 2 * np.cos(c * p * q) / n_out
+            D[:, 0] *= 0.5
+            D[:, -1] *= 0.5
         # Now loop over the Jacobians and deal with them.
         for name, jacobian in x.jacobians.items():
             if isinstance(jacobian, DenseJacobian):
@@ -743,7 +746,6 @@ def irfft(x, axis=-1):
                     dependent_unit=result.unit,
                 )
     return result
-
 
 
 class CubicSpline:
