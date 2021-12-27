@@ -13,7 +13,7 @@ from .jacobians import (
 )
 
 
-__all__ = ["dlarray", "nan_to_num_jacobians", "_setup_dual_operation"]
+__all__ = ["dlarray", "nan_to_num_jacobians", "_setup_dual_operation", "tensordot"]
 
 
 class dlarray(units.Quantity):
@@ -677,10 +677,10 @@ class dlarray(units.Quantity):
     def reshape(array, *args, **kwargs):
         return _reshape(array, *args, **kwargs)
 
-
     @property
     def uvalue(self):
         return units.Quantity(self)
+
 
 # -------------------------------------- Now the array functions
 HANDLED_FUNCTIONS = {}
@@ -709,7 +709,7 @@ def implements(numpy_function):
 #     i = np.argmin(np.array(a), axis=axis)
 #     if keepdims:
 #         pass
-    
+
 
 @implements(np.sum)
 def sum(a, axis=None, dtype=None, keepdims=False):
@@ -979,28 +979,34 @@ def transpose(array, axes=None):
 
 @implements(np.tensordot)
 def tensordot(a, b, axes):
+    import sparse as st
     a_, b_, aj, bj, out = _setup_dual_operation(a, b, out=None, broadcast=False)
-    a_unit = getattr(a_, "unit", units.dimensionless_unscaled)
-    b_unit = getattr(b_, "unit", units.dimensionless_unscaled)
     result = dlarray(
-        np.tensordot(np.asarray(a_), np.asarray(b_), axes) * a_unit * b_unit
+        st.tensordot(a_, b_, axes)
     )
     # Now deal with the Jacobians.  For this, we need to ensure that axes are in the
     # (2,) array-like form that is the second version np.tensordot can accept them.
     if isinstance(axes, int):
         axes = [list(range(a.ndim - axes, a.ndim)), list(range(axes))]
+    # Remove units from a_ and b_ for doing the tensor dot product
+    a_no_unit = getattr(a_, "value", a_)
+    b_no_unit = getattr(b_, "value", b_)
     for name, jacobian in aj.items():
         result.jacobians[name] = jacobian.tensordot(
-            np.asarray(b_), axes, dependent_unit=result.unit
+            b_no_unit, axes, dependent_unit=result.unit
         )
     for name, jacobian in bj.items():
         if name in result.jacobians:
-            result.jacobains[name] += jacobian.tensordot(
-                np.asarray(a_), axes, dependent_unit=result.unit, reverse_order=True
+            result.jacobains[name] += jacobian.rtensordot(
+                a_no_unit,
+                axes,
+                dependent_unit=result.unit,
             )
         else:
-            result.jacobians[name] = jacobian.tensordot(
-                np.asarray(a_), axes, dependent_unit=result.unit, reverse_order=True
+            result.jacobians[name] = jacobian.rtensordot(
+                a_no_unit,
+                axes,
+                dependent_unit=result.unit,
             )
     return result
 

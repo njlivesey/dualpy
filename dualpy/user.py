@@ -17,7 +17,7 @@ from .duals import dlarray
 from .dual_helpers import _setup_dual_operation
 
 __all__ = [
-    "CubicSpline",
+    "CubicSplineLinearJacobians",
     "PossibleDual",
     "compute_jacobians_numerically",
     "cumulative_trapezoid",
@@ -161,16 +161,42 @@ def delete_jacobians(a, names=None, **kwargs):
 
 
 def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None):
-    # Take a function and set of arguments, run the function once with
-    # analytical Jacobians, then perturb each seeded element in turn
-    # to compute equivalent numerical Jacobians.  This is used for
-    # testing the analytical Jacobian calcualtions.  If "func" cannot
-    # be called for non-duals (e.g., voigt_profile exists for ndarray
-    # and dlarray, but not units.Quantity) then the optional
-    # plain_func argument provides a non-dual compatible routine
-    # (presumably a wrapper that promotes one or more arguments to
-    # dual to then invoke func on).
-    #
+    """Compute Jacobians by perturbation for comparison to analytical
+
+    Take a function and set of arguments, run the function once with
+    analytical Jacobians, then perturb each seeded element in turn
+    to compute equivalent numerical Jacobians.  This is used for
+    testing the analytical Jacobian calcualtions.  If "func" cannot
+    be called for non-duals (e.g., voigt_profile exists for ndarray
+    and dlarray, but not units.Quantity) then the optional
+    plain_func argument provides a non-dual compatible routine
+    (e.g., a wrapper that promotes one or more arguments to
+    dual to then invoke func on).
+
+    Arguments
+    ---------
+    func - callable
+        The function that provides analytical Jacobians and that is to be called as many
+        times as needed to provide numerical Jacobians
+    *args - sequence
+        The arguments to func
+    **kwargs - dict
+        Any keyword arguments to func
+    plain_func: callable, optional
+        A version of func that works for non-dual arguments if func is not suitable 
+        for that
+
+    Returns
+    -------
+    analytical_result, numerical_result: duals
+        The result of calling func with args/kwargs with Jacobians computed
+        analytically and numerically, respecively.
+
+    Raises
+    ------
+    ValueError if an input contains more than one Jacobian or any Jacobian
+    is non-square.
+    """
     # First compute the unperturbed result
     if plain_func is None:
         plain_func = func
@@ -686,7 +712,6 @@ def rfft(x, axis=-1):
                 jaxis = jacobian._get_jaxis(axis)
                 # Do it the matrix multiply way (note that the diagonal case invokes the
                 # sparse case under the hood).
-                print(f"For: {name}, {axis} has become {jaxis}, {type(jacobian)}")
                 result.jacobians[name] = jacobian.tensordot(
                     D,
                     axes=[[jaxis], [1]],
@@ -739,7 +764,6 @@ def irfft(x, axis=-1):
                 jaxis = jacobian._get_jaxis(axis)
                 # Do it the matrix multiply way (note that the diagonal case invokes the
                 # sparse case under the hood).
-                print(f"For: {name}, {axis} has become {jaxis}, {type(jacobian)}")
                 result.jacobians[name] = jacobian.tensordot(
                     D,
                     axes=[[jaxis], [1]],
@@ -748,7 +772,7 @@ def irfft(x, axis=-1):
     return result
 
 
-class CubicSpline:
+class CubicSplineLinearJacobians:
     """This basically wraps scipy.interpolate.CubicSpline"""
 
     def __init__(self, x, y, axis=0, bc_type="not-a-knot", extrapolate=None):
@@ -769,18 +793,8 @@ class CubicSpline:
         )
         if has_jacobians(y):
             self.j_interpolators = dict()
-            self.j_templates = dict()
             for name, jacobian in y.jacobians.items():
-                # Not going to try anything silly in terms of non-dense jacobians
-                jacobian = DenseJacobian(jacobian)
-                self.j_interpolators[name] = interpolate.CubicSpline(
-                    x.value,
-                    jacobian.data,
-                    axis=jacobian._get_jaxis(axis),
-                    bc_type=bc_type,
-                    extrapolate=extrapolate,
-                )
-                self.j_templates[name] = BaseJacobian(template=jacobian)
+                self.j_interpolators[name] = jacobian.linear_interpolator(x.value, axis)
         else:
             self.j_interpolators = {}
         # Leave a space to cache the derivative interpolators
@@ -790,15 +804,11 @@ class CubicSpline:
         """Return a dual/unit aware spline interpolation"""
         # Make sure x is in the right units and bounded, then take units off
         x_fixed = np.clip(x.to(self.x_unit), self.x_min, self.x_max)
-        # Get the intpolated value of y, make it a dual
+        # Get the interpolated value of y, make it a dual
         y = dlarray(self.y_interpolator(x_fixed.value) << self.y_unit)
         # Now deal with any jacobians with regard to the original y
         for name, j_interpolator in self.j_interpolators.items():
-            y.jacobians[name] = DenseJacobian(
-                template=self.j_templates[name],
-                dependent_shape=y.shape,
-                data=j_interpolator(x_fixed.value),
-            )
+            y.jacobians[name] = j_interpolator(x_fixed.value)
         # Now deal with any jacobians with regard to x
         if has_jacobians(x):
             # Get the dydx_interolator if it's not already been generated

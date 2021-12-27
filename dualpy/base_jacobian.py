@@ -176,13 +176,13 @@ class BaseJacobian(object):
         scale = self.dependent_unit._to(unit) * (unit / self.dependent_unit)
         return self.scalar_multiply(scale)
 
-    def make_dense(self):
+    def to_dense(self):
         """Return a dense version of self"""
         from .dense_jacobians import DenseJacobian
 
         return DenseJacobian(self)
 
-    def make_sparse(self):
+    def to_sparse(self):
         """Retrun a sparse version of self"""
         from .sparse_jacobians import SparseJacobian
 

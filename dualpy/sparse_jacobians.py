@@ -1,15 +1,16 @@
 """Class for sparse jacobians"""
 import scipy.sparse as sparse
 import numpy as np
-import warnings
+import copy
 
 from .jacobian_helpers import _array_to_sparse_diagonal, _shapes_broadcastable
 from .base_jacobian import BaseJacobian
+from mls_scf_tools.util import linear_interpolation_indices_and_weights
 
 __all__ = ["SparseJacobian"]
 
 
-def _rearrange_2d(matrix, original_shapes, axes):
+def _rearrange_2d(matrix, original_shapes, axes=None, promote=None, demote=None):
     """Rearrange a 2D sparse matrix representing a tensor into a different axis order
 
     Parameters
@@ -26,16 +27,37 @@ def _rearrange_2d(matrix, original_shapes, axes):
     axes: list of two lists of int
         Which axes of the original should constitute the raveling of the result
 
+    promote: A single axis to move to the front
+
+    demote: A single axis to move to the back
+
     """
     # Work out what we've been asked to do
+    n0_in = len(original_shapes[0])
+    n1_in = len(original_shapes[1])
+    n_in = n0_in + n1_in
     original_shape = original_shapes[0] + original_shapes[1]
-    n0, n1 = len(axes[0]), len(axes[1])
-    if n0 + n1 != len(original_shape):
+    if promote is not None or demote is not None:
+        if axes is not None:
+            raise ValueError("Cannot set both axes and promote/demote")
+        if promote is not None and demote is not None:
+            raise ValueError("Cannot set both promote and demote")
+        remainder = list(range(len(original_shape)))
+        if promote is not None:
+            remainder.pop(promote)
+            axes = [[promote], remainder]
+        if demote is not None:
+            remainder.pop(demote)
+            axes = [remainder, [demote]]
+    n0_out, n1_out = len(axes[0]), len(axes[1])
+    n_out = n0_out + n1_out
+    if n_out != n_in:
         raise ValueError("Mismatched dimensionality")
-    rearranged_shape = [original_shape[i] for i in axes[0] + axes[1]]
+    all_axes = axes[0] + axes[1]
+    rearranged_shape = [original_shape[i] for i in all_axes]
     rearranged_shape_2d = [
-        np.prod(rearranged_shape[:n0]),
-        np.prod(rearranged_shape[n0:]),
+        np.prod(rearranged_shape[:n0_out]),
+        np.prod(rearranged_shape[n0_out:]),
     ]
     # Convert the matrix to coo form
     matrix_coo = matrix.tocoo()
@@ -44,16 +66,22 @@ def _rearrange_2d(matrix, original_shapes, axes):
     # Now get these all as unravelled indices across all the axes
     i_all_original = np.unravel_index(i_raveled, original_shape)
     # Now rearrange this list of indices according to the prescription supplied.
-    i_all_rearranged = [i_all_original[i] for i in axes[0] + axes[1]]
+    i_all_rearranged = [i_all_original[i] for i in all_axes]
     # Now ravel the new row/column indices
-    i0_new = np.ravel_multi_index(i_all_rearranged[:n0], rearranged_shape[:n0])
-    i1_new = np.ravel_multi_index(i_all_rearranged[n0:], rearranged_shape[n0:])
+    i0_new = np.ravel_multi_index(i_all_rearranged[:n0_out], rearranged_shape[:n0_out])
+    i1_new = np.ravel_multi_index(i_all_rearranged[n0_out:], rearranged_shape[n0_out:])
     # Make the new matrix - this is what does the actual rearrangement
+    result = sparse.csc_matrix(
+        (matrix_coo.data, (i0_new, i1_new)), shape=rearranged_shape_2d
+    )
+    undo_order = [None] * n_in
+    for i, a in enumerate(all_axes):
+        undo_order[a] = i
+    undo = [undo_order[:n0_in], undo_order[n0_in:]]
     return (
-        sparse.csc_matrix(
-            (matrix_coo.data, (i0_new, i1_new)), shape=rearranged_shape_2d
-        ),
-        [rearranged_shape[0:n0], rearranged_shape[n0:]],
+        result,
+        [rearranged_shape[0:n0_out], rearranged_shape[n0_out:]],
+        undo,
     )
 
 
@@ -364,12 +392,10 @@ class SparseJacobian(BaseJacobian):
                 # about so that the summed-over axis is now the rows, and
                 # the columns are all the remaining dependent axes plus
                 # the independent ones.
-                remainder = list(range(self.ndim))
-                remainder.pop(axis)
-                new_csc, rearranged_shapes = _rearrange_2d(
+                new_csc, rearranged_shapes, undo_rearrange = _rearrange_2d(
                     self.data2d,
                     [self.dependent_shape, self.independent_shape],
-                    [[axis], remainder],
+                    promote=axis,
                 )
                 nrows = self.shape[axis]
             # We have two choices here, we could do a python loop to build up and store
@@ -384,13 +410,10 @@ class SparseJacobian(BaseJacobian):
             else:
                 restored_order = list(range(1, self.ndim))
                 restored_order.insert(axis, 0)
-                result_csc, dummy_result_shapes = _rearrange_2d(
+                result_csc, dummy_result_shapes, dummy_undo = _rearrange_2d(
                     intermediate,
                     rearranged_shapes,
-                    [
-                        restored_order[: self.dependent_ndim],
-                        restored_order[self.dependent_ndim :],
-                    ],
+                    undo_rearrange,
                 )
                 result = SparseJacobian(template=self, data=result_csc)
         return result
@@ -405,6 +428,17 @@ class SparseJacobian(BaseJacobian):
         self_dense = DenseJacobian(self)
         result_dense = self_dense.diff(dependent_shape, n, axis, prepend, append)
         return SparseJacobian(result_dense)
+
+    def as_sparse_tensor(self):
+        """Return our information as sparse tensor (tensor, not scipy)"""
+        import sparse as st
+
+        self_coo = self.data2d.tocoo()
+        dependent_indices = np.unravel_index(self_coo.row, self.dependent_shape)
+        independent_indices = np.unravel_index(self_coo.col, self.independent_shape)
+        indices = dependent_indices + independent_indices
+        coords = np.stack(indices, axis=0)
+        return st.COO(coords, self_coo.data, self.shape)
 
     def transpose(self, axes, result_dependent_shape):
         """Transpose a sparse jacobian"""
@@ -426,46 +460,68 @@ class SparseJacobian(BaseJacobian):
 
     def tensordot(self, other, axes, dependent_unit):
         """Compute self(.)other"""
+        import sparse as st
         from .dense_jacobians import DenseJacobian
-        # Note that axes here must be in the list of two lists form
-        print(f"Going in, other is {other.shape}, Jacobian is {self}")
-        if len(axes[0]) != 1:
-            raise ValueError(
-                "Not (yet?) worked out how to do multi-axis "
-                "tensordot for sparse Jacobians"
+
+        # Convert to sparse tensor form
+        self_st = self.as_sparse_tensor()
+        # From this point on, this is modeled after DenseJacobian.tensordot
+        n_contractions = len(axes[0])
+        # With this order of the tensordot, the annoying thing here is that we actually
+        # want our independent dimensions (part of self) at the end, so will have to do
+        # a transpose.  Let's do the tensor dot anyway.
+        result_ = st.tensordot(self_st, other, axes)
+        # Move the indepenent axes to the end.  First we want the non-contracted
+        # dependent dimensions from self, these are currently at the start
+        new_axis_order = list(range(self.dependent_ndim - n_contractions))
+        # Then the non-contracted dimensions from other, currently at the end
+        new_axis_order += list(
+            range(result_.ndim - other.ndim + n_contractions, result_.ndim)
+        )
+        # Finally the independent dimensions, currently in the middle
+        new_axis_order += list(
+            range(
+                self.dependent_ndim - n_contractions,
+                self.dependent_ndim - n_contractions + self.independent_ndim,
             )
-        a_self, a_other = axes[0][0], axes[1][0]
-        # We're going to pull self.data2d around so that the common index is at the
-        # front.
-        remainder = list(range(self.ndim))
-        remainder.pop(a_self)
-        new_csc, rearranged_shapes = _rearrange_2d(
-            self.data2d,
-            [self.dependent_shape, self.independent_shape],
-            [[a_self], remainder],
         )
-        # Now we can do similar things to other, making it a 2D matrix and putting
-        # it's key index at the back.
-        new_other_order = list(range(other.ndim))
-        new_other_order.append(new_other_order.pop(a_other))
-        other = other.transpose(new_other_order)
-        other = np.reshape(other, [np.prod(other.shape[:-1]), other.shape[-1]])
-        # OK, now we can finally do a matrix multiply
-        print(f"After rearrangement we have {other.shape} and {new_csc.shape}")
-        result_raw = other @ new_csc
-        # Result is now a 2D dense matrix, reshape it to its full dimensionality
-        rearranged_shapes[0][0] = other.shape[0]
-        result_ = np.reshape(result_raw, rearranged_shapes[0] + rearranged_shapes[1])
-        # ... and then put the result into the right arrangement
-        result_order = list(range(1, self.ndim))
-        result_order.insert(a_self, 0)
-        result_ = np.transpose(result_, result_order)
-        result_dependent_shape = result_.shape[0:self.dependent_ndim]
-        return DenseJacobian(
-            data=result_, template=self,
-            dependent_shape=result_dependent_shape,
-            dependent_unit=dependent_unit,
-        )
+        result_ = np.transpose(result_, new_axis_order)
+        result_dependent_shape = result_.shape[: -self.independent_ndim]
+        if isinstance(result_, np.ndarray):
+            return DenseJacobian(
+                data=result_,
+                dependent_shape=result_dependent_shape,
+                dependent_unit=dependent_unit,
+                independent_shape=self.independent_shape,
+                independent_unit=self.independent_unit,
+            )
+        elif isinstance(result_, st.COO) or isinstance(result_, st.GCXS):
+            if isinstance(result_, st.GCXS):
+                result_ = result_.tocoo()
+            dependent_ndim = len(result_dependent_shape)
+            coords = np.split(result_.coords, result_.ndim)
+            dependent_coords = [c[0] for c in coords[:dependent_ndim]]
+            independent_coords = [c[0] for c in coords[dependent_ndim:]]
+            dependent_indices = np.ravel_multi_index(
+                dependent_coords, result_dependent_shape
+            )
+            independent_indices = np.ravel_multi_index(
+                independent_coords, self.independent_shape
+            )
+            dependent_size = np.prod(result_dependent_shape)
+            result_csc = sparse.csc_matrix(
+                (result_.data, (dependent_indices, independent_indices)),
+                shape=[dependent_size, self.independent_size],
+            )
+            return SparseJacobian(
+                data=result_csc,
+                dependent_shape=result_dependent_shape,
+                dependent_unit=dependent_unit,
+                independent_shape=self.independent_shape,
+                independent_unit=self.independent_unit,
+            )
+        else:
+            raise NotImplementedError(f"No way to handle {type(result_)}")
 
     def extract_diagonal(self):
         """Extract the diagonal from a sparse Jacobian"""
@@ -561,4 +617,47 @@ class SparseJacobian(BaseJacobian):
         )
         return SparseJacobian(
             result_csc, template=self, dependent_shape=result_dependent_shape
+        )
+
+    def linear_interpolator(self, x_in, axis=-1):
+        """Return an interpolator for a given Jacobian axis"""
+        return SparseJacobianLinearInterpolator(self, x_in, axis)
+
+
+class SparseJacobianLinearInterpolator(object):
+    """Interpolates a DenseJacobian along one dependent axis"""
+
+    def __init__(self, jacobian, x_in, axis=-1):
+        """Setup an interpolator for a given DenseJacobian"""
+        self.jacobian = jacobian
+        self.jaxis = jacobian._get_jaxis(axis, none="first")
+        self.x_in = x_in
+        # Transpose the jacobian to put the interpolating axis in front
+        self.rearranged, self.rearranged_shapes, self.undo_reordering = _rearrange_2d(
+            jacobian.data2d,
+            [jacobian.dependent_shape, jacobian.independent_shape],
+            promote=self.jaxis,
+        )
+
+    def __call__(self, x_out):
+        """Interpolate a SparseJacobian to a new value along an axis"""
+        i_lower, i_upper, w_lower, w_upper = linear_interpolation_indices_and_weights(
+            self.x_in, x_out
+        )
+        # Convert indieces and weights to a sparse matrix
+        row = np.concatenate([np.arange(x_out.size)] * 2)
+        col = np.concatenate([i_lower, i_upper])
+        weight = np.concatenate([w_lower, w_upper])
+        W = sparse.csc_matrix((weight, (row, col)), shape=[x_out.size, self.x_in.size])
+        result_rearranged = W @ self.rearranged
+        rearranged_shapes = copy.deepcopy(self.rearranged_shapes)
+        rearranged_shapes[0][0] = x_out.size
+        result, result_shape, dummy_undo = _rearrange_2d(
+            result_rearranged,
+            rearranged_shapes,
+            axes=self.undo_reordering,
+        )
+        new_dependent_shape = result_shape[0]
+        return SparseJacobian(
+            template=self.jacobian, data=result, dependent_shape=new_dependent_shape
         )

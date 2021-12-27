@@ -3,9 +3,8 @@
 import numpy as np
 
 from .base_jacobian import BaseJacobian
-
-# eeing as we cast to sparse so often, we'll import it globally
 from .sparse_jacobians import SparseJacobian
+from .dense_jacobians import DenseJacobian
 
 
 __all__ = ["DiagonalJacobian"]
@@ -162,3 +161,7 @@ class DiagonalJacobian(BaseJacobian):
     def to2ddensearray(self):
         self_dense = DenseJacobian(self)
         return self_dense.to2ddensearray()
+
+    def linear_interpolator(self, x_in, axis=-1):
+        """Return an interpolator for a given Jacobian axis"""
+        return SparseJacobian(self).linear_interpolator(x_in, axis)

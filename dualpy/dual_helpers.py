@@ -17,7 +17,17 @@ def _broadcast_jacobians(js, new):
 
 
 def _setup_dual_operation(*args, out=None, broadcast=True):
-    arrays_ = [np.asarray(x) for x in args]
+    """Prepare one or more (typically two) duals for some operation
+
+    Given a sequence of arguments return a sequence that strips duals off the arguments,
+    and a separate sequence that is just the jacobians, finally append the "out"
+    quantity (if supplied).
+
+    """
+    # Get the ndarrays for the units.Quantity's or dlarrays, otherwise just
+    # pass-through.  Note, this used to use np.asarray, but that did unpleasent things
+    # to sparse arguments.
+    arrays_ = [getattr(x, "value", x) for x in args]
     if broadcast:
         arrays_ = np.broadcast_arrays(*arrays_)
     # Put units back on after all that
