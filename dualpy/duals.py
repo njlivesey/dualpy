@@ -159,7 +159,7 @@ class dlarray(units.Quantity):
         return a_ <= b_
 
     def _check(self, name="<unknown>"):
-        # A routine to check that a dual is OK
+        """Check consistency of a dual"""
         for jname, jacobian in self.jacobians.items():
             assert self.unit == jacobian.dependent_unit, (
                 f"The {jname} Jacobian for {name} has the wrong dependent "
