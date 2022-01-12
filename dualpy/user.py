@@ -89,20 +89,20 @@ def seed(
     if kwargs:
         raise ValueError("No additional arguements to seed allowed for this quantity")
     if type(value) is dlarray:
-        if not force:
-            raise ValueError("Proposed seed is already a dual (set force?)")
-        if name in value.jacobians and not overwrite:
+        if not force and not reset:
+            raise ValueError("Proposed seed is already a dual (set force or reset?)")
+        if name in value.jacobians and not overwrite and not reset:
             raise ValueError(
                 f"Proposed seed already has a jacobian named '{name}'"
                 + " (set overwrite as well as force?)"
             )
     if not isinstance(value, dlarray):
         out = dlarray(value)
-    elif reset:
-        # Blow away any previous Jacobians
-        out.jacobians = {}
     else:
         out = value
+        if reset:
+            # Blow away any previous Jacobians
+            out.jacobians = {}
     # Create the Jacobian as diaongal initially
     jacobian = DiagonalJacobian(
         np.ones(out.shape),
@@ -770,6 +770,7 @@ def irfft(x, axis=-1):
                     dependent_unit=result.unit,
                 )
     return result
+
 
 
 class CubicSplineLinearJacobians:

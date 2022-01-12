@@ -419,7 +419,12 @@ class SparseJacobian(BaseJacobian):
         return result
 
     def diff(
-        self, dependent_shape, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue
+        self,
+        dependent_shape,
+        n=1,
+        axis=-1,
+        prepend=np._NoValue,
+        append=np._NoValue,
     ):
         """diff method for sparse jacobian"""
         from .dense_jacobians import DenseJacobian
@@ -527,7 +532,7 @@ class SparseJacobian(BaseJacobian):
         """Extract the diagonal from a sparse Jacobian"""
         if self.dependent_shape != self.independent_shape:
             raise ValueError(
-                f"Sparse Jacobian is not square "
+                "Sparse Jacobian is not square "
                 + f"{self.dependent_shape};{self.independent_shape}"
             )
         result_ = np.reshape(self.data2d.diagonal(), self.dependent_shape)

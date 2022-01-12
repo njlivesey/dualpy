@@ -4,6 +4,7 @@ import astropy.units as units
 
 from .duals import dlarray
 from .user import has_jacobians
+from .jacobian_helpers import jacobian_2d_matrix_multiply
 
 
 class Stash:
@@ -24,7 +25,7 @@ class Stash:
         from .user import seed
 
         # Possibly complain if we've already got a stash with this name
-        if name in self._all_stashed_jacobians() and not replace:
+        if name in self._all_stashed_jacobians and not replace:
             raise ValueError(
                 f'Already have stashed Jacobians for {name}, set "replace"?'
             )
@@ -69,7 +70,9 @@ class Stash:
                 # matrix multiply of the data2Ds for each Jacobian.
                 stashed_jacobians = self._all_stashed_jacobians[original_name]
                 for component_name, component_jacobian in stashed_jacobians.items():
-                    new_matrix = original_jacobian.matrix_multiply(component_jacobian)
+                    new_matrix = jacobian_2d_matrix_multiply(
+                        original_jacobian, component_jacobian
+                    )
                     add_matrices = False
                     if component_name in result.jacobians:
                         if collisions == "forbid":
@@ -92,3 +95,5 @@ class Stash:
                 # If this Jacobian does not refer to an independent variable in our
                 # stash, then simply copy it over.
                 result.jacobians[original_name] = original_jacobian
+        return result
+

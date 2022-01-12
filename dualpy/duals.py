@@ -980,10 +980,12 @@ def transpose(array, axes=None):
 @implements(np.tensordot)
 def tensordot(a, b, axes):
     import sparse as st
+
     a_, b_, aj, bj, out = _setup_dual_operation(a, b, out=None, broadcast=False)
-    result = dlarray(
-        st.tensordot(a_, b_, axes)
+    result_unit = getattr(a_, "unit", units.dimensionless_unscaled) * getattr(
+        b_, "unit", units.dimensionless_unscaled
     )
+    result = dlarray(st.tensordot(a_, b_, axes) * result_unit)
     # Now deal with the Jacobians.  For this, we need to ensure that axes are in the
     # (2,) array-like form that is the second version np.tensordot can accept them.
     if isinstance(axes, int):

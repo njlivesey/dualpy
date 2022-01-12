@@ -125,13 +125,10 @@ class BaseJacobian(object):
         else:
             try:
                 return tuple(
-                    a if a >= 0 else self.ndim + a - self.independent_ndim
-                    for a in axis
+                    a if a >= 0 else self.ndim + a - self.independent_ndim for a in axis
                 )
             except TypeError:
-                return (
-                    axis if axis >= 0 else self.ndim + axis - self.independent_ndim
-                )
+                return axis if axis >= 0 else self.ndim + axis - self.independent_ndim
 
     def _slice_axis(self, axis, s, none="none"):
         """Return a key that has full slices for all axes, but s for axis"""

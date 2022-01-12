@@ -3,13 +3,13 @@
 import numpy as np
 import scipy.sparse as sparse
 import itertools
-import astropy.units as units
 
 __all__ = [
     "_array_to_sparse_diagonal",
     "_broadcasted_shape",
     "_shapes_broadcastable",
     "_prepare_jacobians_for_binary_op",
+    "jacobian_2d_matrix_multiply",
 ]
 
 
@@ -101,3 +101,40 @@ def _prepare_jacobians_for_binary_op(a, b):
         b_ = b_ * scale
     return a_, b_, result_type
 
+
+def jacobian_2d_matrix_multiply(a, b):
+    """Do a 2D matrix multiply on two Jacobians, returning a third."""
+    from .dense_jacobians import DenseJacobian
+    from .sparse_jacobians import SparseJacobian
+    from .diagonal_jacobians import DiagonalJacobian
+
+    # Check that the dimensions and units are agreeable
+    if a.independent_shape != b.dependent_shape:
+        raise ValueError("Shape mismatch for dense Jacobian matrix multiply")
+    if a.independent_unit != b.dependent_unit:
+        raise ValueError("Units mismatch for dense Jacobian matrix multiply")
+    # Recast any diagonal Jacobians into sparse
+    if isinstance(a, DiagonalJacobian):
+        a = SparseJacobian(a)
+    if isinstance(b, DiagonalJacobian):
+        b = SparseJacobian(b)
+    # Decide what our result type will be
+    if isinstance(a, SparseJacobian) and isinstance(b, SparseJacobian):
+        result_type = SparseJacobian
+    else:
+        result_type = DenseJacobian
+    # OK, do the matrix multiplication
+    result_data2d = a.data2d @ b.data2d
+    # Work out its true shape
+    result_shape = a.dependent_shape + b.independent_shape
+    if result_type is DenseJacobian:
+        result_data = result_data2d.reshape(result_shape)
+    else:
+        result_data = result_data2d
+    return result_type(
+        data=result_data,
+        dependent_shape=a.dependent_shape,
+        independent_shape=b.independent_shape,
+        dependent_unit=a.dependent_unit,
+        independent_unit=b.independent_unit,
+    )
