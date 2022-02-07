@@ -6,6 +6,7 @@ import scipy.interpolate as interpolate
 import scipy.fft as fft
 from typing import Union
 import copy
+import dask
 
 from .jacobians import (
     BaseJacobian,
@@ -15,6 +16,7 @@ from .jacobians import (
 )
 from .duals import dlarray
 from .dual_helpers import _setup_dual_operation
+from .config import config
 
 __all__ = [
     "CubicSplineLinearJacobians",
@@ -183,7 +185,7 @@ def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None)
     **kwargs - dict
         Any keyword arguments to func
     plain_func: callable, optional
-        A version of func that works for non-dual arguments if func is not suitable 
+        A version of func that works for non-dual arguments if func is not suitable
         for that
 
     Returns
@@ -519,18 +521,14 @@ def multi_newton_raphson(
     if y is not None:
         y_ = delete_jacobians(y)
     # Do the same for args and kwargs
-    args_have_jacobians = False
     args_ = []
     for arg in args:
         if has_jacobians(arg):
-            args_have_jacobians = True
             arg = delete_jacobians(arg)
         args_.append(arg)
-    kwargs_have_jacobians = False
     kwargs_ = {}
     for name, kwarg in kwargs.items():
         if has_jacobians(kwarg):
-            kwargs_have_jacobians = True
             kwarg = delete_jacobians(kwarg)
         kwargs_[name] = kwarg
     # Other starup issues
@@ -567,11 +565,11 @@ def multi_newton_raphson(
     # other arguments to f, or indeed to something buried in f itself.  I spent a lot of
     # time thinking I'd have to compute these terms one by one (and unbury them, which
     # was annoying).  However, we can work out what the sum of these is by calling the
-    # function on more time, at our solution x, but without any Jacobian tracking for t
+    # function one more time, at our solution x, but without any Jacobian tracking for t
     # in the solution x itself, but intrinsically keeping all the Jacobian tracking in
     # the other arguments and anything related to t buried in f itself.  This gives us
     # the sum of all those other terms.  We can then subtract that from any dy/dt from
-    # the target, and use our knowledge of df/dx to get dx/dt.
+    # the target, and use our knowledge of df/dx to get dx/dt. So...
 
     # If args and/or kwargs have Jacobians, we need to do one more run of the
     # function, this time with Jacobians re-enabled to get the final Jacobian terms.
@@ -697,11 +695,18 @@ def rfft(x, axis=-1):
             c = -2j * np.pi / n_in
             D = np.exp(c * p * q)
         # Now loop over the Jacobians and deal with them.
+        use_dask = "rfft" in config.dask
+        if use_dask:
+            rfft_routine = dask.delayed(fft.rfft)
+            make_dense_jacobian = dask.delayed(DenseJacobian)
+        else:
+            rfft_routine = fft.rfft
+            make_dense_jacobian = DenseJacobian
         for name, jacobian in x.jacobians.items():
             if isinstance(jacobian, DenseJacobian):
                 jaxis = jacobian._get_jaxis(axis)
-                jfft = fft.rfft(jacobian.data, axis=jaxis)
-                result.jacobians[name] = DenseJacobian(
+                jfft = rfft_routine(jacobian.data, axis=jaxis)
+                result.jacobians[name] = make_dense_jacobian(
                     jfft,
                     template=jacobian,
                     dependent_shape=result.shape,
@@ -712,11 +717,20 @@ def rfft(x, axis=-1):
                 jaxis = jacobian._get_jaxis(axis)
                 # Do it the matrix multiply way (note that the diagonal case invokes the
                 # sparse case under the hood).
-                result.jacobians[name] = jacobian.tensordot(
-                    D,
-                    axes=[[jaxis], [1]],
-                    dependent_unit=result.unit,
-                )
+                if use_dask:
+                    result.jacobians[name] = dask.delayed(jacobian.rtensordot)(
+                        D,
+                        axes=[[1], [jaxis]],
+                        dependent_unit=result.unit,
+                    )
+                else:
+                    result.jacobians[name] = jacobian.rtensordot(
+                        D,
+                        axes=[[1], [jaxis]],
+                        dependent_unit=result.unit,
+                    )
+        if use_dask:
+            result.jacobians = dask.compute(result.jacobians)[0]
     return result
 
 
@@ -749,11 +763,18 @@ def irfft(x, axis=-1):
             D[:, 0] *= 0.5
             D[:, -1] *= 0.5
         # Now loop over the Jacobians and deal with them.
+        use_dask = "irfft" in config.dask
+        if use_dask:
+            irfft_routine = dask.delayed(fft.irfft)
+            make_dense_jacobian = dask.delayed(DenseJacobian)
+        else:
+            irfft_routine = fft.irfft
+            make_dense_jacobian = DenseJacobian
         for name, jacobian in x.jacobians.items():
             if isinstance(jacobian, DenseJacobian):
                 jaxis = jacobian._get_jaxis(axis)
-                jfft = fft.irfft(jacobian.data, axis=jaxis)
-                result.jacobians[name] = DenseJacobian(
+                jfft = irfft_routine(jacobian.data, axis=jaxis)
+                result.jacobians[name] = make_dense_jacobian(
                     jfft,
                     template=jacobian,
                     dependent_shape=result.shape,
@@ -764,13 +785,21 @@ def irfft(x, axis=-1):
                 jaxis = jacobian._get_jaxis(axis)
                 # Do it the matrix multiply way (note that the diagonal case invokes the
                 # sparse case under the hood).
-                result.jacobians[name] = jacobian.tensordot(
-                    D,
-                    axes=[[jaxis], [1]],
-                    dependent_unit=result.unit,
-                )
+                if use_dask:
+                    result.jacobians[name] = dask.delayed(jacobian.tensordot)(
+                        D,
+                        axes=[[jaxis], [1]],
+                        dependent_unit=result.unit,
+                    )
+                else:
+                    result.jacobians[name] = jacobian.tensordot(
+                        D,
+                        axes=[[jaxis], [1]],
+                        dependent_unit=result.unit,
+                    )
+        if use_dask:
+            result.jacobians = dask.compute(result.jacobians)[0]
     return result
-
 
 
 class CubicSplineLinearJacobians:
@@ -794,8 +823,17 @@ class CubicSplineLinearJacobians:
         )
         if has_jacobians(y):
             self.j_interpolators = dict()
-            for name, jacobian in y.jacobians.items():
-                self.j_interpolators[name] = jacobian.linear_interpolator(x.value, axis)
+            if "CubicSplineLinearJacobians" in config.dask:
+                for name, jacobian in y.jacobians.items():
+                    self.j_interpolators[name] = dask.delayed(
+                        jacobian.linear_interpolator
+                    )(x.value, axis)
+                self.j_interpolators = dask.compute(self.j_interpolators)[0]
+            else:
+                for name, jacobian in y.jacobians.items():
+                    self.j_interpolators[name] = jacobian.linear_interpolator(
+                        x.value, axis
+                    )
         else:
             self.j_interpolators = {}
         # Leave a space to cache the derivative interpolators
@@ -808,8 +846,13 @@ class CubicSplineLinearJacobians:
         # Get the interpolated value of y, make it a dual
         y = dlarray(self.y_interpolator(x_fixed.value) << self.y_unit)
         # Now deal with any jacobians with regard to the original y
-        for name, j_interpolator in self.j_interpolators.items():
-            y.jacobians[name] = j_interpolator(x_fixed.value)
+        if "CubicSplineLinearJacobians" in config.dask:
+            for name, j_interpolator in self.j_interpolators.items():
+                y.jacobians[name] = dask.delayed(j_interpolator)(x_fixed.value)
+            y.jacobians = dask.compute(y.jacobians)[0]
+        else:
+            for name, j_interpolator in self.j_interpolators.items():
+                y.jacobians[name] = j_interpolator(x_fixed.value)
         # Now deal with any jacobians with regard to x
         if has_jacobians(x):
             # Get the dydx_interolator if it's not already been generated
@@ -819,7 +862,7 @@ class CubicSplineLinearJacobians:
             # Now multiply all the dx/dt terms by dy/dx to get dy/dt
             x_new_shape = [1] * y.ndim
             x_new_shape[self.axis] = x.size
-            x_fixed = x_fixed.reshape(x_new_shape)
+            x_fixed = x_fixed.reshape(tuple(x_new_shape))
             y._chain_rule(x_fixed, dydx)
         # Now, if the result doesn't have Jacobians make it not a dual
         if not has_jacobians(y):

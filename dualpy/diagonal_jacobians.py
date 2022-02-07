@@ -45,6 +45,22 @@ class DiagonalJacobian(BaseJacobian):
     def __str__(self):
         return super().__str__() + f"\ndata is {self.data.shape}"
 
+    def _check(self, name):
+        """Integrity checks on diagonal Jacobian"""
+        self._check_jacobian_fundamentals(name)
+        assert self.depdent_shape == self.independent_shape, (
+            f"Non-diagonal shape for diagonal Jacobian {name}"
+            f"{self.dependent_shape} != {self.independent_shape}"
+        )
+        assert self.depdent_size == self.independent_size, (
+            f"Non-diagonal size for diagonal Jacobian {name}"
+            f"{self.dependent_size} != {self.independent_size}"
+        )
+        assert self.data.shape == self.dependent_shape, (
+            f"Array shape mismatch for {name}, "
+            f"{self.data.shape} != {self.dependent_shape}"
+        )
+
     def _getjitem(self, new_shape, key):
         """A getitem type method for diagonal Jacobians"""
         # OK, once we extract items, this will no longer be diagonal,
@@ -71,7 +87,7 @@ class DiagonalJacobian(BaseJacobian):
         self_sparse = SparseJacobian(self)
         return self_sparse.broadcast_to(shape)
 
-    def reshape(self, shape, order="C"):
+    def reshape(self, shape, order, parent_flags):
         # OK, once you reshape a diagonal, it is not longer,
         # strictly speaking, a diagonal So, convert to sparse and
         # reshape that.  However, don't bother doing anything if
@@ -79,7 +95,7 @@ class DiagonalJacobian(BaseJacobian):
         if shape == self.dependent_shape:
             return self
         self_sparse = SparseJacobian(self)
-        return self_sparse.reshape(shape, order)
+        return self_sparse.reshape(shape, order, parent_flags)
 
     def premul_diag(self, diag):
         """Diagonal premulitply for diagonal Jacobian"""
@@ -119,7 +135,7 @@ class DiagonalJacobian(BaseJacobian):
         # Once we do this, we will no longer be diagonal, so convert to sparse
         self_sparse = SparseJacobian(self)
         return self_sparse.tensordot(other, axes, dependent_unit, reverse_order)
-        
+
     def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):
         """Performs sum for the diagonal Jacobians"""
         # Once we take the sum, along any or all axes, the jacobian is

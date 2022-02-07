@@ -3,7 +3,9 @@
 import numpy as np
 import astropy.units as units
 import fnmatch
+import dask
 
+from .config import config
 from .dual_helpers import _setup_dual_operation, _per_rad, _broadcast_jacobians
 from .jacobians import (
     _setitem_jacobians,
@@ -161,6 +163,7 @@ class dlarray(units.Quantity):
     def _check(self, name="<unknown>"):
         """Check consistency of a dual"""
         for jname, jacobian in self.jacobians.items():
+            jacobian._check(jname)
             assert self.unit == jacobian.dependent_unit, (
                 f"The {jname} Jacobian for {name} has the wrong dependent "
                 f"units ({jacobian.dependent_unit} rather "
@@ -210,8 +213,8 @@ class dlarray(units.Quantity):
             for name, jacobian in a.jacobians.items():
                 self.jacobians[name] = jacobian.premul_diag(d)
 
-    def ravel(self, *args):
-        return np.reshape(self, (self.size,))
+    def ravel(self, order="C"):
+        return _ravel(self, order=order)
 
     # Now a whole bunch of binary operators
     def add(a, b, out=None):
@@ -345,7 +348,7 @@ class dlarray(units.Quantity):
             return NotImplemented
             # a**(b-1)*(b*da/dx+a*log(a)*db/dx)
             # Multiply it out and we get:
-            out_ = a ** b_
+            out_ = a**b_
             dA_ = b_ * a_ ** (b_ - 1)
             dB_ = out_ * np.log(a_)
             out = dlarray(out_)
@@ -357,13 +360,13 @@ class dlarray(units.Quantity):
                 else:
                     out.jacobians[name] = jacobian.premul_diag(dB_).to(out.unit)
         elif isinstance(a, dlarray):
-            out = dlarray(a_ ** b)
+            out = dlarray(a_**b)
             d_ = b * a_ ** (b - 1)
             for name, jacobian in aj.items():
                 out.jacobians[name] = jacobian.premul_diag(d_)
         elif isinstance(b, dlarray):
             a_, b_, aj, bj, out = _setup_dual_operation(a, b)
-            out_ = a ** b_
+            out_ = a**b_
             out = dlarray(out_)
             for name, jacobian in bj.items():
                 out.jacobians[name] = jacobian.premul_diag(out_ * np.log(a_)).to(
@@ -375,7 +378,7 @@ class dlarray(units.Quantity):
         # See Wikpedia page on atan2 which conveniently lists the derivatives
         a_, b_, aj, bj, out = _setup_dual_operation(a, b)
         out = dlarray(np.arctan2(a_, b_))
-        rr2 = units.rad * np.reciprocal(a_ ** 2 + b_ ** 2)
+        rr2 = units.rad * np.reciprocal(a_**2 + b_**2)
         for name, jacobian in aj.items():
             out.jacobians[name] = jacobian.premul_diag(b_ * rr2).to(out.unit)
         for name, jacobian in bj.items():
@@ -417,7 +420,7 @@ class dlarray(units.Quantity):
         out_ = 1.0 / a_
         out = dlarray(out_)
         if a.hasJ:
-            out._chain_rule(a, -(out_ ** 2))
+            out._chain_rule(a, -(out_**2))
         return out
 
     def square(a):
@@ -510,7 +513,7 @@ class dlarray(units.Quantity):
         out = dlarray(out_)
         if a.hasJ:
             out._chain_rule(
-                a, units.rad / np.sqrt(1 - a_ ** 2), unit=units.dimensionless_unscaled
+                a, units.rad / np.sqrt(1 - a_**2), unit=units.dimensionless_unscaled
             )
         return out
 
@@ -520,7 +523,7 @@ class dlarray(units.Quantity):
         out = dlarray(out_)
         if a.hasJ:
             out._chain_rule(
-                a, -units.rad / np.sqrt(1 - a_ ** 2), unit=units.dimensionless_unscaled
+                a, -units.rad / np.sqrt(1 - a_**2), unit=units.dimensionless_unscaled
             )
         return out
 
@@ -530,7 +533,7 @@ class dlarray(units.Quantity):
         out = dlarray(out_)
         if a.hasJ:
             out._chain_rule(
-                a, units.rad / (1 + a_ ** 2), unit=units.dimensionless_unscaled
+                a, units.rad / (1 + a_**2), unit=units.dimensionless_unscaled
             )
         return out
 
@@ -566,7 +569,7 @@ class dlarray(units.Quantity):
         out = dlarray(out_)
         if a.hasJ:
             out._chain_rule(
-                a, units.rad / np.sqrt(a_ ** 2 + 1), unit=units.dimensionless_unscaled
+                a, units.rad / np.sqrt(a_**2 + 1), unit=units.dimensionless_unscaled
             )
         return out
 
@@ -576,7 +579,7 @@ class dlarray(units.Quantity):
         out = dlarray(out_)
         if a.hasJ:
             out._chain_rule(
-                a, units.rad / np.sqrt(a_ ** 2 - 1), unit=units.dimensionless_unscaled
+                a, units.rad / np.sqrt(a_**2 - 1), unit=units.dimensionless_unscaled
             )
         return out
 
@@ -586,7 +589,7 @@ class dlarray(units.Quantity):
         out = dlarray(out_)
         if a.hasJ:
             out._chain_rule(
-                a, units.rad / (1 - a_ ** 2), unit=units.dimensionless_unscaled
+                a, units.rad / (1 - a_**2), unit=units.dimensionless_unscaled
             )
         return out
 
@@ -638,7 +641,7 @@ class dlarray(units.Quantity):
     def flatten(self, order="C"):
         result = dlarray(units.Quantity(self).flatten(order))
         for name, jacobian in self.jacobians.items():
-            result.jacobians[name] = jacobian.flatten(order)
+            result.jacobians[name] = jacobian.flatten(order, self.flags)
         return result
 
     def squeeze(self, axis=None):
@@ -674,8 +677,13 @@ class dlarray(units.Quantity):
         else:
             return units.Quantity(self)
 
-    def reshape(array, *args, **kwargs):
-        return _reshape(array, *args, **kwargs)
+    def reshape(array, *newshape, order="C"):
+        try:
+            if len(newshape) == 1:
+                newshape = newshape[0]
+        except TypeError:
+            pass
+        return _reshape(array, newshape, order)
 
     @property
     def uvalue(self):
@@ -759,16 +767,30 @@ def broadcast_to(array, shape, subok=False):
     return result
 
 
-def _reshape(array, *args, **kwargs):
-    result = dlarray(units.Quantity(array).reshape(*args, **kwargs))
-    for name, jacobian in array.jacobians.items():
-        result.jacobians[name] = jacobian.reshape(result.shape)
-    return result
+def _reshape(array, newshape, order="C"):
+    array_, jacobians, out = _setup_dual_operation(array)
+    out = dlarray(np.reshape(array_, newshape, order=order))
+    for name, jacobian in jacobians.items():
+        out.jacobians[name] = jacobian.reshape(newshape, order, array_.flags)
+    return out
 
 
 @implements(np.reshape)
-def reshape(array, *args, **kwargs):
-    return _reshape(array, *args, **kwargs)
+def reshape(array, newshape, order="C"):
+    return _reshape(array, newshape, order=order)
+
+
+def _ravel(array, order="C"):
+    array_, jacobians, out = _setup_dual_operation(array)
+    out = dlarray(np.ravel(array_, order=order))
+    for name, jacobian in jacobians.items():
+        out.jacobians[name] = jacobian.ravel(order, array_.flags)
+    return out
+
+
+@implements(np.ravel)
+def ravel(array, order="C"):
+    return _ravel(array, order=order)
 
 
 @implements(np.atleast_1d)
@@ -993,23 +1015,35 @@ def tensordot(a, b, axes):
     # Remove units from a_ and b_ for doing the tensor dot product
     a_no_unit = getattr(a_, "value", a_)
     b_no_unit = getattr(b_, "value", b_)
+    # Get the jacobian tensordot routines
+    use_dask = "tensordot" in config.dask
     for name, jacobian in aj.items():
-        result.jacobians[name] = jacobian.tensordot(
+        if use_dask:
+            jacobian_tensordot = dask.delayed(jacobian.tensordot)
+        else:
+            jacobian_tensordot = jacobian.tensordot
+        result.jacobians[name] = jacobian_tensordot(
             b_no_unit, axes, dependent_unit=result.unit
         )
     for name, jacobian in bj.items():
+        if use_dask:
+            jacobian_rtensordot = dask.delayed(jacobian.rtensordot)
+        else:
+            jacobian_rtensordot = jacobian.rtensordot
         if name in result.jacobians:
-            result.jacobains[name] += jacobian.rtensordot(
+            result.jacobains[name] += jacobian_rtensordot(
                 a_no_unit,
                 axes,
                 dependent_unit=result.unit,
             )
         else:
-            result.jacobians[name] = jacobian.rtensordot(
+            result.jacobians[name] = jacobian_rtensordot(
                 a_no_unit,
                 axes,
                 dependent_unit=result.unit,
             )
+    if "tensordot" in config.dask:
+        result.jacobians = dask.compute(result.jacobians)[0]
     return result
 
 

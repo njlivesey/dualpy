@@ -63,6 +63,16 @@ class DenseJacobian(BaseJacobian):
             + f"data2d is {self.data2d.shape}"
         )
 
+    def _check(self, name):
+        """Integrity checks on dense Jacobian"""
+        self._check_jacobian_fundamentals(name)
+        assert (
+            self.data.shape == self.shape
+        ), f"Array shape mismatch for {name}, {self.data.shape} != {self.shape}"
+        assert (
+            self.data.size == self.size
+        ), f"Array size mismatch for {name}, {self.data.size} != {self.size}"
+
     def _getjitem(self, new_shape, key):
         """A getitem type method for dense Jacobians"""
         key = self._preprocess_getsetitem_key(key)
@@ -98,17 +108,29 @@ class DenseJacobian(BaseJacobian):
         result_ = np.broadcast_to(self.data, full_shape)
         return DenseJacobian(data=result_, template=self, dependent_shape=shape)
 
-    def reshape(self, shape, order="C"):
+    def reshape(self, shape, order, parent_flags):
         """reshape dense Jacobian"""
         # Don't bother doing anything if the shape is already good
         if shape == self.dependent_shape:
             return self
+        if shape == "K":
+            shape = "A"
+        reverse = (order == "C" and not parent_flags.c_contiguous) or (
+            order == "F" and not parent_flags.f_contiguous
+        )
+        if reverse:
+            raise NotImplementedError("F-contiguous dlarrays have not been tested")
+            input_jacobian = self.transpose(None, self.dependent_shape[::-1])
+        else:
+            input_jacobian = self
         try:
-            full_shape = shape + self.independent_shape
+            full_shape = shape + input_jacobian.independent_shape
         except TypeError:
-            full_shape = (shape,) + self.independent_shape
-        result_ = np.reshape(self.data, full_shape, order)
-        return DenseJacobian(data=result_, template=self, dependent_shape=shape)
+            full_shape = (shape,) + input_jacobian.independent_shape
+        result_ = np.reshape(input_jacobian.data, full_shape, order)
+        return DenseJacobian(
+            data=result_, template=input_jacobian, dependent_shape=shape
+        )
 
     def premul_diag(self, diag):
         """Diagonal premulitply for dense Jacobian"""
@@ -180,6 +202,7 @@ class DenseJacobian(BaseJacobian):
     def tensordot(self, other, axes, dependent_unit):
         """Compute self(.)other"""
         import sparse as st
+
         # Note that axes here must be in the list of two lists form, with no negative
         # numbers.
         n_contractions = len(axes[0])
@@ -216,7 +239,7 @@ class DenseJacobian(BaseJacobian):
 
     def rtensordot(self, other, axes, dependent_unit):
         """Compute other(.)self"""
-        # This one is actually easier than the forward one, because the axes end up in
+        # This one is actually easier than regular tensordot, because the axes end up in
         # the right order
         result_ = np.tensordot(other, self.data, axes)
         result_dependent_shape = result_.shape[: -self.independent_ndim]
@@ -260,7 +283,7 @@ class DenseJacobian(BaseJacobian):
         """Return an interpolator for a given Jacobian axis"""
         return DenseJacobianLinearInterpolator(self, x_in, axis)
 
-    
+
 class DenseJacobianLinearInterpolator(object):
     """Interpolates a DenseJacobian along one dependent axis"""
 
@@ -293,7 +316,7 @@ class DenseJacobianLinearInterpolator(object):
             + self.jacobian.data[tuple(upper_key)] * w_upper
         )
         # Prepare the result and return
-        new_dependent_shape = result.shape[:self.jacobian.dependent_ndim]
+        new_dependent_shape = result.shape[: self.jacobian.dependent_ndim]
         return DenseJacobian(
             template=self.jacobian,
             data=result,

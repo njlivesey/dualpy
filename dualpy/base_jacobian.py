@@ -64,12 +64,30 @@ class BaseJacobian(object):
             f"Jacobian of type {type(self)}\n"
             + f"Dependent shape is {self.dependent_shape} <{self.dependent_size}>\n"
             + f"Independent shape is {self.independent_shape}"
-            + f"<{self.independent_size}>\n"
+            + f" <{self.independent_size}>\n"
             + f"Combined they are {self.shape} <{self.size}>\n"
             + f"Dummies are {self._dummy_dependent} and {self._dummy_independent}\n"
             + f"Units are d<{self.dependent_unit}>/d<{self.independent_unit}> = "
-            + f"{(self.dependent_unit/self.independent_unit).decompose()}"
+            + f"<{(self.dependent_unit/self.independent_unit).decompose()}>"
         )
+
+    def _check_jacobian_fundamentals(self, name):
+        """Perform some basic checks on a Jacobian"""
+        assert self.dependent_shape + self.independent_shape == self.shape, (
+            f"Shape mismatch for Jacobian {name}, "
+            f"{self.dependent_shape} + {self.independent_shape} != {self.shape}"
+        )
+        assert np.prod(self.dependent_shape) == self.dependent_size, (
+            f"Dependent size mismatch for {name}, "
+            f"product({self.dependent_shape}) != {self.dependent_size}"
+        )
+        assert np.prod(self.independent_shape) == self.independent_size, (
+            f"Independent size mismatch for {name}, "
+            f"product({self.independent_shape}) != {self.independent_size}"
+        )
+        assert (
+            np.prod(self.shape) == self.size
+        ), f"Overall size mismatch for {name}, product({self.shape}) != {self.size}"
 
     def __repr__(self):
         return self.__str__()
@@ -154,9 +172,11 @@ class BaseJacobian(object):
         dependent_shape = _broadcasted_shape(self.dependent_shape, diag_.shape)
         return diag_, dependent_unit, dependent_shape
 
-    def flatten(self, order="C"):
+    def flatten(self, order, parent_flags):
         """flatten a jacobian"""
-        return self.reshape((self.dependent_size,), order=order)
+        return self.reshape(
+            (self.dependent_size,), order=order, parent_flags=parent_flags
+        )
 
     def nan_to_num(self, copy=True, nan=0.0, posinf=None, neginf=None):
         return self.__class__(
@@ -260,14 +280,33 @@ class BaseJacobian(object):
         result_shape = self.dependent_shape + other.independent_shape
         if result_type is DenseJacobian:
             result_data = result_data2d.reshape(result_shape)
-            result_data2d = None
+        elif result_type is SparseJacobian:
+            result_data = result_data2d
         else:
-            result_data = None
+            assert False, f"Should not have gotten here (result_type={result_type})"
         return result_type(
             data=result_data,
-            data2d=result_data2d,
             dependent_shape=self.dependent_shape,
             independent_shape=other.independent_shape,
             dependent_unit=self.dependent_unit,
             independent_unit=other.independent_unit,
+        )
+
+    def ravel(self, order, parent_flags):
+        """Dependent variable has been ravelled, make Jacobians match"""
+        if order == "K":
+            order = "A"
+        reverse = (order == "C" and not parent_flags.c_contiguous) or (
+            order == "F" and not parent_flags.f_contiguous
+        )
+        if reverse:
+            raise NotImplementedError("F-contiguous dlarrays have not been tested")
+            input_jacobian = self.transpose(None, self.dependent_shape[::-1])
+        else:
+            input_jacobian = self
+        # We'll retain C ordering for the independent variable
+        return input_jacobian.reshape(
+            [input_jacobian.dependent_size],
+            order="C",
+            parent_flags=parent_flags,
         )

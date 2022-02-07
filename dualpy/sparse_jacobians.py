@@ -131,6 +131,15 @@ class SparseJacobian(BaseJacobian):
         )
         return super().__str__() + suffix
 
+    def _check(self, name):
+        """Integrity checks for sparse Jacobians"""
+        self._check_jacobian_fundamentals(name)
+        correct_2dshape = (self.dependent_size, self.independent_size)
+        assert self.data2d.shape == correct_2dshape, (
+            f"array2d shape mismatch for {name}, "
+            f"{self.data2d.shape} != {correct_2dshape}"
+        )
+
     def _getjitem(self, new_shape, key):
         """A getitem type method for sparse Jacobians"""
         key = self._preprocess_getsetitem_key(key)
@@ -210,17 +219,26 @@ class SparseJacobian(BaseJacobian):
         result_ = M @ self.data2d
         return SparseJacobian(data=result_, template=self, dependent_shape=shape)
 
-    def reshape(self, shape, order="C"):
+    def reshape(self, shape, order, parent_flags):
         """Reshape a sparse Jacobian to a new dependent vector"""
         # Don't bother doing anything if the shape is already good
         if shape == self.dependent_shape:
             return self
+        reverse = (order == "C" and not parent_flags.c_contiguous) or (
+            order == "F" and not parent_flags.f_contiguous
+        )
+        if reverse:
+            input_jacobian = self.transpose(None, self.dependent_shape[::-1])
+        else:
+            input_jacobian = self
         # For the sparse jacobians, which never really have a shape
         # anyway, this simply involves updating the shapes of record
         # (assuming it's a valid one).
-        if int(np.prod(shape)) != self.dependent_size:
+        if int(np.prod(shape)) != input_jacobian.dependent_size:
             raise ValueError("Unable to reshape SparseJacobian to new shape")
-        return SparseJacobian(data=self.data2d, template=self, dependent_shape=shape)
+        return SparseJacobian(
+            data=input_jacobian.data2d, template=input_jacobian, dependent_shape=shape
+        )
 
     def premul_diag(self, diag):
         """Dependent-Element by element multiply of an other quantity"""
@@ -528,6 +546,54 @@ class SparseJacobian(BaseJacobian):
         else:
             raise NotImplementedError(f"No way to handle {type(result_)}")
 
+    def rtensordot(self, other, axes, dependent_unit):
+        """Compute self(.)other"""
+        import sparse as st
+        from .dense_jacobians import DenseJacobian
+
+        # Convert to sparse tensor form
+        self_st = self.as_sparse_tensor()
+        # From this point on, this is modeled after DenseJacobian.rtensordot.  This is
+        # actually easier than regular tensordot because the axes end up in the right
+        # order.
+        result_ = st.tensordot(other, self_st, axes)
+        result_dependent_shape = result_.shape[: -self.independent_ndim]
+        if isinstance(result_, np.ndarray):
+            return DenseJacobian(
+                data=result_,
+                dependent_shape=result_dependent_shape,
+                dependent_unit=dependent_unit,
+                independent_shape=self.independent_shape,
+                independent_unit=self.independent_unit,
+            )
+        elif isinstance(result_, st.COO) or isinstance(result_, st.GCXS):
+            if isinstance(result_, st.GCXS):
+                result_ = result_.tocoo()
+            dependent_ndim = len(result_dependent_shape)
+            coords = np.split(result_.coords, result_.ndim)
+            dependent_coords = [c[0] for c in coords[:dependent_ndim]]
+            independent_coords = [c[0] for c in coords[dependent_ndim:]]
+            dependent_indices = np.ravel_multi_index(
+                dependent_coords, result_dependent_shape
+            )
+            independent_indices = np.ravel_multi_index(
+                independent_coords, self.independent_shape
+            )
+            dependent_size = np.prod(result_dependent_shape)
+            result_csc = sparse.csc_matrix(
+                (result_.data, (dependent_indices, independent_indices)),
+                shape=[dependent_size, self.independent_size],
+            )
+            return SparseJacobian(
+                data=result_csc,
+                dependent_shape=result_dependent_shape,
+                dependent_unit=dependent_unit,
+                independent_shape=self.independent_shape,
+                independent_unit=self.independent_unit,
+            )
+        else:
+            raise NotImplementedError(f"No way to handle {type(result_)}")
+        
     def extract_diagonal(self):
         """Extract the diagonal from a sparse Jacobian"""
         if self.dependent_shape != self.independent_shape:
@@ -630,7 +696,7 @@ class SparseJacobian(BaseJacobian):
 
 
 class SparseJacobianLinearInterpolator(object):
-    """Interpolates a DenseJacobian along one dependent axis"""
+    """Interpolates a SparseJacobian along one dependent axis"""
 
     def __init__(self, jacobian, x_in, axis=-1):
         """Setup an interpolator for a given DenseJacobian"""
@@ -649,7 +715,7 @@ class SparseJacobianLinearInterpolator(object):
         i_lower, i_upper, w_lower, w_upper = linear_interpolation_indices_and_weights(
             self.x_in, x_out
         )
-        # Convert indieces and weights to a sparse matrix
+        # Convert indices and weights to a sparse matrix
         row = np.concatenate([np.arange(x_out.size)] * 2)
         col = np.concatenate([i_lower, i_upper])
         weight = np.concatenate([w_lower, w_upper])
