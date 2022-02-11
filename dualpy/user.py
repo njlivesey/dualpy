@@ -16,7 +16,7 @@ from .jacobians import (
 )
 from .duals import dlarray
 from .dual_helpers import _setup_dual_operation
-from .config import config
+from .config import get_config
 
 __all__ = [
     "CubicSplineLinearJacobians",
@@ -126,40 +126,49 @@ def seed(
     return out
 
 
-def delete_jacobians(a, names=None, **kwargs):
+def delete_jacobians(
+    a, *names, wildcard=None, remain_dual=False, **kwargs
+):
     """Remove all or selected Jacobians from a quantity, if non left de-dual
 
-    Parameters:
+    Not that, unlike the method of the same name, this does not operate in place,
+    instead it returns a copy of the input with the named jacobians removed.
 
+    Arguments:
+    ----------
     a : array_like (notably dual)
         Quantity from which Jacobians are to be removed.  If it has a _delete_jacobians
         method, then that is invoked to do this work instead.
-    names : list[str], optional
-        If provided, the names of the jacobians to be removed.  If absent, all are removed.
-
-    Other arguments may be passed to _delete_jacobians method
+    names : sequence[str]
+        Sequence of named Jacobians to delete.  If absent (and no wildcard is
+        suppled) then all the Jacobians are deleted.
+    wildcard : str, optional
+        A unix-style wildcard identifying Jacobians to deleted.
+    remain_dual : bool=False
+        If, after deleting Jacobians, none are left, then this method will demote
+        the dual back to a non-dual array, unless this argument is set to True
+    **kwargs : dict, optional
+        Other arguments that may be passed to any _delete_jacobians method
     """
     # First see if this quantity has a _delete_jacobians method.  If so, use it.
     if hasattr(a, "_delete_jacobians"):
-        return a._delete_jacobians(names, **kwargs)
+        return a._delete_jacobians(names, wildcard=wildcard, **kwargs)
+    # Otherwise, this is a dlarray (or quacks like one), delete the jacobians ourselves.
     if kwargs:
         raise ValueError(
             "No additional arguments allowed to delete_jacobians for this quantity"
         )
-    # Otherwise do it by hand
-    result = copy.copy(a)
-    if names is None:
-        result.jacobians = {}
+    # Check if this has a delete_jacobians method, and invoke that if so
+    if hasattr(a, "delete_jacobians"):
+        result = copy.copy(a)
+        result.delete_jacobians(*names, wildcard=wildcard)
+        # Now possibly demote back to non-dual array if merited and desired
+        if not result.jacobians and not remain_dual:
+            result = units.Quantity(result)
+        return result
     else:
-        if isinstance(names, str):
-            del result.jacobians[names]
-        else:
-            for name in names:
-                del result.jacobians[name]
-    # If no Jacobians are left, make this no longer a dual
-    if not result.jacobians:
-        result = units.Quantity(result)
-    return result
+        # OK, this isn't a dual, return the input unaffected
+        return a
 
 
 def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None):
@@ -268,6 +277,7 @@ def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None)
             jacobian = np.ndarray((result0.size, a.size), dtype=result0.dtype)
             # There may be a more pythonic way to do this, but for now this works.
             for i in np.arange(a.size):
+                print(f"Perturbation {i+1}/{a.size}")
                 # Perturb one element, call the function, put the
                 # original value back and note the results.
                 a_nd_flat = a_nd.reshape(-1)
@@ -297,7 +307,7 @@ def solve_quadratic(a, b, c, sign=1):
     """Solve quadratic equation ax^2+bx+c=0 returning jacobians"""
     # Use Muller's equation for stability when a=0
     a_, b_, c_, aj, bj, cj, out = _setup_dual_operation(a, b, c)
-    d_ = np.sqrt(b_ ** 2 - 4 * a_ * c_)
+    d_ = np.sqrt(b_**2 - 4 * a_ * c_)
     x_ = -2 * c_ / (b_ + sign * d_)
     anyJ = aj or bj or cj
     if anyJ:
@@ -308,7 +318,7 @@ def solve_quadratic(a, b, c, sign=1):
         # Precompute some terms
         scale = -1.0 / (2 * a_ * x_ + b_)
         if len(aj):
-            x_2 = x_ ** 2
+            x_2 = x_**2
         for name, jacobian in aj.items():
             x.jacobians[name] = jacobian.premul_diag(x_2 * scale)
         for name, jacobian in bj.items():
@@ -521,17 +531,12 @@ def multi_newton_raphson(
     if y is not None:
         y_ = delete_jacobians(y)
     # Do the same for args and kwargs
-    args_ = []
-    for arg in args:
-        if has_jacobians(arg):
-            arg = delete_jacobians(arg)
-        args_.append(arg)
-    kwargs_ = {}
-    for name, kwarg in kwargs.items():
-        if has_jacobians(kwarg):
-            kwarg = delete_jacobians(kwarg)
-        kwargs_[name] = kwarg
-    # Other starup issues
+    args_ = [delete_jacobians(arg) for arg in args]
+    kwargs_ = {
+        name: delete_jacobians(kwarg)
+        for name, kwarg in kwargs.items()
+    }
+    # Other startup issues
     i = 0
     finish = False
     reason = ""
@@ -695,7 +700,7 @@ def rfft(x, axis=-1):
             c = -2j * np.pi / n_in
             D = np.exp(c * p * q)
         # Now loop over the Jacobians and deal with them.
-        use_dask = "rfft" in config.dask
+        use_dask = "rfft" in get_config().dask
         if use_dask:
             rfft_routine = dask.delayed(fft.rfft)
             make_dense_jacobian = dask.delayed(DenseJacobian)
@@ -763,7 +768,7 @@ def irfft(x, axis=-1):
             D[:, 0] *= 0.5
             D[:, -1] *= 0.5
         # Now loop over the Jacobians and deal with them.
-        use_dask = "irfft" in config.dask
+        use_dask = "irfft" in get_config().dask
         if use_dask:
             irfft_routine = dask.delayed(fft.irfft)
             make_dense_jacobian = dask.delayed(DenseJacobian)
@@ -823,7 +828,7 @@ class CubicSplineLinearJacobians:
         )
         if has_jacobians(y):
             self.j_interpolators = dict()
-            if "CubicSplineLinearJacobians" in config.dask:
+            if "CubicSplineLinearJacobians" in get_config().dask:
                 for name, jacobian in y.jacobians.items():
                     self.j_interpolators[name] = dask.delayed(
                         jacobian.linear_interpolator
@@ -846,7 +851,7 @@ class CubicSplineLinearJacobians:
         # Get the interpolated value of y, make it a dual
         y = dlarray(self.y_interpolator(x_fixed.value) << self.y_unit)
         # Now deal with any jacobians with regard to the original y
-        if "CubicSplineLinearJacobians" in config.dask:
+        if "CubicSplineLinearJacobians" in get_config().dask:
             for name, j_interpolator in self.j_interpolators.items():
                 y.jacobians[name] = dask.delayed(j_interpolator)(x_fixed.value)
             y.jacobians = dask.compute(y.jacobians)[0]

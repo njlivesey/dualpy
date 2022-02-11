@@ -5,7 +5,7 @@ import astropy.units as units
 import fnmatch
 import dask
 
-from .config import config
+from .config import get_config
 from .dual_helpers import _setup_dual_operation, _per_rad, _broadcast_jacobians
 from .jacobians import (
     _setitem_jacobians,
@@ -648,35 +648,34 @@ class dlarray(units.Quantity):
         """Remove axis of length 1 from self"""
         result = dlarray(units.Quantity(self).squeeze(axis))
         for name, jacobian in self.jacobians.items():
-            result.jacobians[name] = jacobian.reshape(result.shape)
+            result.jacobians[name] = jacobian.reshape(result.shape, order="A", parent_flags=self.flags)
         return result
 
-    def remove_jacobian(self, name=None, wildcard=None, remain_dual=False):
-        # Remove a named jacobian from a dual.  If none are left, then
-        # possibly demote back to an astropy quantity, unless
-        # remain_dual is set
-        if name is not None and wildcard is not None:
-            raise ValueError("Cannote set both name and wildcard")
-        if name is None and wildcard is None:
-            raise ValueError("Must set either name or wildcard")
-        if name is not None:
-            self.jacobians.pop(name)
+    def delete_jacobians(self, *names, wildcard=None):
+        """Removes Jacobians from a dlarray
+
+        Arguments
+        ---------
+        names : sequence[str]
+            Sequence of named Jacobians to delete.  If absent (and no wildcard is
+            suppled) then all the Jacobians are deleted.
+        wildcard : str, optional
+            A unix-style wildcard identifying Jacobians to deleted.
+        """
+        if names and (wildcard is not None):
+            raise ValueError("Cannote supply both named Jacobians and a wildcard")
         if wildcard is not None:
-            # Build a list of keys to remove
-            keys = [
+            # If a wildcard is supplied, then identify the Jacobians to delete
+            names = [
                 key for key in self.jacobians.keys() if fnmatch.fnmatch(key, wildcard)
             ]
-            # Remove them (done this way because Python complains if
-            # iterating over a list of keys that keeps changing as
-            # keys are removed)
-            for key in keys:
-                self.jacobians.pop(key)
-        # Now, are any jacobians leff ("if" below tests True if so)
-        if self.jacobians or remain_dual:
-            return self
-        else:
-            return units.Quantity(self)
-
+        elif not names:
+            # If no names and no wildcard suppled, then we're deleting all the Jacobians
+            names = list(self.jacobians.keys())
+        # Now delete those Jaobians we want to delete
+        for key in names:
+            del self.jacobians[key]
+            
     def reshape(array, *newshape, order="C"):
         try:
             if len(newshape) == 1:
@@ -1016,7 +1015,7 @@ def tensordot(a, b, axes):
     a_no_unit = getattr(a_, "value", a_)
     b_no_unit = getattr(b_, "value", b_)
     # Get the jacobian tensordot routines
-    use_dask = "tensordot" in config.dask
+    use_dask = "tensordot" in get_config().dask
     for name, jacobian in aj.items():
         if use_dask:
             jacobian_tensordot = dask.delayed(jacobian.tensordot)
@@ -1042,7 +1041,7 @@ def tensordot(a, b, axes):
                 axes,
                 dependent_unit=result.unit,
             )
-    if "tensordot" in config.dask:
+    if use_dask:
         result.jacobians = dask.compute(result.jacobians)[0]
     return result
 
