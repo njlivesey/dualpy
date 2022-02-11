@@ -21,8 +21,6 @@ from .config import get_config
 __all__ = [
     "CubicSplineLinearJacobians",
     "PossibleDual",
-    "compute_jacobians_numerically",
-    "cumulative_trapezoid",
     "delete_jacobians",
     "has_jacobians",
     "interp1d",
@@ -81,7 +79,7 @@ def seed(
     # work.
     if hasattr(value, "_seed"):
         return value._seed(
-            name=name,
+            name,
             force=force,
             overwrite=overwrite,
             reset=reset,
@@ -171,136 +169,6 @@ def delete_jacobians(
         return a
 
 
-def compute_jacobians_numerically(func, args=None, kwargs=None, plain_func=None):
-    """Compute Jacobians by perturbation for comparison to analytical
-
-    Take a function and set of arguments, run the function once with
-    analytical Jacobians, then perturb each seeded element in turn
-    to compute equivalent numerical Jacobians.  This is used for
-    testing the analytical Jacobian calcualtions.  If "func" cannot
-    be called for non-duals (e.g., voigt_profile exists for ndarray
-    and dlarray, but not units.Quantity) then the optional
-    plain_func argument provides a non-dual compatible routine
-    (e.g., a wrapper that promotes one or more arguments to
-    dual to then invoke func on).
-
-    Arguments
-    ---------
-    func - callable
-        The function that provides analytical Jacobians and that is to be called as many
-        times as needed to provide numerical Jacobians
-    *args - sequence
-        The arguments to func
-    **kwargs - dict
-        Any keyword arguments to func
-    plain_func: callable, optional
-        A version of func that works for non-dual arguments if func is not suitable
-        for that
-
-    Returns
-    -------
-    analytical_result, numerical_result: duals
-        The result of calling func with args/kwargs with Jacobians computed
-        analytically and numerically, respecively.
-
-    Raises
-    ------
-    ValueError if an input contains more than one Jacobian or any Jacobian
-    is non-square.
-    """
-    # First compute the unperturbed result
-    if plain_func is None:
-        plain_func = func
-    if args is None:
-        args = tuple()
-    if kwargs is None:
-        kwargs = dict()
-    result_a = func(*args, **kwargs)
-    result0 = units.Quantity(result_a)
-    result_n = dlarray(result0)
-    #
-    # Now combine the args and kwargs into one set of iterable items
-    # and names (which are none for the args)
-    all_args = []
-    all_arg_names = []
-    for a in args:
-        all_args.append(a)
-        all_arg_names.append(None)
-    for n, a in kwargs.items():
-        all_args.append(a)
-        all_arg_names.append(n)
-    # Now create a version of these arguments where all duals have
-    # been demoted to regular quantities
-    all_args_no_duals = []
-    seed_names = []
-    for a in all_args:
-        if isinstance(a, dlarray):
-            # The only duals allowed are seeds, let's check thats the
-            # name
-            if len(a.jacobians) == 0:
-                continue
-            if len(a.jacobians) != 1:
-                raise ValueError("Inputs can only have one Jacobian")
-            name = list(a.jacobians.keys())[0]
-            j = a.jacobians[name]
-            # Check that the Jacobian is square, if so, consider that
-            # "good enough". Could check for digaonal but that means
-            # we can't use this whole routine to do some of the
-            # testing we'd like to do.
-            if j.dependent_shape != j.independent_shape:
-                raise ValueError("Jacobian is not square")
-            all_args_no_duals.append(units.Quantity(a))
-            seed_names.append(name)
-        else:
-            all_args_no_duals.append(a)
-            seed_names.append(None)
-    # Now take those dual-less arguments and redistribute them into
-    # args and kwargs again.
-    args_no_duals = []
-    kwargs_no_duals = {}
-    for n, a in zip(all_arg_names, all_args_no_duals):
-        if n is None:
-            args_no_duals.append(a)
-        else:
-            kwargs_no_duals[n] = a
-    # Now define our perturbations
-    finfo = np.finfo(np.float32)
-    ptb_f = np.sqrt(finfo.eps)
-    ptb_a = ptb_f
-    # Now, iterate over all our arguments
-    for a, a_nd in zip(all_args, all_args_no_duals):
-        # For the seeds we'll go through them one by one and perturb them
-        if isinstance(a, dlarray):
-            name = list(a.jacobians.keys())[0]
-            template = a.jacobians[name]
-            # Create the 2D matrix that will contain the numerical Jacobians
-            jacobian = np.ndarray((result0.size, a.size), dtype=result0.dtype)
-            # There may be a more pythonic way to do this, but for now this works.
-            for i in np.arange(a.size):
-                print(f"Perturbation {i+1}/{a.size}")
-                # Perturb one element, call the function, put the
-                # original value back and note the results.
-                a_nd_flat = a_nd.reshape(-1)
-                oldV = a_nd_flat[i]
-                dx = np.maximum(np.abs(oldV * ptb_f), (ptb_a << oldV.unit))
-                a_nd_flat[i] += dx
-                resultP = plain_func(*args_no_duals, **kwargs_no_duals)
-                a_nd_flat[i] = oldV
-                dResult = resultP - result0
-                jacobian[:, i] = (dResult / dx).value.ravel()
-            # Store the Jacobian
-            target_shape = result0.shape + template.independent_shape
-            jacobian = np.reshape(jacobian, target_shape)
-            jacobian = DenseJacobian(
-                data=jacobian,
-                template=template,
-                dependent_shape=result0.shape,
-                dependent_unit=dResult.unit,
-                independent_unit=dx.unit,
-            )
-            result_n.jacobians[name] = jacobian
-    # Now we're done, I think
-    return result_a, result_n
 
 
 def solve_quadratic(a, b, c, sign=1):
@@ -362,101 +230,6 @@ def voigt_profile(x, sigma, gamma):
     outZ = wofz(z) / (sigma * np.sqrt(2 * constants.pi))
     out = np.real(outZ)
     return out
-
-
-def _tupleset(t, i, value):
-    l = list(t)
-    l[i] = value
-    return tuple(l)
-
-
-def cumulative_trapezoid(y, x=None, dx=1.0, axis=-1, initial=None):
-    """
-    Cumulatively integrate y(x) using the composite trapezoidal rule.
-    Adapted from scipy routine of the same name, but for duals/astropy quantities
-
-    Parameters
-    ----------
-    y : array_like
-        Values to integrate.
-    x : array_like, optional
-        The coordinate to integrate along. If None (default), use spacing `dx`
-        between consecutive elements in `y`.
-    dx : float, optional
-        Spacing between elements of `y`. Only used if `x` is None.
-    axis : int, optional
-        Specifies the axis to cumulate. Default is -1 (last axis).
-    initial : scalar, optional
-        If given, insert this value at the beginning of the returned result.
-        Typically this value should be 0. Default is None, which means no
-        value at ``x[0]`` is returned and `res` has one element less than `y`
-        along the axis of integration.
-
-    Returns
-    -------
-    res : ndarray
-        The result of cumulative integration of `y` along `axis`.
-        If `initial` is None, the shape is such that the axis of integration
-        has one less value than `y`. If `initial` is given, the shape is equal
-        to that of `y`.
-
-    See Also
-    --------
-    numpy.cumsum, numpy.cumprod
-    quad: adaptive quadrature using QUADPACK
-    romberg: adaptive Romberg quadrature
-    quadrature: adaptive Gaussian quadrature
-    fixed_quad: fixed-order Gaussian quadrature
-    dblquad: double integrals
-    tplquad: triple integrals
-    romb: integrators for sampled data
-    ode: ODE integrators
-    odeint: ODE integrators
-
-    Examples
-    --------
-    >>> from scipy import integrate
-    >>> import matplotlib.pyplot as plt
-
-    >>> x = np.linspace(-2, 2, num=20)
-    >>> y = x
-    >>> y_int = integrate.cumulative_trapezoid(y, x, initial=0)
-    >>> plt.plot(x, y_int, 'ro', x, y[0] + 0.5 * x**2, 'b-')
-    >>> plt.show()
-
-    """
-    if x is None:
-        d = dx
-    else:
-        if x.ndim == 1:
-            d = np.diff(x)
-            # reshape to correct shape
-            shape = [1] * y.ndim
-            shape[axis] = -1
-            d = d.reshape(shape)
-        elif len(x.shape) != len(y.shape):
-            raise ValueError("If given, shape of x must be 1-D or the " "same as y.")
-        else:
-            d = np.diff(x, axis=axis)
-
-        if d.shape[axis] != y.shape[axis] - 1:
-            raise ValueError(
-                "If given, length of x along axis must be the " "same as y."
-            )
-
-    nd = len(y.shape)
-    slice1 = _tupleset((slice(None),) * nd, axis, slice(1, None))
-    slice2 = _tupleset((slice(None),) * nd, axis, slice(None, -1))
-    res = np.cumsum(d * (y[slice1] + y[slice2]) / 2.0, axis=axis)
-    if initial is not None:
-        if not np.isscalar(initial):
-            raise ValueError("`initial` parameter should be a scalar.")
-
-        shape = list(res.shape)
-        shape[axis] = 1
-        res = np.concatenate([np.full(shape, initial, dtype=res.dtype), res], axis=axis)
-
-    return res
 
 
 def has_jacobians(a):
