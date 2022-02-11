@@ -15,10 +15,10 @@ class DualpyConfig:
 
 _config_defaults = {
     "dask": {
-        "CubicSplineLinearJacobians",
-        "irfft",
-        "rfft",
-        "tensordot",
+        # "CubicSplineLinearJacobians",
+        # "irfft",
+        # "rfft",
+        # "tensordot",
     },
 }
 
