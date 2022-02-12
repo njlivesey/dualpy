@@ -7,7 +7,7 @@ from .sparse_jacobians import SparseJacobian
 from .dense_jacobians import DenseJacobian
 
 
-__all__ = ["DiagonalJacobian"]
+__all__ = ["DiagonalJacobian", "SeedJacobian"]
 
 
 class DiagonalJacobian(BaseJacobian):
@@ -181,3 +181,14 @@ class DiagonalJacobian(BaseJacobian):
     def linear_interpolator(self, x_in, axis=-1):
         """Return an interpolator for a given Jacobian axis"""
         return SparseJacobian(self).linear_interpolator(x_in, axis)
+
+
+class SeedJacobian(DiagonalJacobian):
+    """A specific subclass of DiagonalJacobian for seeds
+
+    There is no substantive difference.  The only intent is to indicate that this is an
+    actual seed (it's only use thus far is to help the numeric Jacobian computation code
+    identify what are the seeded variables so it can perturb them.
+
+    """
+    pass

@@ -12,6 +12,7 @@ from .jacobians import (
     BaseJacobian,
     DenseJacobian,
     DiagonalJacobian,
+    SeedJacobian,
     SparseJacobian,
 )
 from .duals import dlarray
@@ -104,7 +105,7 @@ def seed(
             # Blow away any previous Jacobians
             out.jacobians = {}
     # Create the Jacobian as diaongal initially
-    jacobian = DiagonalJacobian(
+    jacobian = SeedJacobian(
         np.ones(out.shape),
         dependent_unit=value.unit,
         independent_unit=value.unit,
@@ -150,7 +151,7 @@ def delete_jacobians(
     """
     # First see if this quantity has a _delete_jacobians method.  If so, use it.
     if hasattr(a, "_delete_jacobians"):
-        return a._delete_jacobians(names, wildcard=wildcard, **kwargs)
+        return a._delete_jacobians(*names, wildcard=wildcard, **kwargs)
     # Otherwise, this is a dlarray (or quacks like one), delete the jacobians ourselves.
     if kwargs:
         raise ValueError(
@@ -167,8 +168,6 @@ def delete_jacobians(
     else:
         # OK, this isn't a dual, return the input unaffected
         return a
-
-
 
 
 def solve_quadratic(a, b, c, sign=1):

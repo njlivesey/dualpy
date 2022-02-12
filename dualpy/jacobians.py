@@ -15,7 +15,7 @@ import scipy.sparse as sparse
 
 from .base_jacobian import BaseJacobian
 from .dense_jacobians import DenseJacobian
-from .diagonal_jacobians import DiagonalJacobian
+from .diagonal_jacobians import DiagonalJacobian, SeedJacobian
 from .sparse_jacobians import SparseJacobian
 
 
