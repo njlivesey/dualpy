@@ -3,6 +3,7 @@ import astropy.units as units
 import scipy.special as special
 import scipy.constants as constants
 import scipy.interpolate as interpolate
+import scipy.integrate as integrate
 import scipy.fft as fft
 from typing import Union
 import copy
@@ -23,12 +24,14 @@ __all__ = [
     "CubicSplineLinearJacobians",
     "PossibleDual",
     "delete_jacobians",
+    "get_jacobians_for_function_inverse",
     "has_jacobians",
     "interp1d",
     "irfft",
     "multi_newton_raphson",
     "rfft",
     "seed",
+    "simpson",
     "solve_quadratic",
     "voigt_profile",
 ]
@@ -114,7 +117,7 @@ def seed(
     )
     # Possibly cast it to other forms
     if initial_type == "diagonal":
-        pass
+        jacobian = DiagonalJacobian(jacobian)
     elif initial_type == "sparse":
         jacobian = SparseJacobian(jacobian)
     elif initial_type == "dense":
@@ -125,9 +128,7 @@ def seed(
     return out
 
 
-def delete_jacobians(
-    a, *names, wildcard=None, remain_dual=False, **kwargs
-):
+def delete_jacobians(a, *names, wildcard=None, remain_dual=False, **kwargs):
     """Remove all or selected Jacobians from a quantity, if non left de-dual
 
     Not that, unlike the method of the same name, this does not operate in place,
@@ -151,7 +152,9 @@ def delete_jacobians(
     """
     # First see if this quantity has a _delete_jacobians method.  If so, use it.
     if hasattr(a, "_delete_jacobians"):
-        return a._delete_jacobians(*names, wildcard=wildcard, **kwargs)
+        return a._delete_jacobians(
+            *names, wildcard=wildcard, remain_dual=remain_dual, **kwargs
+        )
     # Otherwise, this is a dlarray (or quacks like one), delete the jacobians ourselves.
     if kwargs:
         raise ValueError(
@@ -238,6 +241,91 @@ def has_jacobians(a):
     return bool(a.jacobians)
 
 
+def get_jacobians_for_function_inverse(
+    y_target, y_solution, dx_key: str, ignored_jkeys: list[str] = []
+) -> dict:
+    """Compute Jacobians corresponding to the inverse of a function
+
+    This is a helper function for inverting other functions.  Assume the calling code
+    has arrived at the solution to y=f(x), for a given y (in other words a value of
+    x_solution that satisfies [to the users' satisfaction] y_target = f(x_solution)).
+    Given y_target, and y_solution(=f(x_solution)), this function provides a Jacobian
+    dictionary corresponding to d(x_solution)/d(y_target).
+
+    The complication arrives because additional Jacobians on f(x) result may emerge
+    through supplied additonal arguments to function (positional or keyword), or simply
+    because of the instrinsic nature of the function itself.
+
+    This is not as complicated as it might sound at first.  The algorithm employed is
+    described in the comments.
+
+    Paramters:
+    ----------
+
+    y_target: array-like (including dual)
+        The result of f(x) that the calling code found an x_solution such that
+        f(x_solution) = y_target (or ~=, depending on the users' preferences).
+
+    y_solution: array-like (including dual)
+        The result of f(x_solution) that includes Jacobians not only for the input
+        x_solution (designated by the key dx_key), but also any Jacobians arising from
+        other arguments to f, or just intrinsically bt f's very nature.
+
+    dx_key: str
+         The key in the y.jacobians that corresponds to (partial) dy/dx
+
+    ignored_jkeys: list[str]
+         Other jacobian keys that should be ignored
+
+    Note that the Jacobian pointed to by x_key is intended to be a true partial
+    derivative purely for the x term.  In other words, it must not account for any
+    dependence of x on anything else.
+
+    """
+
+    # This is acutally both more and less complicated than it seems.  We're after
+    # dx_solution/dt where t is a quantity we're differentiating by, and ALL DERIVATIVES
+    # IN THESE COMMENTS ARE PARTIAL.  The complexity arrives from the fact that there
+    # may be contributions to df/dt from the other arguments to f, or indeed to
+    # something buried in f itself.  I spent a lot of time thinking I'd have to compute
+    # these terms one by one (and unbury them, which was annoying).  However, we can
+    # work out what the sum of these is by calling the function at our solution x, but
+    # without any Jacobian tracking for t in the solution x itself, but intrinsically
+    # keeping all the Jacobian tracking in the other arguments and anything related to t
+    # buried in f itself.  This gives us the sum of all those other terms.  We can then
+    # subtract that from any dy/dt from the target, and use our knowledge of df/dx to
+    # get dx/dt. So...
+    #
+    x_solution_jacobians = {}
+    # Now, as x_solution only has Jacobians with respect to x, this means that any
+    # Jacobians that emerge with respect to anything else must have come from other
+    # (possibly hidden) arguments to the function. That is they are the sum of
+    # df/db*db/dy, where the derivatives here are partial, so we'll need to factor
+    # them in.
+    #
+    # We're after dx/dt, get it as [dy_target/dt-(all df/db*db/dt)]/(dy/dx), start
+    # with dy/dt terms.
+    accumulator = {}
+    if has_jacobians(y_target):
+        for name, jacobian in y_target.jacobians.items():
+            accumulator[name] = jacobian
+    # Now subtract all teh df/db-related terms (skip the one that is the specific
+    # dy_solution/dx term)
+    if has_jacobians(y_solution):
+        for name, jacobian in y_solution.jacobians.items():
+            # Work out whether this is the dy/dt term or one of the other ones.
+            if name != dx_key and name not in ignored_jkeys:
+                if name in accumulator:
+                    accumulator[name] -= jacobian
+                else:
+                    accumulator[name] = -jacobian
+    # OK, now we can compute the Jacobians for the solution
+    j_reciprocal = 1.0 / y_solution.jacobians[dx_key].extract_diagonal()
+    for j_name, jacobian in accumulator.items():
+        x_solution_jacobians[j_name] = jacobian.premul_diag(j_reciprocal)
+    return x_solution_jacobians
+
+
 def multi_newton_raphson(
     x0,
     func,
@@ -304,10 +392,7 @@ def multi_newton_raphson(
         y_ = delete_jacobians(y)
     # Do the same for args and kwargs
     args_ = [delete_jacobians(arg) for arg in args]
-    kwargs_ = {
-        name: delete_jacobians(kwarg)
-        for name, kwarg in kwargs.items()
-    }
+    kwargs_ = {name: delete_jacobians(kwarg) for name, kwarg in kwargs.items()}
     # Other startup issues
     i = 0
     finish = False
@@ -334,6 +419,9 @@ def multi_newton_raphson(
         i += 1
     if reason == "":
         reason = "max_iter"
+
+    # NOTE TO SELF.  Once we're happy that get_jacobians_for_function_inverse works, we
+    # should replace the code below to a call to that.
 
     # OK, we're done iterating.  Now we have to think about any Jacobians on the output.
     # This is acutally both more and less complicated than it seems.  We're after dx/dt
@@ -645,3 +733,55 @@ class CubicSplineLinearJacobians:
         if not has_jacobians(y):
             y = units.Quantity(y)
         return y
+
+
+def simpson(y, x=None, dx=1.0, axis=-1, even="avg"):
+    """Integrate y(x) using samples along the given axis and the composite
+    Simpson's rule. If x is None, spacing of dx is assumed.
+    If there are an even number of samples, N, then there are an odd
+    number of intervals (N-1), but Simpson's rule requires an even number
+    of intervals. The parameter 'even' controls how this is handled.
+
+    Note that this simply wraps scipy.integrate.simpson (handles duals and units)
+
+    Parameters
+    ----------
+    y : array_like
+        Array to be integrated.
+    x : array_like, optional
+        If given, the points at which `y` is sampled.
+    dx : float, optional
+        Spacing of integration points along axis of `x`. Only used when
+        `x` is None. Default is 1.
+    axis : int, optional
+        Axis along which to integrate. Default is the last axis.
+    even : str {'avg', 'first', 'last'}, optional
+        'avg' : Average two results:1) use the first N-2 intervals with
+                  a trapezoidal rule on the last interval and 2) use the last
+                  N-2 intervals with a trapezoidal rule on the first interval.
+        'first' : Use Simpson's rule for the first N-2 intervals with
+                a trapezoidal rule on the last interval.
+        'last' : Use Simpson's rule for the last N-2 intervals with a
+               trapezoidal rule on the first interval.
+
+    """
+    # Prepare all the operands
+    y_, x_, dx_, yj, xj, dxj, out = _setup_dual_operation(y, x, dx)
+
+    if has_jacobians(x):
+        raise ValueError("Cannot (yet?) have Jacobians on the integration x term")
+    if has_jacobians(dx):
+        raise ValueError("Cannot (yet?) have Jacobians on the integration dx term")
+    if x is None:
+        x_unit = dx.unit
+    else:
+        x_unit = x.unit
+    # Do the raw integration calculation
+    result_ = integrate.simpson(y_, x_, dx_, axis=axis, even=even) * y_.unit * x_unit
+    if has_jacobians(y):
+        result = dlarray(result_)
+        for key, jacobian in y.jacobians.items():
+            result.jacobians[key] = jacobian.simpson(x_, dx_, axis=axis, even=even)
+    else:
+        result = result_
+    return result

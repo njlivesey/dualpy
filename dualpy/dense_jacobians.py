@@ -168,7 +168,8 @@ class DenseJacobian(BaseJacobian):
 
     def cumsum(self, axis):
         """Perform cumsum for a dense Jacobian"""
-        return DenseJacobian(template=self, data=np.cumsum(self.data, axis))
+        jaxis = self._get_jaxis(axis, none="all")
+        return DenseJacobian(template=self, data=np.cumsum(self.data, axis=jaxis))
 
     def diff(
         self, dependent_shape, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue

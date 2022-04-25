@@ -388,7 +388,7 @@ class SparseJacobian(BaseJacobian):
     def cumsum(self, axis, heroic=True):
         """Perform cumsum for a sparse Jacobian"""
         from .dense_jacobians import DenseJacobian
-
+        jaxis = self._get_jaxis(axis, none="flatten")
         # Cumulative sums by definitiona severly reduce sparsity.
         # However, there may be cases where we're effectively doing
         # lots of parallel sums here, so the "off-diagonal blocks" may
@@ -397,25 +397,25 @@ class SparseJacobian(BaseJacobian):
         # that's proven to be faster for non 3D retrievals.
         if not heroic:
             self_dense = DenseJacobian(self)
-            result = self_dense.cumsum(axis)
+            result = self_dense.cumsum(jaxis)
         else:
-            # This is much simpler if axis is None or (thus and)
+            # This is much simpler if jaxis is None or (thus and)
             # dependent_ndim==1
-            easy = axis is None or self.dependent_ndim == 1
+            easy = jaxis is None or self.dependent_ndim == 1
             if easy:
                 new_csc = self.data2d
                 nrows = self.shape[0]
             else:
                 # OK, we want to take the current 2D matrix and pull it
-                # about so that the summed-over axis is now the rows, and
+                # about so that the summed-over jaxis is now the rows, and
                 # the columns are all the remaining dependent axes plus
                 # the independent ones.
                 new_csc, rearranged_shapes, undo_rearrange = _rearrange_2d(
                     self.data2d,
                     [self.dependent_shape, self.independent_shape],
-                    promote=axis,
+                    promote=jaxis,
                 )
-                nrows = self.shape[axis]
+                nrows = self.shape[jaxis]
             # We have two choices here, we could do a python loop to build up and store
             # cumulative sums, but I suspect that, while on paper more efficient
             # (reducing the number of additions, it would be slow in reality. Instead,
@@ -427,7 +427,7 @@ class SparseJacobian(BaseJacobian):
                 result = SparseJacobian(template=self, data=intermediate)
             else:
                 restored_order = list(range(1, self.ndim))
-                restored_order.insert(axis, 0)
+                restored_order.insert(jaxis, 0)
                 result_csc, dummy_result_shapes, dummy_undo = _rearrange_2d(
                     intermediate,
                     rearranged_shapes,

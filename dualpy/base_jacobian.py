@@ -118,10 +118,15 @@ class BaseJacobian(object):
         result.dependent_unit = unit
 
     def _get_jaxis(self, axis, none="none"):
-        """Correct negative axis arguments so they're valid for jacobians"""
-        # Negative axis requests count backwards from the last index,
-        # but the Jacobians have the independent_shape appended to
-        # their shape, so we need to correct for that (or not if its positive)
+        """Correct negative axis arguments so they're valid for jacobians
+        
+        Negative axis requests count backwards from the last index, but the Jacobians
+        have the independent_shape appended to their shape, so we need to correct for
+        that (or not if its positive).
+
+        The none argument says what to do if the supplied axis is missing/None.
+        [MORE DOCUMENTATION ON THOSE OPTIONS NEEDED]
+        """
         if axis is None:
             if none == "none":
                 return None

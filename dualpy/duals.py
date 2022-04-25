@@ -24,7 +24,7 @@ class dlarray(units.Quantity):
     sparse 2D matrix.
 
     This follows the recommendations on subclassing ndarrays in the
-    numpy docum2entation.
+    numpy documentation.
 
     """
 
@@ -128,14 +128,14 @@ class dlarray(units.Quantity):
         return result
 
     def __getitem__(self, key):
-        out = dlarray(units.Quantity(self).__getitem__(key))
+        out = dlarray(self.view(units.Quantity).__getitem__(key))
         for name, jacobian in self.jacobians.items():
             out.jacobians[name] = jacobian._getjitem(out.shape, key)
         return out
 
     def __setitem__(self, key, value):
         s, v, sj, vj, out_ = _setup_dual_operation(self, value, broadcast=False)
-        s.__setitem__(key, value)
+        self.view(units.Quantity).__setitem__(key, v)
         # Doing a setitem on the Jacobians requires some more intimate knowledge so let
         # the jacobians module handle it.
         _setitem_jacobians(key, s, sj, vj)
@@ -199,13 +199,24 @@ class dlarray(units.Quantity):
     def hasJ(self):
         return len(self.jacobians) != 0
 
-    # Update all the Jacobians in a dlarray by premultiplying them by
-    # a diagonal.  Most of the work is done by the premul_diag method
-    # for the Jacobian itself.
+    # Update all the Jacobians in a dlarray by premultiplying them by a diagonal.  Most
+    # of the work is done by the premul_diag method for the Jacobian itself.  This
+    # method is invoked by almost every single dual method, so needs to aim for
+    # efficiency.
     def _chain_rule(self, a, d, unit=None):
-        """Finish up the computation of Jacobians
-        a: dlarray - original input to ufunc
-        d: ndarray - d(self)/da"""
+        """Apply the chain rule to Jacobians to account for a given operation
+
+        Modifies self.jacobians in place, computing:
+        self.jacobian[thing] = a.jaobian[thing] * d (in a diagonal matrix-multiply sense)
+
+        Paramters:
+        ----------
+        a: array-like
+           Original input to the operation invoked on the dual
+        d: arrray-like
+           d(self)/da (expressed as a vector corresponding to the digaonal of the
+           (diagonal) matrix of that derivative.
+        """
         if unit is not None:
             for name, jacobian in a.jacobians.items():
                 self.jacobians[name] = jacobian.to(unit).premul_diag(d)
@@ -224,7 +235,7 @@ class dlarray(units.Quantity):
         else:
             if not isinstance(out, dlarray):
                 out = dlarray(out)
-            out[:] = a_ + b_
+            out[...] = a_ + b_
         for name, jacobian in aj.items():
             out.jacobians[name] = jacobian
         for name, jacobian in bj.items():
@@ -241,7 +252,7 @@ class dlarray(units.Quantity):
         else:
             if not isinstance(out, dlarray):
                 out = dlarray(out)
-            out[:] = a_ - b_
+            out[...] = a_ - b_
         for name, jacobian in aj.items():
             out.jacobians[name] = jacobian
         for name, jacobian in bj.items():
@@ -271,7 +282,7 @@ class dlarray(units.Quantity):
                 out = dlarray(out)
             new_unit = a_.unit * b_.unit
             out = out << new_unit
-            out[:] = a_ * b_
+            out[...] = a_ * b_
         out.jacobians = out_jacobians
         return out
 
@@ -294,7 +305,7 @@ class dlarray(units.Quantity):
             if not isinstance(out, dlarray):
                 out = dlarray(out)
             out = out << a_.unit * b_.unit
-            out[:] = a_ * b_
+            out[...] = a_ * b_
         out.jacobians = out_jacobians
         return out
 
@@ -312,7 +323,7 @@ class dlarray(units.Quantity):
             if not isinstance(out, dlarray):
                 out = dlarray(out)
             out = out << a_.unit / b_.unit
-            out[:] = a_ * r_
+            out[...] = a_ * r_
         out_ = units.Quantity(out)
         # We're going to do the quotient rule as (1/b)a' - (a/(b^2))b'
         # The premultiplier for a' is the reciprocal _r, computed above
@@ -478,9 +489,8 @@ class dlarray(units.Quantity):
     def T(self):
         return self.transpose()
 
-    # A note on the trigonometric cases, we'll cut out the middle man
-    # here and go straight to numpy, forcing the argument into
-    # radians.
+    # A note on the trigonometric cases, we'll cut out the astropy.units middle man here
+    # and go straight to numpy, forcing the argument into radians.
     def sin(a):
         a_rad = a.to(units.rad)
         out_ = np.sin(a_rad.value) << units.dimensionless_unscaled
