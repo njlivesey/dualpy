@@ -7,21 +7,24 @@ below.
 """
 
 
+from dataclasses import dataclass
+from typing import Any, Union
 import collections
 import copy
-from dataclasses import dataclass
 import inspect
+import logging
 import numpy as np
-from typing import Any, Union
 
 from .duals import dlarray
-from .jacobians import DenseJacobian, SeedJacobian
+from .jacobians import SeedJacobian, DiagonalJacobian, DenseJacobian, SparseJacobian
 
 __all__ = [
     "compute_numeric_jacobians",
     "find_duals",
     "iterate_nj_tree",
 ]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -40,36 +43,50 @@ class NJTreeNode:
             return tuple(source[self.key] for source in sources)
 
 
-def find_duals(a):
+def find_duals(a, depth=0):
     """Recursivelly search through object looking for duals"""
     # If this is a dual, we are at a leaf in the tree, return that
+    prefix = "--" * depth + ": "
     if isinstance(a, dlarray):
+        logger.debug(prefix + "Found a dual!")
         return "dlarray"
     # If this is a collection of some kind look through its elements.  First consider
     # lists/tuples.
     branches = []
     if isinstance(a, collections.abc.Sequence) and not isinstance(a, str):
+        logger.debug(prefix + "Is a sequence")
         for key, item in enumerate(a):
-            branch = find_duals(item)
+            branch = find_duals(item, depth=depth + 1)
             if branch:
                 branches.append(NJTreeNode(key=key, contents=branch))
         return branches
     # Now consider dicts
     if isinstance(a, collections.Mapping):
+        logger.debug(prefix + "Is a dict")
         for key, item in a.items():
-            branch = find_duals(item)
+            logger.debug(
+                prefix + f"Checking out {key}, which is a {type(item)}, "
+                f"{hasattr(item, '_numeric_jacobian_support')}"
+            )
+            branch = find_duals(item, depth=depth + 1)
             if branch:
                 branches.append(NJTreeNode(key=key, contents=branch))
         return branches
     # OK, it's not a dual, or a collection.  See if it's an object of a class we can
     # support.  If not, then we're done.
     if not hasattr(a, "_numeric_jacobian_support"):
+        logger.debug(prefix + "Does not support jacobians")
         return []
+    logger.debug(prefix + "Has the attribute...")
     # If it has that attribute but it tests False, then we're also done
     if not a._numeric_jacobian_support:
         return []
+    logger.debug(prefix + "and it's true")
     # Now, perhaps _numeric_jacobian_support is a list of the attributes to consider
     if a._numeric_jacobian_support is not True:
+        logger.debug(
+            prefix + f"_numeric_jacobian_support is {a._numeric_jacobian_support}"
+        )
         members_to_consider = [
             (name, getattr(a, name)) for name in a._numeric_jacobian_support
         ]
@@ -79,11 +96,25 @@ def find_duals(a):
     # Now loop over these things in the input
     for name, value in members_to_consider:
         # Skip dunders, callables, and properties
-        if name.startswith("__") or callable(value) or isinstance(value, property):
+        if name == "jacobians":
+            logger.debug(
+                f"Jacobians: {type(value)}, "
+                f"{isinstance(getattr(type(a), name, None), property)}"
+            )
+        if (
+            name.startswith("__")
+            or callable(value)
+            or isinstance(getattr(type(a), name, None), property)
+        ):
             continue
-        branch = find_duals(value)
+        logger.debug(prefix + f"Checking out attribute {name}")
+        branch = find_duals(value, depth=depth + 1)
+        if branch == "dlarray":
+            logger.debug(prefix + "OK it came out!!!!!")
         if branch:
+            logger.debug(prefix + f"Appending {name}, {branch}")
             branches.append(NJTreeNode(attribute_name=name, contents=branch))
+    logger.debug(prefix + f"Returning {branches}")
     return branches
 
 
@@ -136,6 +167,8 @@ def compute_numeric_jacobians(
     args=None,
     kwargs=None,
     plain_func=None,
+    include_diagonal_jacobians=False,
+    include_all_jacobians=False,
 ):
     """Compute Jacobians by perturbation for comparison to analytical
 
@@ -195,6 +228,16 @@ def compute_numeric_jacobians(
         args = tuple()
     if kwargs is None:
         kwargs = dict()
+    included_jacobian_types = [SeedJacobian]
+    if include_diagonal_jacobians:
+        included_jacobian_types = [SeedJacobian, DiagonalJacobian]
+    if include_all_jacobians:
+        included_jacobian_types += [
+            SeedJacobian,
+            DiagonalJacobian,
+            DenseJacobian,
+            SparseJacobian,
+        ]
     #
     # ----------------------------------------------- Examine inputs
     #
@@ -233,7 +276,7 @@ def compute_numeric_jacobians(
             any_seed = False
             for dual_arg in iterate_nj_tree(dual_tree, arg):
                 for jacobian in dual_arg.jacobians.values():
-                    if isinstance(jacobian, SeedJacobian):
+                    if type(jacobian) in included_jacobian_types:
                         any_seed = True
             if not any_seed:
                 # If there are no seeds, again, as if there are no duals, append this
@@ -246,18 +289,17 @@ def compute_numeric_jacobians(
                 these_seeds = []
                 for dual_arg in iterate_nj_tree(dual_tree, arg):
                     for seed_name, jacobian in dual_arg.jacobians.items():
-                        if isinstance(jacobian, SeedJacobian):
+                        if type(jacobian) in included_jacobian_types:
                             # This is a seed, check it's not a duplicate
                             if seed_name in all_seed_names:
                                 raise ValueError(f"Duplicate seed name {seed_name}")
                             # Now check that the values are all unity or zero, require
                             # exact match, surely that's OK even for floating point.
-                            if not np.all(
-                                (jacobian.data == 0.0) | (jacobian.data == 1.0)
-                            ):
+                            diagonal = jacobian.extract_diagonal()
+                            if not np.all((diagonal == 0.0) | (diagonal == 1.0)):
                                 raise ValueError(
-                                    "The putative SeedJacobian has entries other "
-                                    "than zero or one"
+                                    "The putative Jacobian has (diagonal) "
+                                    "entries other than zero or one"
                                 )
                             # Note this seed
                             all_seed_names.append(seed_name)
@@ -335,7 +377,7 @@ def compute_numeric_jacobians(
             seed_names, iterate_nj_tree(arg_tree, sources=(arg, arg_deseeded))
         ):
             seed_jacobian = original_dual.jacobians[seed_name]
-            seed_jacobian_values = seed_jacobian.data.ravel()
+            seed_jacobian_values = seed_jacobian.extract_diagonal().ravel()
             for i in range(original_dual.size):
                 # If this entry of the seed is zero, we're skipping this element
                 if seed_jacobian_values[i] == 0.0:

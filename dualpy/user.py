@@ -45,7 +45,7 @@ def seed(
     force=False,
     overwrite=False,
     reset=False,
-    initial_type="diagonal",
+    initial_type="seed",
     **kwargs,
 ):
     # In some senses, this is the most important routine in the package,
@@ -116,7 +116,9 @@ def seed(
         independent_shape=value.shape,
     )
     # Possibly cast it to other forms
-    if initial_type == "diagonal":
+    if initial_type == "seed":
+        pass
+    elif initial_type == "diagonal":
         jacobian = DiagonalJacobian(jacobian)
     elif initial_type == "sparse":
         jacobian = SparseJacobian(jacobian)
@@ -236,6 +238,9 @@ def voigt_profile(x, sigma, gamma):
 
 def has_jacobians(a):
     """Return true if a is a dual with Jacobians"""
+    # If it has a _has_jacobians method, invoke that.
+    if hasattr(a, "_has_jacobians"):
+        return a._has_jacobians()
     if not hasattr(a, "jacobians"):
         return False
     return bool(a.jacobians)
@@ -304,12 +309,12 @@ def get_jacobians_for_function_inverse(
     # them in.
     #
     # We're after dx/dt, get it as [dy_target/dt-(all df/db*db/dt)]/(dy/dx), start
-    # with dy/dt terms.
+    # with dy_target/dt terms.
     accumulator = {}
     if has_jacobians(y_target):
         for name, jacobian in y_target.jacobians.items():
             accumulator[name] = jacobian
-    # Now subtract all teh df/db-related terms (skip the one that is the specific
+    # Now subtract all the df/db-related terms (skip the one that is the specific
     # dy_solution/dx term)
     if has_jacobians(y_solution):
         for name, jacobian in y_solution.jacobians.items():
@@ -672,8 +677,6 @@ class CubicSplineLinearJacobians:
 
     def __init__(self, x, y, axis=0, bc_type="not-a-knot", extrapolate=None):
         """Setup a dual/unit aware CubicSpline interpolator"""
-        if has_jacobians(x):
-            raise ValueError("Cannot (yet) handle Jacobians for input x")
         self.x_unit = x.unit
         self.y_unit = y.unit
         self.x_min = np.min(units.Quantity(x))
@@ -686,21 +689,24 @@ class CubicSplineLinearJacobians:
             bc_type=bc_type,
             extrapolate=extrapolate,
         )
-        if has_jacobians(y):
-            self.j_interpolators = dict()
-            if "CubicSplineLinearJacobians" in get_config().dask:
-                for name, jacobian in y.jacobians.items():
-                    self.j_interpolators[name] = dask.delayed(
-                        jacobian.linear_interpolator
-                    )(x.value, axis)
-                self.j_interpolators = dask.compute(self.j_interpolators)[0]
-            else:
-                for name, jacobian in y.jacobians.items():
-                    self.j_interpolators[name] = jacobian.linear_interpolator(
-                        x.value, axis
-                    )
+        # Deal with any input Jacobians on x
+        if has_jacobians(x):
+            self.jx_interpolators = dict()
+            for name, jacobian in x.jacobians.items():
+                self.jx_interpolators[name] = jacobian.linear_interpolator(
+                    x.value, axis
+                )
         else:
-            self.j_interpolators = {}
+            self.jx_interpolators = {}
+        # Deal with any input Jaobians on y
+        if has_jacobians(y):
+            self.jy_interpolators = dict()
+            for name, jacobian in y.jacobians.items():
+                self.jy_interpolators[name] = jacobian.linear_interpolator(
+                    x.value, axis
+                )
+        else:
+            self.jy_interpolators = {}
         # Leave a space to cache the derivative interpolators
         self.dydx_interpolator = None
 
@@ -711,24 +717,27 @@ class CubicSplineLinearJacobians:
         # Get the interpolated value of y, make it a dual
         y = dlarray(self.y_interpolator(x_fixed.value) << self.y_unit)
         # Now deal with any jacobians with regard to the original y
-        if "CubicSplineLinearJacobians" in get_config().dask:
-            for name, j_interpolator in self.j_interpolators.items():
-                y.jacobians[name] = dask.delayed(j_interpolator)(x_fixed.value)
-            y.jacobians = dask.compute(y.jacobians)[0]
-        else:
-            for name, j_interpolator in self.j_interpolators.items():
-                y.jacobians[name] = j_interpolator(x_fixed.value)
-        # Now deal with any jacobians with regard to x
-        if has_jacobians(x):
-            # Get the dydx_interolator if it's not already been generated
+        for name, jy_interpolator in self.jy_interpolators.items():
+            y.jacobians[name] = jy_interpolator(x_fixed.value)
+        # Now work out if we're going to need dydx, construct it if so.
+        if has_jacobians(x) or self.jx_interpolators:
+            # Construct the interpolator if we're going to need it
             if self.dydx_interpolator is None:
                 self.dydx_interpolator = self.y_interpolator.derivative()
+            # Invoke it for this x
             dydx = self.dydx_interpolator(x_fixed) << (self.y_unit / self.x_unit)
-            # Now multiply all the dx/dt terms by dy/dx to get dy/dt
+        # Now deal with any jacobians with regard to the output x
+        if has_jacobians(x):
             x_new_shape = [1] * y.ndim
             x_new_shape[self.axis] = x.size
             x_fixed = x_fixed.reshape(tuple(x_new_shape))
-            y._chain_rule(x_fixed, dydx)
+            y._chain_rule(x_fixed, dydx, add=True)
+        # Now deal with any Jacobians with regard to the input x
+        for name, jx_interpolator in self.jx_interpolators.items():
+            if name in y.jacobians:
+                y.jacobians[name] -= jx_interpolator(x_fixed.value).premul_diag(dydx)
+            else:
+                y.jacobians[name] = -jx_interpolator(x_fixed.value).premul_diag(dydx)
         # Now, if the result doesn't have Jacobians make it not a dual
         if not has_jacobians(y):
             y = units.Quantity(y)

@@ -203,7 +203,7 @@ class dlarray(units.Quantity):
     # of the work is done by the premul_diag method for the Jacobian itself.  This
     # method is invoked by almost every single dual method, so needs to aim for
     # efficiency.
-    def _chain_rule(self, a, d, unit=None):
+    def _chain_rule(self, a, d, unit=None, add=False):
         """Apply the chain rule to Jacobians to account for a given operation
 
         Modifies self.jacobians in place, computing:
@@ -216,13 +216,22 @@ class dlarray(units.Quantity):
         d: arrray-like
            d(self)/da (expressed as a vector corresponding to the digaonal of the
            (diagonal) matrix of that derivative.
+        add: bool (default false)
+           If set, do not overwrite existing jacobians, rather add these terms to them.
+
         """
         if unit is not None:
             for name, jacobian in a.jacobians.items():
-                self.jacobians[name] = jacobian.to(unit).premul_diag(d)
+                if add and name in self.jacobians:
+                    self.jacobians[name] += jacobian.to(unit).premul_diag(d)
+                else:
+                    self.jacobians[name] = jacobian.to(unit).premul_diag(d)
         else:
             for name, jacobian in a.jacobians.items():
-                self.jacobians[name] = jacobian.premul_diag(d)
+                if add and name in self.jacobians:
+                    self.jacobians[name] += jacobian.premul_diag(d)
+                else:
+                    self.jacobians[name] = jacobian.premul_diag(d)
 
     def ravel(self, order="C"):
         return _ravel(self, order=order)

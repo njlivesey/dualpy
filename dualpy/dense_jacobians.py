@@ -284,6 +284,10 @@ class DenseJacobian(BaseJacobian):
         """Return an interpolator for a given Jacobian axis"""
         return DenseJacobianLinearInterpolator(self, x_in, axis)
 
+    def spline_interpolator(self, x_in, axis=-1):
+        """Return an interpolator for a given Jacobian axis"""
+        return DenseJacobianSplineInterpolator(self, x_in, axis)
+
 
 class DenseJacobianLinearInterpolator(object):
     """Interpolates a DenseJacobian along one dependent axis"""
@@ -317,6 +321,27 @@ class DenseJacobianLinearInterpolator(object):
             + self.jacobian.data[tuple(upper_key)] * w_upper
         )
         # Prepare the result and return
+        new_dependent_shape = result.shape[: self.jacobian.dependent_ndim]
+        return DenseJacobian(
+            template=self.jacobian,
+            data=result,
+            dependent_shape=new_dependent_shape,
+        )
+
+    
+class DenseJacobianSplineInterpolator(object):
+    """Interpolates Jacobian along one dependent axis"""
+
+    def __init__(self, jacobian, x_in, axis=-1):
+        """Setup an interpolator for a given DenseJacobian"""
+        import scipy.interpolate as interpolate
+        self.jacobian = jacobian
+        self.jaxis = jacobian._get_jaxis(axis, none="first")
+        self.interpolator = interpolate.CubicSpline(x_in, jacobian.data, axis=self.jaxis)
+
+    def __call__(self, x_out):
+        """Inpoterpolate a DenseJacobian to new values along an axis"""
+        result = self.interpolator(x_out)
         new_dependent_shape = result.shape[: self.jacobian.dependent_ndim]
         return DenseJacobian(
             template=self.jacobian,
