@@ -283,6 +283,9 @@ class SparseJacobian(BaseJacobian):
     def __neg__(self):
         return type(self)(-self.data2d, template=self)
 
+    def __pos__(self):
+        return type(self)(+self.data2d, template=self)
+
     def real(self):
         return type(self)(np.real(self.data2d), template=self)
 

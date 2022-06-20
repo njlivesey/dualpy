@@ -362,9 +362,9 @@ class dlarray(units.Quantity):
         # "both" case has not been tested, so is currently disabled.
         a_, b_, aj, bj, out = _setup_dual_operation(a, b)
         if isinstance(a, dlarray) and isinstance(b, dlarray):
-            # This has never been tested so, for now, I'm goint to
-            # flag it as not implemented.  However, there is code below,
-            # as you can see.
+            # This has never been tested so, for now, I'm goint to flag it as not
+            # implemented.  However, there is code below, as you can see.  In
+            # particular, please pay special attention to the handling of units.
             return NotImplemented
             # a**(b-1)*(b*da/dx+a*log(a)*db/dx)
             # Multiply it out and we get:
@@ -433,6 +433,13 @@ class dlarray(units.Quantity):
         out = dlarray(-a_)
         for name, jacobian in a.jacobians.items():
             out.jacobians[name] = -jacobian
+        return out
+
+    def positive(a):
+        a_ = units.Quantity(a)
+        out = dlarray(+a_)
+        for name, jacobian in a.jacobians.items():
+            out.jacobians[name] = +jacobian
         return out
 
     def reciprocal(a):
