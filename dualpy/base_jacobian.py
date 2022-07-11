@@ -96,7 +96,7 @@ class BaseJacobian(object):
         return type(self)(-self.data, template=self)
 
     def __pos__(self):
-        return type(self)(+self.data, template=self)
+        return self
 
     def __add__(self, other):
         from .dense_jacobians import DenseJacobian

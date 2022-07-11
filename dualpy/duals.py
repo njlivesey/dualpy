@@ -927,6 +927,42 @@ def clip(a, a_min, a_max, out=None, **kwargs):
         out._chain_rule(a, factor.astype(int))
     return out
 
+@implements(np.argmin)
+def argmin(a, axis=None, out=None, *, keepdims=np._NoValue):
+    """Implements np.argmin"""
+    return np.argmin(units.Quantity(a, axis=axis, out=out, keepdims=keepdims))
+
+@implements(np.argmax)
+def argmax(a, axis=None, out=None, *, keepdims=np._NoValue):
+    """Implements np.argmax"""
+    return np.argmax(units.Quantity(a, axis=axis, out=out, keepdims=keepdims))
+
+@implements(np.amin)
+def amin(a, axis=None, out=None, keepdims=None, initial=None):
+    """Implements numpy amin (in limited form for now)"""
+    if out is not None:
+        raise NotImplementedError("dual amin does not support out (yet)")
+    if keepdims is not None:
+        raise NotImplementedError("dual amin does not support keepdims (yet)")
+    if a.ndim == 0:
+        return a
+    else:
+        i_min = np.argmin(units.Quantity(a), axis=axis)
+        return a[i_min]
+
+@implements(np.amax)
+def amax(a, axis=None, out=None, keepdims=None, initial=None):
+    """Implements numpy amax (in limited form for now)"""
+    if out is not None:
+        raise NotImplementedError("dual amax does not support out (yet)")
+    if keepdims is not None:
+        raise NotImplementedError("dual amax does not support keepdims (yet)")
+    if a.ndim == 0:
+        return a
+    else:
+        i_max = np.argmax(units.Quantity(a), axis=axis)
+        return a[i_max]
+
 
 @implements(np.nan_to_num)
 def nan_to_num(x, copy=True, nan=0.0, posinf=None, neginf=None, jacobians_only=False):

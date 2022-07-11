@@ -711,7 +711,7 @@ class CubicSplineLinearJacobians:
         self.dydx_interpolator = None
 
     def __call__(self, x):
-        """Return a dual/unit aware spline interpolation"""
+        """Return a dual/unit aware spline interpolation (linear for Jacobains)"""
         # Make sure x is in the right units and bounded, then take units off
         x_fixed = np.clip(x.to(self.x_unit), self.x_min, self.x_max)
         # Get the interpolated value of y, make it a dual
@@ -720,7 +720,7 @@ class CubicSplineLinearJacobians:
         for name, jy_interpolator in self.jy_interpolators.items():
             y.jacobians[name] = jy_interpolator(x_fixed.value)
         # Now work out if we're going to need dydx, construct it if so.
-        if has_jacobians(x) or self.jx_interpolators:
+        if has_jacobians(x_fixed) or self.jx_interpolators:
             # Construct the interpolator if we're going to need it
             if self.dydx_interpolator is None:
                 self.dydx_interpolator = self.y_interpolator.derivative()

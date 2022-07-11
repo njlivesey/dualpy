@@ -18,31 +18,38 @@ def _rearrange_2d(matrix, original_shapes, axes=None, promote=None, demote=None)
 
     matrix: (sparse) matrix-like
         A 2D sparse matrix (typically csc format) that is really storing a sparse tensor
-        with the axes raveled into to sets.
-
-    original_shape: list of two lists of int
-        A list of two lists giving the shapes that ravel to make the rows and columns of
+        with the axes raveled into to two collections of axis to fake a 2D sparse
         matrix.
 
-    axes: list of two lists of int
-        Which axes of the original should constitute the raveling of the result
+    original_shapes: list of two lists of int
+        A list of two lists giving the shapes that ravel to make the rows and columns of
+        input matrix.
 
-    promote: A single axis to move to the front
+    axes: list of two lists of int (optional)
+        The recipe for the result - which axes from the original form the two sets of
+        axes raveled to get the two axes of the fake 2D matrix
 
-    demote: A single axis to move to the back
+    promote: A single axis to move to the front (optional)
+        A shortcut to simply move one axis to the front
+
+    demote: A single axis to move to the back (optional)
+        A shortcut to simply move one axis to the back
 
     """
     # Work out what we've been asked to do
+    if len(original_shapes) != 2:
+        raise ValueError("Wrong length (not 2) for original_shapes argument")
     n0_in = len(original_shapes[0])
     n1_in = len(original_shapes[1])
     n_in = n0_in + n1_in
     original_shape = original_shapes[0] + original_shapes[1]
+    # Work out what the recipe is for the result
     if promote is not None or demote is not None:
         if axes is not None:
             raise ValueError("Cannot set both axes and promote/demote")
         if promote is not None and demote is not None:
             raise ValueError("Cannot set both promote and demote")
-        remainder = list(range(len(original_shape)))
+        remainder = list(range(n_in))
         if promote is not None:
             remainder.pop(promote)
             axes = [[promote], remainder]
@@ -55,9 +62,11 @@ def _rearrange_2d(matrix, original_shapes, axes=None, promote=None, demote=None)
         raise ValueError("Mismatched dimensionality")
     all_axes = axes[0] + axes[1]
     rearranged_shape = [original_shape[i] for i in all_axes]
+    # Force to int because prod returns float in case where one other term is scalar
+    # (i.e., for array of zero length)
     rearranged_shape_2d = [
-        np.prod(rearranged_shape[:n0_out]),
-        np.prod(rearranged_shape[n0_out:]),
+        np.prod(rearranged_shape[:n0_out], dtype=int),
+        np.prod(rearranged_shape[n0_out:], dtype=int),
     ]
     # Convert the matrix to coo form
     matrix_coo = matrix.tocoo()
@@ -67,9 +76,33 @@ def _rearrange_2d(matrix, original_shapes, axes=None, promote=None, demote=None)
     i_all_original = np.unravel_index(i_raveled, original_shape)
     # Now rearrange this list of indices according to the prescription supplied.
     i_all_rearranged = [i_all_original[i] for i in all_axes]
-    # Now ravel the new row/column indices
-    i0_new = np.ravel_multi_index(i_all_rearranged[:n0_out], rearranged_shape[:n0_out])
-    i1_new = np.ravel_multi_index(i_all_rearranged[n0_out:], rearranged_shape[n0_out:])
+    # Now ravel the new row/column indices.  If one or other is a scalar set the raveled
+    # index to None
+    if n0_out > 0:
+        i0_new = np.ravel_multi_index(
+            i_all_rearranged[:n0_out], rearranged_shape[:n0_out]
+        )
+    else:
+        i0_new = None
+    if n0_out < n_out:
+        i1_new = np.ravel_multi_index(
+            i_all_rearranged[n0_out:], rearranged_shape[n0_out:]
+        )
+    else:
+        i1_new = None
+    # Handle the scalar cases
+    if i0_new is None and i0_new is None:
+        raise NotImplementedError(
+            "The scalar on scalar case has not been tested (perhaps it works fine)"
+        )
+        i0_new = 0
+        i1_new = 0
+    elif i0_new is None:
+        i0_new = i1_new * 0
+    elif i1_new is None:
+        i1_new = i0_new * 0
+    else:
+        pass
     # Make the new matrix - this is what does the actual rearrangement
     result = sparse.csc_matrix(
         (matrix_coo.data, (i0_new, i1_new)), shape=rearranged_shape_2d
@@ -283,9 +316,6 @@ class SparseJacobian(BaseJacobian):
     def __neg__(self):
         return type(self)(-self.data2d, template=self)
 
-    def __pos__(self):
-        return type(self)(+self.data2d, template=self)
-
     def real(self):
         return type(self)(np.real(self.data2d), template=self)
 
@@ -391,6 +421,7 @@ class SparseJacobian(BaseJacobian):
     def cumsum(self, axis, heroic=True):
         """Perform cumsum for a sparse Jacobian"""
         from .dense_jacobians import DenseJacobian
+
         jaxis = self._get_jaxis(axis, none="flatten")
         # Cumulative sums by definitiona severly reduce sparsity.
         # However, there may be cases where we're effectively doing
@@ -596,7 +627,7 @@ class SparseJacobian(BaseJacobian):
             )
         else:
             raise NotImplementedError(f"No way to handle {type(result_)}")
-        
+
     def extract_diagonal(self):
         """Extract the diagonal from a sparse Jacobian"""
         if self.dependent_shape != self.independent_shape:
