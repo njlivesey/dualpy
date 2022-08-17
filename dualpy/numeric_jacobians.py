@@ -61,7 +61,7 @@ def find_duals(a, depth=0):
                 branches.append(NJTreeNode(key=key, contents=branch))
         return branches
     # Now consider dicts
-    if isinstance(a, collections.Mapping):
+    if isinstance(a, collections.abc.Mapping):
         logger.debug(prefix + "Is a dict")
         for key, item in a.items():
             logger.debug(
