@@ -222,9 +222,11 @@ class BaseJacobian(object):
 
     def scalar_multiply(self, scale):
         """Multiply Jacobian by a scalar"""
-        self.dependent_unit *= scale.unit
-        self.data *= scale.value
-        return self
+        return self.__class__(
+            template=self,
+            data=self.data * scale.value,
+            dependent_unit=self.dependent_unit * scale.unit
+        )
 
     def independents_compatible(self, other):
         """Return true if the independent variables for two jacobians are compatible"""
