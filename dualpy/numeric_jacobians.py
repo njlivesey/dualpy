@@ -349,10 +349,6 @@ def compute_numeric_jacobians(
             args_deseeded.append(arg)
         else:
             kwargs_desseded[n] = arg
-    # Now setup some defaults for our perturbations
-    finfo = np.finfo(np.float32)
-    ptb_f = np.sqrt(finfo.eps)
-    ptb_a = ptb_f
     #
     # ----------------------------------------------- Perturb each argument in turn
     #
@@ -386,9 +382,8 @@ def compute_numeric_jacobians(
                 ii = np.unravel_index(i, shape=deseeded_dual.shape)
                 # Record the original value then perturb
                 original = deseeded_dual[ii]
-                dx = np.maximum(np.abs(original * ptb_f), (ptb_a << original.unit))
+                dx = np.spacing(original.value) * 1e6 << original.unit
                 deseeded_dual[ii] += dx
-                # deseeded_dual[ii] = deseeded_dual[ii] + dx
                 # Finally, we invoke the function
                 result_p = plain_func(*args_deseeded, **kwargs_desseded)
                 # Put the unperturbed value back
