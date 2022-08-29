@@ -113,20 +113,19 @@ class DenseJacobian(BaseJacobian):
         # Don't bother doing anything if the shape is already good
         if shape == self.dependent_shape:
             return self
-        if shape == "K":
-            shape = "A"
+        if order == "K":
+            order = "A"
         reverse = (order == "C" and not parent_flags.c_contiguous) or (
             order == "F" and not parent_flags.f_contiguous
         )
         if reverse:
-            raise NotImplementedError("F-contiguous dlarrays have not been tested")
             input_jacobian = self.transpose(None, self.dependent_shape[::-1])
         else:
             input_jacobian = self
         try:
-            full_shape = shape + input_jacobian.independent_shape
+            full_shape = tuple(shape) + tuple(input_jacobian.independent_shape)
         except TypeError:
-            full_shape = (shape,) + input_jacobian.independent_shape
+            full_shape = (shape,) + tuple(input_jacobian.independent_shape)
         result_ = np.reshape(input_jacobian.data, full_shape, order)
         return DenseJacobian(
             data=result_, template=input_jacobian, dependent_shape=shape
@@ -328,16 +327,19 @@ class DenseJacobianLinearInterpolator(object):
             dependent_shape=new_dependent_shape,
         )
 
-    
+
 class DenseJacobianSplineInterpolator(object):
     """Interpolates Jacobian along one dependent axis"""
 
     def __init__(self, jacobian, x_in, axis=-1):
         """Setup an interpolator for a given DenseJacobian"""
         import scipy.interpolate as interpolate
+
         self.jacobian = jacobian
         self.jaxis = jacobian._get_jaxis(axis, none="first")
-        self.interpolator = interpolate.CubicSpline(x_in, jacobian.data, axis=self.jaxis)
+        self.interpolator = interpolate.CubicSpline(
+            x_in, jacobian.data, axis=self.jaxis
+        )
 
     def __call__(self, x_out):
         """Inpoterpolate a DenseJacobian to new values along an axis"""
