@@ -199,15 +199,17 @@ class dlarray(units.Quantity):
     def hasJ(self):
         return len(self.jacobians) != 0
 
-    # Update all the Jacobians in a dlarray by premultiplying them by a diagonal.  Most
-    # of the work is done by the premul_diag method for the Jacobian itself.  This
-    # method is invoked by almost every single dual method, so needs to aim for
-    # efficiency.
     def _chain_rule(self, a, d, unit=None, add=False):
         """Apply the chain rule to Jacobians to account for a given operation
 
         Modifies self.jacobians in place, computing:
-        self.jacobian[thing] = a.jaobian[thing] * d (in a diagonal matrix-multiply sense)
+           self.jacobian[thing] = a.jacobian[thing] * d
+        (where * works in a diagonal matrix-multiply sense)
+
+        Updates all the Jacobians in a dlarray by premultiplying them by a diagonal.
+        Most of the work is done by the premul_diag method for the Jacobian itself.
+        This method is invoked by almost every single dual method, so needs to aim for
+        efficiency.
 
         Paramters:
         ----------
@@ -216,6 +218,8 @@ class dlarray(units.Quantity):
         d: arrray-like
            d(self)/da (expressed as a vector corresponding to the digaonal of the
            (diagonal) matrix of that derivative.
+        unit: astropy.Unit optional
+           If supplied convert Jacobian to this dependent unit before multiplying
         add: bool (default false)
            If set, do not overwrite existing jacobians, rather add these terms to them.
 

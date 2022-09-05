@@ -725,7 +725,7 @@ class CubicSplineLinearJacobians:
             if self.dydx_interpolator is None:
                 self.dydx_interpolator = self.y_interpolator.derivative()
             # Invoke it for this x
-            dydx = self.dydx_interpolator(x_fixed) << (self.y_unit / self.x_unit)
+            dydx = self.dydx_interpolator(x_fixed.value) << (self.y_unit / self.x_unit)
         # Now deal with any jacobians with regard to the output x
         if has_jacobians(x):
             x_new_shape = [1] * y.ndim
