@@ -6,7 +6,6 @@ below.
 
 """
 
-
 from dataclasses import dataclass
 from typing import Any, Union
 import collections
@@ -14,6 +13,7 @@ import copy
 import inspect
 import logging
 import numpy as np
+from tqdm import tqdm
 
 from .duals import dlarray
 from .jacobians import SeedJacobian, DiagonalJacobian, DenseJacobian, SparseJacobian
@@ -238,6 +238,7 @@ def compute_numeric_jacobians(
             DenseJacobian,
             SparseJacobian,
         ]
+    dx_scale_factor = 1e6
     #
     # ----------------------------------------------- Examine inputs
     #
@@ -260,6 +261,8 @@ def compute_numeric_jacobians(
     all_arg_seed_names = []
     # We'll keep track of the names of all the seeds to complain about duplicates
     all_seed_names = []
+    # Keep track of how many perturbations we're going to make
+    n_elements = 0
     for arg in all_args:
         # Find all the duals in this argument
         dual_tree = find_duals(arg)
@@ -304,6 +307,8 @@ def compute_numeric_jacobians(
                             # Note this seed
                             all_seed_names.append(seed_name)
                             these_seeds.append(seed_name)
+                            # Add the number of elements this involves
+                            n_elements += int(np.sum(diagonal))
                 all_arg_seed_names.append(these_seeds)
                 # OK, we're going to need a de-seeded copy of this argument, so make a
                 # deep copy of it, then go through and delete all the seeds
@@ -352,57 +357,63 @@ def compute_numeric_jacobians(
     #
     # ----------------------------------------------- Perturb each argument in turn
     #
-    for (arg, arg_deseeded, arg_tree, seed_names) in zip(
-        all_args,
-        all_deseeded_args,
-        all_arg_trees,
-        all_arg_seed_names,
-    ):
-        # Skip any arguments that do not contain duals
-        if arg_tree is None:
-            continue
-        # Check out the iterations - keep needing to debug
-        # for seed_name in seed_names:
-        #     print(seed_name)
-        # for original_dual, deseeded_dual in iterate_nj_tree(
-        #         arg_tree, sources=(arg, arg_deseeded)):
-        #     print(original_dual.shape, deseeded_dual.shape)
-
-        # Now iterate over all the duals in this argument
-        for seed_name, (original_dual, deseeded_dual) in zip(
-            seed_names, iterate_nj_tree(arg_tree, sources=(arg, arg_deseeded))
+    with tqdm(total=n_elements) as bar:
+        for (arg, arg_deseeded, arg_tree, seed_names) in zip(
+            all_args,
+            all_deseeded_args,
+            all_arg_trees,
+            all_arg_seed_names,
         ):
-            seed_jacobian = original_dual.jacobians[seed_name]
-            seed_jacobian_values = seed_jacobian.extract_diagonal().ravel()
-            for i in range(original_dual.size):
-                # If this entry of the seed is zero, we're skipping this element
-                if seed_jacobian_values[i] == 0.0:
-                    continue
-                # Get the unraveld indices for this element
-                ii = np.unravel_index(i, shape=deseeded_dual.shape)
-                # Record the original value then perturb
-                original = deseeded_dual[ii]
-                dx = np.spacing(original.value) * 1e6 << original.unit
-                deseeded_dual[ii] += dx
-                # Finally, we invoke the function
-                result_p = plain_func(*args_deseeded, **kwargs_desseded)
-                # Put the unperturbed value back
-                deseeded_dual[ii] = original
-                # Now we have to loop over all the Jacobian-containing outputs and note
-                # the impact of this perturbation in them.  Loop over the container for
-                # the numerical Jacobians, and the perturbed and unperturbed result and
-                # insert the results for any Jacobians with respect to this seed.
-                for output_n, output_p, output_0 in iterate_nj_tree(
-                    result_tree, sources=(result_n, result_p, result_0)
-                ):
-                    if seed_name in output_n.jacobians:
-                        j = output_n.jacobians[seed_name]
-                        # Compute the Jacobian column
-                        delta_output = output_p - output_0
-                        delta_output = delta_output.ravel().to(j.dependent_unit).value
-                        dx_value = dx.to(j.independent_unit).value
-                        column = delta_output / dx_value
-                        # Insert it
-                        j.data2d[:, i] = column
+            # Skip any arguments that do not contain duals
+            if arg_tree is None:
+                continue
+            # Check out the iterations - keep needing to debug
+            # for seed_name in seed_names:
+            #     print(seed_name)
+            # for original_dual, deseeded_dual in iterate_nj_tree(
+            #         arg_tree, sources=(arg, arg_deseeded)):
+            #     print(original_dual.shape, deseeded_dual.shape)
+
+            # Now iterate over all the duals in this argument
+            for seed_name, (original_dual, deseeded_dual) in zip(
+                seed_names, iterate_nj_tree(arg_tree, sources=(arg, arg_deseeded))
+            ):
+                seed_jacobian = original_dual.jacobians[seed_name]
+                seed_jacobian_values = seed_jacobian.extract_diagonal().ravel()
+                for i in range(original_dual.size):
+                    # If this entry of the seed is zero, we're skipping this element
+                    if seed_jacobian_values[i] == 0.0:
+                        continue
+                    # Get the unraveld indices for this element
+                    ii = np.unravel_index(i, shape=deseeded_dual.shape)
+                    # Record the original value then perturb
+                    original = deseeded_dual[ii]
+                    dx = (np.spacing(original.value) * dx_scale_factor) << original.unit
+                    deseeded_dual[ii] += dx
+                    # Finally, we invoke the function
+                    result_p = plain_func(*args_deseeded, **kwargs_desseded)
+                    bar.update()
+                    # Put the unperturbed value back
+                    deseeded_dual[ii] = original
+                    # Now we have to loop over all the Jacobian-containing outputs and
+                    # note the impact of this perturbation in them.  Loop over the
+                    # container for the numerical Jacobians, and the perturbed and
+                    # unperturbed result and insert the results for any Jacobians with
+                    # respect to this seed.
+                    for output_n, output_p, output_0 in iterate_nj_tree(
+                        result_tree, sources=(result_n, result_p, result_0)
+                    ):
+                        if seed_name in output_n.jacobians:
+                            j = output_n.jacobians[seed_name]
+                            # Compute the Jacobian column
+                            delta_output = output_p - output_0
+                            delta_output = (
+                                delta_output.ravel().to(j.dependent_unit).value
+                            )
+                            dx_value = dx.to(j.independent_unit).value
+                            column = delta_output / dx_value
+                            # Insert it
+                            j.data2d[:, i] = column
+
     # Now we're done, I think
     return result_a, result_n

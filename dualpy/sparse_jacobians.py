@@ -197,7 +197,7 @@ class SparseJacobian(BaseJacobian):
         """A setitem type method for dense Jacobians"""
         if not isinstance(value, SparseJacobian):
             raise NotImplementedError(
-                "Not implemented SparseJacobian._setjitem for {type(value)}"
+                f"Not implemented SparseJacobian._setjitem for {type(value)}"
             )
         # Key point to recall here is that, for each of the dependent indices in key,
         # we're replacing all of its Jacobians, not just those that are present in
@@ -410,6 +410,75 @@ class SparseJacobian(BaseJacobian):
                 shape=(reduced_size, i_original.size),
             )
             result_ = M @ self.data2d
+            # Note that by specifying dependent_shape here, supplied
+            # by the calling code, we've implicitly taken the value of
+            # the keepdims argument into account.
+            result = SparseJacobian(
+                template=self, data=result_, dependent_shape=dependent_shape
+            )
+        return result
+
+    def mean(self, dependent_shape, axis=None, dtype=None, keepdims=False):
+        """Perform mean for the sparse Jacobians"""
+        from .dense_jacobians import DenseJacobian
+
+        # Two different approaches, depending on whether axis is supplied
+        if axis is None:
+            # OK, here we want to sum over all the dependent elements,
+            # scipy.sparse can do that.
+            result_ = np.mean(self.data2d, axis=0, dtype=dtype)
+            # Note that result is a dense matrix
+            if keepdims:
+                result_shape = (1,) * self.dependent_ndim + self.independent_shape
+            else:
+                result_shape = self.independent_shape
+            result_ = np.reshape(np.asarray(result_), result_shape)
+            result = DenseJacobian(
+                template=self, data=result_, dependent_shape=dependent_shape
+            )
+            pass
+        else:
+            # Here we want to sum over selected indices.  Recall that
+            # there is no shame in thinking about things that have the
+            # same size as the dependent vector.  To that end, we will
+            # formulate this as a sparse-sparse matrix multiply.  In
+            # many ways, this operation is the complement of the
+            # broadcast operation, so is constructed in a similar
+            # manner.
+            try:
+                iter(axis)
+            except TypeError:
+                axis = (axis,)
+            # Take the orginal shape and replace the summed-over axes
+            # with one.  In the case where keepdims is set, that would
+            # be independent_shape of course, but we can't rely on
+            # that.
+            reduced_shape = list(self.dependent_shape)
+            # Note that the below code implicitly handles the case
+            # where an axis element is negative
+            original_size = 1
+            for a in axis:
+                original_size *= reduced_shape[a]
+                reduced_shape[a] = 1
+            reduced_size = int(np.prod(reduced_shape))
+            # Get a 1D vector indexing over the elements in the
+            # desired result vector
+            i_reduced = np.arange(reduced_size)
+            # Turn into an nD array
+            i_reduced = np.reshape(i_reduced, reduced_shape)
+            # Broadcast this to the original shape
+            i_reduced = np.broadcast_to(i_reduced, self.dependent_shape)
+            # Turn this into a 1D vector
+            i_reduced = i_reduced.ravel()
+            # Get a matching index into the original array
+            i_original = np.arange(self.dependent_size)
+            # Now put a 1 at every [i_reduced, i_original] in a sparse matrix
+            one = np.ones((i_original.size,), dtype=np.int64)
+            M = sparse.csc_matrix(
+                (one, (i_reduced, i_original)),
+                shape=(reduced_size, i_original.size),
+            )
+            result_ = M @ self.data2d / original_size
             # Note that by specifying dependent_shape here, supplied
             # by the calling code, we've implicitly taken the value of
             # the keepdims argument into account.

@@ -89,7 +89,9 @@ class DenseJacobian(BaseJacobian):
     def _setjitem(self, key, value):
         """A getitem type method for dense Jacobians"""
         if value is not None:
-            self_, value_, result_type = _prepare_jacobians_for_binary_op(self, value)
+            self_, value_, result_type = _prepare_jacobians_for_binary_op(
+                self, value
+            )
             if result_type != type(self):
                 return TypeError(
                     "Jacobian is not of correct type to receive new contents"
@@ -161,6 +163,18 @@ class DenseJacobian(BaseJacobian):
         jaxis = self._get_jaxis(axis, none="all")
         return DenseJacobian(
             data=np.sum(self.data, axis=jaxis, dtype=dtype, keepdims=keepdims),
+            template=self,
+            dependent_shape=dependent_shape,
+        )
+
+    def mean(self, dependent_shape, axis=None, dtype=None, keepdims=False):
+        """Performs mean for the dense Jacobians"""
+        # Negative axis requests count backwards from the last index,
+        # but the Jacobians have the independent_shape appended to
+        # their shape, so we need to correct for that (or not if its positive)
+        jaxis = self._get_jaxis(axis, none="all")
+        return DenseJacobian(
+            data=np.mean(self.data, axis=jaxis, dtype=dtype, keepdims=keepdims),
             template=self,
             dependent_shape=dependent_shape,
         )

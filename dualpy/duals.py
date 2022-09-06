@@ -28,15 +28,49 @@ class dlarray(units.Quantity):
 
     """
 
+
     def __new__(cls, input_array):
+        from .sparse_jacobians import SparseJacobian
+        from .dense_jacobians import DenseJacobian
+        from .user import has_jacobians
         # Input array is an already formed ndarray instance.
         # We first cast to be our class type
         obj = units.Quantity(input_array).view(cls)
-        if hasattr(input_array, "unit"):
-            obj._set_unit(input_array.unit)
-        if hasattr(input_array, "jacobians"):
-            obj.jacobians = input_array.jacobians
-        # Finally, we return the newly created object
+        # Now for cases where a non-duckarray sequence of initial values is supplied, we
+        # try to insert the Jacobians.
+        if not hasattr(input_array, "__array__"):
+            try:
+                for i, value in enumerate(input_array):
+                    if has_jacobians(value):
+                        for key, jacobian in value.jacobians.items():
+                            if key not in obj.jacobians:
+                                if isinstance(jacobian, DenseJacobian):
+                                    j_type = DenseJacobian
+                                else:
+                                    j_type = SparseJacobian
+                                    jacobian = jacobian.to_sparse()
+                                # Create Jacobian in result of same type as that in this
+                                # input
+                                obj.jacobians[key] = j_type(
+                                    dependent_unit=obj.unit,
+                                    dependent_shape=obj.shape,
+                                    independent_unit=jacobian.independent_unit,
+                                    independent_shape=jacobian.independent_shape,
+                                )
+                            else:
+                                # See if we need to promote to dense
+                                if isinstance(
+                                    jacobian, DenseJacobian
+                                ) and not isinstance(obj.jacobians[key], DenseJacobian):
+                                    obj.jacobians[key] = obj.jacobians[key].todense()
+                            # Now insert the values
+                            obj.jacobians[key]._setjitem(
+                                (i, Ellipsis),
+                                jacobian,
+                            )
+
+            except TypeError:
+                pass
         return obj
 
     def __array_finalize__(self, obj):
@@ -62,7 +96,8 @@ class dlarray(units.Quantity):
         # Note that it is here, rather than in the __new__ method, that we set the
         # default value for 'jacobians', because this method sees all creation of
         # default objects - with the dual.__new__ constructor, but also with
-        # arr.view(dual).
+        # arr.view(dlarray). Same applies to unit
+        self._set_unit(getattr(obj, "unit", units.dimensionless_unscaled))
         self.jacobians = getattr(obj, "jacobians", {})
         # We might need to put more here once we're doing reshapes and
         # stuff, I'm not sure.
@@ -678,7 +713,9 @@ class dlarray(units.Quantity):
         """Remove axis of length 1 from self"""
         result = dlarray(units.Quantity(self).squeeze(axis))
         for name, jacobian in self.jacobians.items():
-            result.jacobians[name] = jacobian.reshape(result.shape, order="A", parent_flags=self.flags)
+            result.jacobians[name] = jacobian.reshape(
+                result.shape, order="A", parent_flags=self.flags
+            )
         return result
 
     def delete_jacobians(self, *names, wildcard=None):
@@ -705,7 +742,7 @@ class dlarray(units.Quantity):
         # Now delete those Jaobians we want to delete
         for key in names:
             del self.jacobians[key]
-            
+
     def reshape(array, *newshape, order="C"):
         try:
             if len(newshape) == 1:
@@ -754,6 +791,17 @@ def sum(a, axis=None, dtype=None, keepdims=False):
     out = dlarray(np.sum(a_, axis=axis, dtype=dtype, keepdims=keepdims))
     for name, jacobian in aj.items():
         out.jacobians[name] = jacobian.sum(
+            out.shape, axis=axis, dtype=dtype, keepdims=keepdims
+        )
+    return out
+
+
+@implements(np.mean)
+def mean(a, axis=None, dtype=None, keepdims=False):
+    a_, aj, out = _setup_dual_operation(a)
+    out = dlarray(np.mean(a_, axis=axis, dtype=dtype, keepdims=keepdims))
+    for name, jacobian in aj.items():
+        out.jacobians[name] = jacobian.mean(
             out.shape, axis=axis, dtype=dtype, keepdims=keepdims
         )
     return out
@@ -931,15 +979,18 @@ def clip(a, a_min, a_max, out=None, **kwargs):
         out._chain_rule(a, factor.astype(int))
     return out
 
+
 @implements(np.argmin)
 def argmin(a, axis=None, out=None, *, keepdims=np._NoValue):
     """Implements np.argmin"""
     return np.argmin(units.Quantity(a, axis=axis, out=out, keepdims=keepdims))
 
+
 @implements(np.argmax)
 def argmax(a, axis=None, out=None, *, keepdims=np._NoValue):
     """Implements np.argmax"""
     return np.argmax(units.Quantity(a, axis=axis, out=out, keepdims=keepdims))
+
 
 @implements(np.amin)
 def amin(a, axis=None, out=None, keepdims=None, initial=None):
@@ -953,6 +1004,7 @@ def amin(a, axis=None, out=None, keepdims=None, initial=None):
     else:
         i_min = np.argmin(units.Quantity(a), axis=axis)
         return a[i_min]
+
 
 @implements(np.amax)
 def amax(a, axis=None, out=None, keepdims=None, initial=None):

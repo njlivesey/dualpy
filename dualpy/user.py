@@ -713,31 +713,40 @@ class CubicSplineLinearJacobians:
     def __call__(self, x):
         """Return a dual/unit aware spline interpolation (linear for Jacobains)"""
         # Make sure x is in the right units and bounded, then take units off
-        x_fixed = np.clip(x.to(self.x_unit), self.x_min, self.x_max)
+        x_out = np.clip(x.to(self.x_unit), self.x_min, self.x_max)
         # Get the interpolated value of y, make it a dual
-        y = dlarray(self.y_interpolator(x_fixed.value) << self.y_unit)
+        y = dlarray(self.y_interpolator(x_out.value) << self.y_unit)
         # Now deal with any jacobians with regard to the original y
         for name, jy_interpolator in self.jy_interpolators.items():
-            y.jacobians[name] = jy_interpolator(x_fixed.value)
+            y.jacobians[name] = jy_interpolator(x_out.value)
         # Now work out if we're going to need dydx, construct it if so.
-        if has_jacobians(x_fixed) or self.jx_interpolators:
+        if has_jacobians(x_out) or self.jx_interpolators:
             # Construct the interpolator if we're going to need it
             if self.dydx_interpolator is None:
                 self.dydx_interpolator = self.y_interpolator.derivative()
             # Invoke it for this x
-            dydx = self.dydx_interpolator(x_fixed.value) << (self.y_unit / self.x_unit)
-        # Now deal with any jacobians with regard to the output x
-        if has_jacobians(x):
-            x_new_shape = [1] * y.ndim
-            x_new_shape[self.axis] = x.size
-            x_fixed = x_fixed.reshape(tuple(x_new_shape))
-            y._chain_rule(x_fixed, dydx, add=True)
+            dydx = self.dydx_interpolator(x_out.value) << (self.y_unit / self.x_unit)
+        # Now deal with any jacobians with regard to the output x, first identify a
+        # padded out shape for x_new that includes dummys for the other dimensions in y.
+        if has_jacobians(x_out) or self.jx_interpolators:
+            padded_x_out_shape = [1] * y.ndim
+            padded_x_out_shape[self.axis] = x.size
+            padded_x_out_shape = tuple(padded_x_out_shape)
+        if has_jacobians(x_out):
+            x_out_reshaped = x_out.reshape(padded_x_out_shape)
+            y._chain_rule(x_out_reshaped, dydx, add=True)
         # Now deal with any Jacobians with regard to the input x
         for name, jx_interpolator in self.jx_interpolators.items():
+            jx_interpolated = jx_interpolator(x_out.value)
+            jx_interpolated = jx_interpolated.reshape(
+                padded_x_out_shape, order="K", parent_flags=y.flags
+            )
+            jx_interpolated = jx_interpolated.broadcast_to(y.shape)
+            jy_contribution = jx_interpolated.premul_diag(dydx)
             if name in y.jacobians:
-                y.jacobians[name] -= jx_interpolator(x_fixed.value).premul_diag(dydx)
+                y.jacobians[name] -= jy_contribution
             else:
-                y.jacobians[name] = -jx_interpolator(x_fixed.value).premul_diag(dydx)
+                y.jacobians[name] = -jy_contribution
         # Now, if the result doesn't have Jacobians make it not a dual
         if not has_jacobians(y):
             y = units.Quantity(y)

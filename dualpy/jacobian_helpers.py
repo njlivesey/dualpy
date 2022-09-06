@@ -47,7 +47,7 @@ def _prepare_jacobians_for_binary_op(a, b):
     return their contents in mutually compatible form from a units
     perspective, and as efficiently as possible"""
     from .sparse_jacobians import SparseJacobian
-    from .diagonal_jacobians import DiagonalJacobian
+    from .diagonal_jacobians import DiagonalJacobian, SeedJacobian
 
     # Note that this code does not need to worry about broadcasting,
     # as that is handled elsewhere in this class, and invoked by the
@@ -60,39 +60,45 @@ def _prepare_jacobians_for_binary_op(a, b):
     if b.independent_unit != a.independent_unit:
         scale /= b.independent_unit._to(a.independent_unit)
     # Now go throught the various type combinations
-    if type(a) is type(b):
+    type_a = type(a)
+    type_b = type(b)
+    if type_a is SeedJacobian:
+        type_a = DiagonalJacobian
+    if type_b is SeedJacobian:
+        type_b = DiagonalJacobian
+    if type_a is type_b:
         # If they are both the same type, then things are pretty
         # straight forward.  If they are the same type, then their
         # data attributes are in the same form.
-        if type(a) is SparseJacobian:
+        if type_a is SparseJacobian:
             a_ = a.data2d
             b_ = b.data2d
         else:
             a_ = a.data
             b_ = b.data
-        result_type = type(a)
-    elif type(a) is DiagonalJacobian:
+        result_type = type_a
+    elif type_a is DiagonalJacobian:
         # If a is diagonal (and by implication b is not, otherwise the
         # above code would have handled things), then promote a to
         # sparse and use the 2d view of b
         a_ = _array_to_sparse_diagonal(a.data)
         b_ = b.data2d
-        result_type = type(b)
-    elif type(b) is DiagonalJacobian:
-        # This is the converse caseb
+        result_type = type_b
+    elif type_b is DiagonalJacobian:
+        # This is the converse case
         a_ = a.data2d
         b_ = _array_to_sparse_diagonal(b.data)
-        result_type = type(a)
-    elif type(a) is SparseJacobian:
+        result_type = type_a
+    elif type_a is SparseJacobian:
         # OK, so, here a must be sparse, b dense
         a_ = a.data2d
         b_ = b.data2d
-        result_type = type(b)
-    elif type(b) is SparseJacobian:
+        result_type = type_b
+    elif type_b is SparseJacobian:
         # Finally, so it must be that a is dense, b sparse
         a_ = a.data2d
         b_ = b.data2d
-        result_type = type(a)
+        result_type = type_a
     else:
         raise AssertionError("Failed to understand binary Jacobian operation")
     # If needed, put them in the same units by scaling b to be in a's

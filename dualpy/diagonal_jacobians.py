@@ -146,6 +146,16 @@ class DiagonalJacobian(BaseJacobian):
             dependent_shape, axis=axis, dtype=dtype, keepdims=keepdims
         )
 
+    def mean(self, dependent_shape, axis=None, dtype=None, keepdims=False):
+        """Performs mean for the diagonal Jacobians"""
+        # Once we take the sum, along any or all axes, the jacobian is
+        # no longer diagonal by construction, so it needs to be
+        # converted to sparse.
+        self_sparse = SparseJacobian(self)
+        return self_sparse.mean(
+            dependent_shape, axis=axis, dtype=dtype, keepdims=keepdims
+        )
+
     def cumsum(self, axis):
         """Perform cumsum for the diagonal Jacobians"""
         # Once it's been cumsummed then it's no longer diagonal.  For

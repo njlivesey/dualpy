@@ -114,7 +114,7 @@ class BaseJacobian(object):
         result_ = s_ - o_
         if result_type is DenseJacobian:
             result_ = np.reshape(np.array(result_), self.shape)
-        return result_type(data=s_ - o_, template=self)
+        return result_type(data=result_, template=self)
 
     def __lshift__(self, unit):
         result = copy.copy(self)  # or should this be deepcopy
@@ -122,7 +122,7 @@ class BaseJacobian(object):
 
     def _get_jaxis(self, axis, none="none"):
         """Correct negative axis arguments so they're valid for jacobians
-        
+
         Negative axis requests count backwards from the last index, but the Jacobians
         have the independent_shape appended to their shape, so we need to correct for
         that (or not if its positive).
@@ -225,7 +225,7 @@ class BaseJacobian(object):
         return self.__class__(
             template=self,
             data=self.data * scale.value,
-            dependent_unit=self.dependent_unit * scale.unit
+            dependent_unit=self.dependent_unit * scale.unit,
         )
 
     def independents_compatible(self, other):
