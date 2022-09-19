@@ -3,9 +3,12 @@ import scipy.sparse as sparse
 import numpy as np
 import copy
 
-from .jacobian_helpers import _array_to_sparse_diagonal, _shapes_broadcastable
+from .jacobian_helpers import (
+    _array_to_sparse_diagonal,
+    _shapes_broadcastable,
+    linear_interpolation_indices_and_weights,
+)
 from .base_jacobian import BaseJacobian
-from mls_scf_tools.util import linear_interpolation_indices_and_weights
 
 __all__ = ["SparseJacobian"]
 
@@ -793,19 +796,43 @@ class SparseJacobian(BaseJacobian):
             result_csc, template=self, dependent_shape=result_dependent_shape
         )
 
-    def linear_interpolator(self, x_in, axis=-1):
-        """Return an interpolator for a given Jacobian axis"""
+    def linear_interpolator(
+        self,
+        x_in,
+        axis=-1,
+        extrapolate=None,
+    ):
+        """Return a linear interpolator for a given Jacobian axis"""
         return SparseJacobianLinearInterpolator(self, x_in, axis)
+
+    def spline_interpolator(
+        self,
+        x_in,
+        axis=-1,
+        bc_type="not_a_knot",
+        extrapolate=None,
+    ):
+        """Return a spline interpolator for a given Jacobian axis"""
+        from .dense_jacobians import DenseJacobian
+
+        return DenseJacobian(self).spline_interpolator(x_in, axis)
 
 
 class SparseJacobianLinearInterpolator(object):
     """Interpolates a SparseJacobian along one dependent axis"""
 
-    def __init__(self, jacobian, x_in, axis=-1):
+    def __init__(
+        self,
+        jacobian,
+        x_in,
+        axis=-1,
+        extrapolate=False,
+    ):
         """Setup an interpolator for a given DenseJacobian"""
         self.jacobian = jacobian
         self.jaxis = jacobian._get_jaxis(axis, none="first")
         self.x_in = x_in
+        self.extrapolate = extrapolate
         # Transpose the jacobian to put the interpolating axis in front
         self.rearranged, self.rearranged_shapes, self.undo_reordering = _rearrange_2d(
             jacobian.data2d,
@@ -816,7 +843,9 @@ class SparseJacobianLinearInterpolator(object):
     def __call__(self, x_out):
         """Interpolate a SparseJacobian to a new value along an axis"""
         i_lower, i_upper, w_lower, w_upper = linear_interpolation_indices_and_weights(
-            self.x_in, x_out
+            self.x_in,
+            x_out,
+            extrapolate=self.extrapolate,
         )
         # Convert indices and weights to a sparse matrix
         row = np.concatenate([np.arange(x_out.size)] * 2)

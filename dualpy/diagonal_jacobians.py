@@ -188,9 +188,24 @@ class DiagonalJacobian(BaseJacobian):
         self_dense = DenseJacobian(self)
         return self_dense.to2ddensearray()
 
-    def linear_interpolator(self, x_in, axis=-1):
+    def linear_interpolator(self, x_in, axis=-1, extrapolate=None):
         """Return an interpolator for a given Jacobian axis"""
-        return SparseJacobian(self).linear_interpolator(x_in, axis)
+        return SparseJacobian(self).linear_interpolator(
+            x_in=x_in,
+            axis=axis,
+            extrapolate=extrapolate,
+        )
+
+    def spline_interpolator(
+        self, x_in, axis=-1, bc_type="not_a_knot", extrapolate=None
+    ):
+        """Return an interpolator for a given Jacobian axis"""
+        return DenseJacobian(self).spline_interpolator(
+            x_in=x_in,
+            axis=axis,
+            bc_type=bc_type,
+            extrapolate=extrapolate,
+        )
 
 
 class SeedJacobian(DiagonalJacobian):
@@ -201,4 +216,5 @@ class SeedJacobian(DiagonalJacobian):
     identify what are the seeded variables so it can perturb them.
 
     """
+
     pass

@@ -673,9 +673,26 @@ def irfft(x, axis=-1):
 
 
 class CubicSplineLinearJacobians:
-    """This basically wraps scipy.interpolate.CubicSpline"""
+    """This basically wraps scipy.interpolate.CubicSpline adding units/jacobians
 
-    def __init__(self, x, y, axis=0, bc_type="not-a-knot", extrapolate=None):
+    Note that the Jacobians are computed using linear interpolation.  This retains
+    sparsity at the expense of being less acurate. See CubicSplineCubicSplineJacobians
+    for an alternative.
+
+    See arguments/documentation for scipy.interpolate.CubicSpline.  However, note the
+    "true_spline" option, which ensure CubicSpline for both value and Jacobians.
+
+    """
+
+    def __init__(
+        self,
+        x,
+        y,
+        axis=0,
+        bc_type="not-a-knot",
+        extrapolate=None,
+        true_spline=False,
+    ):
         """Setup a dual/unit aware CubicSpline interpolator"""
         self.x_unit = x.unit
         self.y_unit = y.unit
@@ -689,22 +706,44 @@ class CubicSplineLinearJacobians:
             bc_type=bc_type,
             extrapolate=extrapolate,
         )
+        if not true_spline and bc_type=="periodic":
+            extrapolate="periodic"
         # Deal with any input Jacobians on x
         if has_jacobians(x):
             self.jx_interpolators = dict()
             for name, jacobian in x.jacobians.items():
-                self.jx_interpolators[name] = jacobian.linear_interpolator(
-                    x.value, axis
-                )
+                if not true_spline:
+                    self.jx_interpolators[name] = jacobian.linear_interpolator(
+                        x.value,
+                        axis,
+                        extrapolate=extrapolate,
+                    )
+                else:
+                    self.jx_interpolators[name] = jacobian.spline_interpolator(
+                        x.value,
+                        axis,
+                        bc_type=bc_type,
+                        extrapolate=extrapolate,
+                    )
         else:
             self.jx_interpolators = {}
         # Deal with any input Jaobians on y
         if has_jacobians(y):
             self.jy_interpolators = dict()
             for name, jacobian in y.jacobians.items():
-                self.jy_interpolators[name] = jacobian.linear_interpolator(
-                    x.value, axis
-                )
+                if not true_spline:
+                    self.jy_interpolators[name] = jacobian.linear_interpolator(
+                        x.value,
+                        axis,
+                        extrapolate=extrapolate,
+                    )
+                else:
+                    self.jy_interpolators[name] = jacobian.spline_interpolator(
+                        x.value,
+                        axis,
+                        bc_type=bc_type,
+                        extrapolate=extrapolate,
+                    )
         else:
             self.jy_interpolators = {}
         # Leave a space to cache the derivative interpolators

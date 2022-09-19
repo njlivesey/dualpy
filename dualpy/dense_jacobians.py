@@ -1,11 +1,10 @@
 """Class for dense jacobians"""
 import numpy as np
 
-from mls_scf_tools.util import linear_interpolation_indices_and_weights
-
 from .jacobian_helpers import (
     _array_to_sparse_diagonal,
     _prepare_jacobians_for_binary_op,
+    linear_interpolation_indices_and_weights,
 )
 from .base_jacobian import BaseJacobian
 
@@ -89,9 +88,7 @@ class DenseJacobian(BaseJacobian):
     def _setjitem(self, key, value):
         """A getitem type method for dense Jacobians"""
         if value is not None:
-            self_, value_, result_type = _prepare_jacobians_for_binary_op(
-                self, value
-            )
+            self_, value_, result_type = _prepare_jacobians_for_binary_op(self, value)
             if result_type != type(self):
                 return TypeError(
                     "Jacobian is not of correct type to receive new contents"
@@ -293,11 +290,24 @@ class DenseJacobian(BaseJacobian):
             result_, template=self, dependent_shape=result_dependent_shape
         )
 
-    def linear_interpolator(self, x_in, axis=-1):
+    def linear_interpolator(
+        self,
+        x_in,
+        axis=-1,
+        extrapolate=None,
+    ):
         """Return an interpolator for a given Jacobian axis"""
-        return DenseJacobianLinearInterpolator(self, x_in, axis)
+        return DenseJacobianLinearInterpolator(
+            self, x_in=x_in, axis=axis, extrapolate=extrapolate,
+        )
 
-    def spline_interpolator(self, x_in, axis=-1):
+    def spline_interpolator(
+        self,
+        x_in,
+        axis=-1,
+        bc_type="not-a-knot",
+        extrapolate=None,
+    ):
         """Return an interpolator for a given Jacobian axis"""
         return DenseJacobianSplineInterpolator(self, x_in, axis)
 
@@ -305,16 +315,23 @@ class DenseJacobian(BaseJacobian):
 class DenseJacobianLinearInterpolator(object):
     """Interpolates a DenseJacobian along one dependent axis"""
 
-    def __init__(self, jacobian, x_in, axis=-1):
+    def __init__(self, jacobian, x_in, axis=-1, extrapolate=None):
         """Setup an interpolator for a given DenseJacobian"""
         self.jacobian = jacobian
         self.jaxis = jacobian._get_jaxis(axis, none="first")
         self.x_in = x_in
+        if extrapolate == "periodic":
+            raise NotImplementedError(
+                "Unable to handle periodic interpolation with Jacobians (yet)"
+            )
+        self.extrapolate = extrapolate
 
     def __call__(self, x_out):
         """Inpoterpolate a DenseJacobian to new values along an axis"""
         i_lower, i_upper, w_lower, w_upper = linear_interpolation_indices_and_weights(
-            self.x_in, x_out
+            self.x_in,
+            x_out,
+            extrapolate=self.extrapolate,
         )
         # Set up keys for indexing along the relevant axis
         empty_key = [slice(None)] * self.jacobian.ndim
@@ -345,14 +362,18 @@ class DenseJacobianLinearInterpolator(object):
 class DenseJacobianSplineInterpolator(object):
     """Interpolates Jacobian along one dependent axis"""
 
-    def __init__(self, jacobian, x_in, axis=-1):
+    def __init__(self, jacobian, x_in, axis=-1, bc_type="not-a-knot", extrapolate=None):
         """Setup an interpolator for a given DenseJacobian"""
         import scipy.interpolate as interpolate
 
         self.jacobian = jacobian
         self.jaxis = jacobian._get_jaxis(axis, none="first")
         self.interpolator = interpolate.CubicSpline(
-            x_in, jacobian.data, axis=self.jaxis
+            x_in,
+            jacobian.data,
+            axis=self.jaxis,
+            bc_type=bc_type,
+            extrapolate=extrapolate,
         )
 
     def __call__(self, x_out):

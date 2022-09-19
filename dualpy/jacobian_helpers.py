@@ -144,3 +144,56 @@ def jacobian_2d_matrix_multiply(a, b):
         dependent_unit=a.dependent_unit,
         independent_unit=b.independent_unit,
     )
+
+
+def linear_interpolation_indices_and_coordinates(c_in, c_out):
+    """Return lower/upper indices and coordiante values for an interpolation panel"""
+    n = len(c_in)
+    i_upper = np.searchsorted(c_in, c_out)
+    i_lower = i_upper - 1
+    i_upper = np.minimum(i_upper, n - 1)
+    i_lower = np.maximum(i_lower, 0)
+    c_lower = c_in[i_lower]
+    c_upper = c_in[i_upper]
+    return i_lower, i_upper, c_lower, c_upper
+
+
+def linear_interpolation_indices_and_weights(c_in, c_out, extrapolate=None):
+    """Return lower/upper indicies and weights for an interpolation panel"""
+    i_lower, i_upper, c_lower, c_upper = linear_interpolation_indices_and_coordinates(
+        c_in, c_out
+    )
+    if hasattr(c_in, "unit"):
+        one = 1.0 * c_in.unit
+    else:
+        one = 1.0
+    # The case where c_upper=c_lower, which implies we're over one edge or the
+    # other is annoying. While the clipping of the eventual weight to 0..1 means
+    # the code works, the division by zero warnings are tiresome. To avoid such
+    # cases, we have a where statement.
+    not_edge = c_upper > c_lower
+    delta = np.where(not_edge, c_upper - c_lower, one)
+    try:
+        tiny = np.finfo(delta.dtype).tiny
+        small = np.sqrt(tiny)
+        if hasattr(delta, "unit"):
+            small = small << delta.unit
+    except ValueError:
+        small = 1
+    delta = np.maximum(delta, small)
+    # And another where, to handle our rough fix to get round the warnings
+    # assocaited with going over the edge
+    w_upper = np.where(not_edge, (c_out - c_lower) / delta, 1.0)
+    if extrapolate is None or extrapolate == False:
+        w_upper = np.where(
+            (w_upper >= 0.0) & (w_upper <= 1.0),
+            w_upper,
+            np.nan,
+        )
+    else:
+        if extrapolate == True:
+            w_upper = np.clip(w_upper, 0.0, 1.0)
+        else:
+            raise ValueError(f"Unable to handle extrapolate={extrapolate}")
+    w_lower = 1.0 - w_upper
+    return i_lower, i_upper, w_lower, w_upper
