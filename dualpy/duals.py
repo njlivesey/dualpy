@@ -6,7 +6,6 @@ import fnmatch
 import dask
 
 from .config import get_config
-from .dual_helpers import _setup_dual_operation, _per_rad, _broadcast_jacobians
 from .jacobians import (
     _setitem_jacobians,
     _join_jacobians,
@@ -17,91 +16,95 @@ from .jacobians import (
 
 __all__ = ["dlarray", "nan_to_num_jacobians", "_setup_dual_operation", "tensordot"]
 
+_per_rad = units.rad ** (-1)
 
-class dlarray(units.Quantity):
-    """A combination of an astropy Quantity (which is in turn numpy array
-    and a collection of jacobian information stored as a optionally
-    sparse 2D matrix.
+def _broadcast_jacobians(js, new):
+    # Loop over jacobians and broadcast each of them to new shape
+    out = {}
+    for name, jacobian in js.items():
+        out[name] = jacobian.broadcast_to(new)
+    return out
 
-    This follows the recommendations on subclassing ndarrays in the
-    numpy documentation.
+
+def _setup_dual_operation(*args, out=None, broadcast=True):
+    """Prepare one or more (typically two) duals for some operation
+
+    Given a sequence of arguments return a sequence that strips duals off the arguments,
+    and a separate sequence that is just the jacobians, finally append the "out"
+    quantity (if supplied).
+
+    """
+    # Get the variables for all the arguments, be they duals or a non-dual duck-array,
+    # strip the units off for now.
+    arrays_ = [
+        np.array(x.variable) if isinstance(x, dlarray) else np.array(x) for x in args
+    ]
+    # Get the ndarrays for the units.Quantity's or dlarrays, otherwise just
+    # pass-through.  Note, I have reverted to using np.asarray, even though that did
+    # unpleasent things to sparse arguments earlier it seems (why was I even trying
+    # that?)
+    if broadcast:
+        arrays_ = np.broadcast_arrays(*arrays_)
+    # Put units back on after all that
+    arrays_ = [
+        x << orig.unit if hasattr(orig, "unit") else x for x, orig in zip(arrays_, args)
+    ]
+    # Now go through the jacobians
+    jacobians = []
+    for x, orig in zip(arrays_, args):
+        if hasattr(orig, "jacobians"):
+            if orig.shape != x.shape and broadcast:
+                j = _broadcast_jacobians(orig.jacobians, x.shape)
+            else:
+                j = orig.jacobians
+        else:
+            j = {}
+        jacobians.append(j)
+
+    # Handle the case where an "out" is provided. I originally had some intelligence
+    # about tracking whether out shares memory with any of the arguments but that got
+    # complicated. In the end I've recognized that we can code up the binary operations
+    # such that we don't need to worry about such cases.
+    if out is not None:
+        if isinstance(out, tuple):
+            if len(out) != 1:
+                raise NotImplementedError("Cannot support multiple outs")
+            out = out[0]
+        # As inefficient as this might appear, I'm pretty sure I need to blow away the
+        # Jacobians in out and let the calling code recreate them from scratch.
+        # Unpleasent things happen if not, as things done to out.jacobians leak back on
+        # a and b's jacobians.
+        if hasattr(out, "jacobians"):
+            out.jacobians = {}
+
+    return tuple(arrays_) + tuple(jacobians) + (out,)
+
+class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
+    """A duck-array providing automatic differentiation using dual algebra
+
+    In contrast with the previous version of dualpy this uses a wrapping approach,
+    rather than inheritance.  The intent is that it can wrap any other type of
+    duck-array, and perhaps that the Jacobians will be of the same type as the duck
+    array they describe (at least the dense and diagonal ones?).  The duck array this
+    wraps is held in the "variable" attribute, while the Jacobians are in the
+    "jacobians" attribute.
 
     """
 
-
-    def __new__(cls, input_array):
-        from .sparse_jacobians import SparseJacobian
-        from .dense_jacobians import DenseJacobian
-        from .user import has_jacobians
-        # Input array is an already formed ndarray instance.
-        # We first cast to be our class type
-        obj = units.Quantity(input_array).view(cls)
-        # Now for cases where a non-duckarray sequence of initial values is supplied, we
-        # try to insert the Jacobians.
-        if not hasattr(input_array, "__array__"):
-            try:
-                for i, value in enumerate(input_array):
-                    if has_jacobians(value):
-                        for key, jacobian in value.jacobians.items():
-                            if key not in obj.jacobians:
-                                if isinstance(jacobian, DenseJacobian):
-                                    j_type = DenseJacobian
-                                else:
-                                    j_type = SparseJacobian
-                                    jacobian = jacobian.to_sparse()
-                                # Create Jacobian in result of same type as that in this
-                                # input
-                                obj.jacobians[key] = j_type(
-                                    dependent_unit=obj.unit,
-                                    dependent_shape=obj.shape,
-                                    independent_unit=jacobian.independent_unit,
-                                    independent_shape=jacobian.independent_shape,
-                                )
-                            else:
-                                # See if we need to promote to dense
-                                if isinstance(
-                                    jacobian, DenseJacobian
-                                ) and not isinstance(obj.jacobians[key], DenseJacobian):
-                                    obj.jacobians[key] = obj.jacobians[key].todense()
-                            # Now insert the values
-                            obj.jacobians[key]._setjitem(
-                                (i, Ellipsis),
-                                jacobian,
-                            )
-
-            except TypeError:
-                pass
-        return obj
-
-    def __array_finalize__(self, obj):
-        # ``self`` is a new object outing from
-        # ndarray.__new__(dual, ...), therefore it only has
-        # attributes that the ndarray.__new__ constructor gave it -
-        # i.e. those of a standard ndarray.
-        #
-        # We could have got to the ndarray.__new__ call in 3 ways:
-        # From an explicit constructor - e.g. dlarray():
-        #    jacobians is None
-        #    (we're in the middle of the dual.__new__
-        #    constructor, and dlarray.jacobians will be set when we return to
-        #    dlarray.__new__)
-        if obj is None:
-            return
-        # From view casting - e.g arr.view(dual):
-        #    obj is arr
-        #    (type(obj) can be dual)
-        # From new-from-template - e.g a_dual[:3]
-        #    type(obj) is dual
-        #
-        # Note that it is here, rather than in the __new__ method, that we set the
-        # default value for 'jacobians', because this method sees all creation of
-        # default objects - with the dual.__new__ constructor, but also with
-        # arr.view(dlarray). Same applies to unit
-        self._set_unit(getattr(obj, "unit", units.dimensionless_unscaled))
-        self.jacobians = getattr(obj, "jacobians", {})
-        # We might need to put more here once we're doing reshapes and
-        # stuff, I'm not sure.
-        # We do not need to return anything
+    def __init__(self, input_variable):
+        """Setup a new dual wrapping around a suitable variable"""
+        if isinstance(input_variable, dlarray):
+            self.variable = input_variable.variable
+            self.jacobians = input_variable.jacobians
+        else:
+            self.variable = input_variable
+            self.jacobians = {}
+        self.shape = self.variable.shape
+        self.size = self.variable.size
+        self.ndim = self.variable.ndim
+        self.dtype = self.variable.dtype
+        self.value = self.variable.value
+        self.unit = self.variable.unit
 
     def __array_ufunc__(self, ufunc, method, *args, **kwargs):
         # The comparators can just call their astropy.Quantity equivalents, I'm going to
@@ -115,10 +118,10 @@ class dlarray(units.Quantity):
             np.greater_equal,
             np.less_equal,
         ):
-            return ufunc(units.Quantity(self), units.Quantity(args[1]))
+            return ufunc(self.variable, args[1])
         # Also, do the same for some unary operators
         if ufunc in (np.isfinite,):
-            return ufunc(units.Quantity(self))
+            return ufunc(self.vaiable)
         # Otherwise, we look for this same ufunc in our own type and
         # try to invoke that.
         # However, first some intervention
@@ -142,16 +145,19 @@ class dlarray(units.Quantity):
             # need for it in any case (thus far).
             if types != (dlarray,):
                 return NotImplemented
-            qargs = (units.Quantity(arg) for arg in args)
-            return super().__array_function__(func, (units.Quantity,), qargs, kwargs)
+            qargs = (type(self.variable)(arg) for arg in args)
+            return super().__array_function__(func, (type(self.variable),), qargs, kwargs)
         else:
             return NotImplemented
 
+    def __len__(self):
+        return len(self.variable)
+        
     def copy(self):
         return self.__copy__()
 
     def __copy__(self):
-        out = dlarray(units.Quantity(self))
+        out = dlarray(self.variable)
         for name, jacobian in self.jacobians.items():
             out.jacobians[name] = jacobian
         return out
@@ -162,15 +168,20 @@ class dlarray(units.Quantity):
         result = self.copy()
         return result
 
+    def __array__(self, dtype=None):
+        return np.array(self.variable, dtype)
+
+    
+
     def __getitem__(self, key):
-        out = dlarray(self.view(units.Quantity).__getitem__(key))
+        out = dlarray(self.variable[key])
         for name, jacobian in self.jacobians.items():
             out.jacobians[name] = jacobian._getjitem(out.shape, key)
         return out
 
     def __setitem__(self, key, value):
         s, v, sj, vj, out_ = _setup_dual_operation(self, value, broadcast=False)
-        self.view(units.Quantity).__setitem__(key, v)
+        self.variable[key] = v
         # Doing a setitem on the Jacobians requires some more intimate knowledge so let
         # the jacobians module handle it.
         _setitem_jacobians(key, s, sj, vj)
@@ -214,7 +225,7 @@ class dlarray(units.Quantity):
         # If it's a no-op, then take advantage of that
         if self.unit is unit:
             return self
-        out_ = units.Quantity(self).to(unit, **kwargs)
+        out_ = self.variable.to(unit, **kwargs)
         out = dlarray(out_)
         # This will probably (hopefully!) fail if we're using one of
         # those function unit things (such as dB).
@@ -704,14 +715,14 @@ class dlarray(units.Quantity):
         return np.floor(units.Quantity(a))
 
     def flatten(self, order="C"):
-        result = dlarray(units.Quantity(self).flatten(order))
+        result = dlarray(self.variable.flatten(order))
         for name, jacobian in self.jacobians.items():
             result.jacobians[name] = jacobian.flatten(order, self.flags)
         return result
 
     def squeeze(self, axis=None):
         """Remove axis of length 1 from self"""
-        result = dlarray(units.Quantity(self).squeeze(axis))
+        result = dlarray(self.variable.squeeze(axis))
         for name, jacobian in self.jacobians.items():
             result.jacobians[name] = jacobian.reshape(
                 result.shape, order="A", parent_flags=self.flags
@@ -753,7 +764,7 @@ class dlarray(units.Quantity):
 
     @property
     def uvalue(self):
-        return units.Quantity(self)
+        return self.variable
 
 
 # -------------------------------------- Now the array functions
