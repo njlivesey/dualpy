@@ -1,6 +1,8 @@
 """Subclasses dualpy for astropy.Quantity variables"""
-from .duals import dlarray
+import numpy as np
 import astropy.units as units
+
+from .duals import dlarray
 
 class dlarray_astropy(dlarray):
     """A subclass of dlarray that wraps an astropy.Quantity variable.
@@ -12,6 +14,7 @@ class dlarray_astropy(dlarray):
     # --------------------------------------------- Overload attributes
     _rad = units.rad
     _per_rad = units.rad ** (-1)
+    _dimensionless = units.dimensionless_unscaled 
 
     # --------------------------------------------- Extra properties
     @property
@@ -44,5 +47,37 @@ class dlarray_astropy(dlarray):
     def decompose(self):
         return self.to(self.unit.decompose())
 
+    def __lshift__(self, other):
+        out = dlarray(np.array(self) << other)
+        for name, jacobian in self.jacobians.items():
+            out.jacobians[name] = jacobian << other
+        return out
+
     def _to_radians(self):
         return self.to(units.rad)
+
+    @staticmethod
+    def _force_unit(quantity, *, unit=None, source=None):
+        """Apply a unit to a quantity"""
+        if unit is not None and source is not None:
+            raise ValueError("Cannot supply both 'unit' and 'source'")
+        if unit is None and source is not None:
+            unit = source.units
+        if unit is not None:
+            return np.array(quantity) << unit
+        else:
+            return quantity
+
+    # ------------------------------------------ Some dunders
+    def __mul__(self, other):
+        # Needed for dual * unit case
+        if isinstance(other, (units.UnitBase, str)):
+            return self * units.Quantity(1.0, other)
+        return super().__mul__(other)
+
+    def __truediv__(self, other):
+        # Needed for dual * unit case
+        if isinstance(other, (units.UnitBase, str)):
+            return self / units.Quantity(1.0, other)
+        return super().__truediv__(other)
+

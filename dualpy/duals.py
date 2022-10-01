@@ -28,7 +28,7 @@ class Unitless:
 
     def __multiply__(self, other):
         return self
-    
+
     def __truediv__(self, other):
         return self
 
@@ -115,6 +115,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
     # These attributes are used to handle trigonometric cases
     _rad = None
     _per_rad = None
+    _dimensionless = None
 
     # ----------------------------------------------- Helpers (staticmethods)
     @staticmethod
@@ -182,12 +183,11 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         return tuple(arrays_) + tuple(jacobians) + (out,)
 
     @staticmethod
-    def _force_unit(quantity, unit):
+    def _force_unit(quantity, *, unit=None, source=None):
         """Apply a unit to a quantity"""
         return quantity
 
     # ----------------------------------------------------- ufuncs
-
     def __array_ufunc__(self, ufunc, method, *args, **kwargs):
         # The comparators can just call their astropy.Quantity equivalents, I'm going to
         # blythely assert that we don't care to compare jacobians.  Later, we may decide
@@ -339,7 +339,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         forced_diagonal_unit: astropy.unit / pint unit, optional
            If set, force the diagonal to this unit before applying
         """
-        d = self._force_unit(d, forced_diagonal_unit)
+        d = self._force_unit(d, unit=forced_diagonal_unit)
         if dependent_unit is not None:
             for name, jacobian in a.jacobians.items():
                 if add and name in self.jacobians:
@@ -409,8 +409,6 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         else:
             if not isinstance(out, dlarray):
                 out = dlarray(out)
-            new_unit = a_.unit * b_.unit
-            out = out << new_unit
             out[...] = a_ * b_
         out.jacobians = out_jacobians
         return out
@@ -433,8 +431,6 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         else:
             if not isinstance(out, dlarray):
                 out = dlarray(out)
-            out = out << a_.unit * b_.unit
-            out[...] = a_ * b_
         out.jacobians = out_jacobians
         return out
 
@@ -451,7 +447,6 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         else:
             if not isinstance(out, dlarray):
                 out = dlarray(out)
-            out = out << a_.unit / b_.unit
             out[...] = a_ * r_
         out_ = out.variable
         # We're going to do the quotient rule as (1/b)a' - (a/(b^2))b'
@@ -520,7 +515,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         # See Wikpedia page on atan2 which conveniently lists the derivatives
         a_, b_, aj, bj, out = dlarray._setup_dual_operation(a, b)
         out = dlarray(np.arctan2(a_, b_))
-        rr2 = self._rad * np.reciprocal(a_**2 + b_**2)
+        rr2 = a._force_unit(np.reciprocal(a_**2 + b_**2), a._rad)
         for name, jacobian in aj.items():
             out.jacobians[name] = jacobian.premul_diag(b_ * rr2).to(out._dependent_unit)
         for name, jacobian in bj.items():
@@ -534,26 +529,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
                 )
         return out
 
-    def __mul__(self, other):
-        # Needed for dual * unit case
-        if isinstance(other, (units.UnitBase, str)):
-            return self * units.Quantity(1.0, other)
-        return super().__mul__(other)
-
-    def __truediv__(self, other):
-        # Needed for dual * unit case
-        if isinstance(other, (units.UnitBase, str)):
-            return self / units.Quantity(1.0, other)
-        return super().__truediv__(other)
-
-    def __lshift__(self, other):
-        out = dlarray(np.array(self) << other)
-        for name, jacobian in self.jacobians.items():
-            out.jacobians[name] = jacobian << other
-        return out
-
     # Now some unary operators
-
     def negative(self):
         out = dlarray(-self.variable)
         for name, jacobian in self.jacobians.items():
@@ -588,7 +564,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         out = dlarray(np.exp(self.variable))
         if self.hasJ:
             out._chain_rule(
-                self, self.variable, dependent_unit=units.dimensionless_unscaled
+                self, self.variable, dependent_unit=self._dimensionless
             )
         return out
 
@@ -596,7 +572,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         out = dlarray(np.log(self.variable))
         if self.hasJ:
             out._chain_rule(
-                self, 1.0 / self.variable, dependent_unit=units.dimensionless_unscaled
+                self, 1.0 / self.variable, dependent_unit=self._dimensionless
             )
         return out
 
@@ -674,8 +650,9 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         if self.hasJ:
             out._chain_rule(
                 self,
-                self._rad / np.sqrt(1 - self.variable**2),
-                dependent_unit=units.dimensionless_unscaled,
+                1.0 / np.sqrt(1 - self.variable**2),
+                dependent_unit=self._dimensionless,
+                forced_diagonal_unit=self._rad,
             )
         return out
 
@@ -684,8 +661,9 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         if self.hasJ:
             out._chain_rule(
                 self,
-                -self._rad / np.sqrt(1 - self.variable**2),
-                dependent_unit=units.dimensionless_unscaled,
+                -1.0 / np.sqrt(1 - self.variable**2),
+                dependent_unit=self._dimensionless,
+                forced_diagonal_unit=self._rad,
             )
         return out
 
@@ -694,8 +672,9 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         if self.hasJ:
             out._chain_rule(
                 self,
-                self._rad / (1 + self.variable**2),
-                dependent_unit=units.dimensionless_unscaled,
+                1.0 / (1 + self.variable**2),
+                dependent_unit=self._dimensionless,
+                forced_diagonal_unit=self._rad,
             )
         return out
 
@@ -703,7 +682,10 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         out = dlarray(np.sinh(self.variable))
         if self.hasJ:
             out._chain_rule(
-                self, np.cosh(self.variable) << _per_rad, dependent_unit=self._rad
+                self,
+                np.cosh(self.variable),
+                dependent_unit=self._rad,
+                forced_diagonal_unit=self._per_rad,
             )
         return out
 
@@ -711,7 +693,10 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         out = dlarray(np.cosh(self.variable))
         if self.hasJ:
             out._chain_rule(
-                self, np.sinh(self.variable) << _per_rad, dependent_unit=self._rad
+                self,
+                np.sinh(self.variable),
+                dependent_unit=self._rad,
+                forced_diagonal_unit=self._per_rad,
             )
         return out
 
@@ -720,8 +705,9 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         if self.hasJ:
             out._chain_rule(
                 self,
-                1.0 / np.cosh(self.variable) ** 2 << _per_rad,
+                1.0 / np.cosh(self.variable) ** 2,
                 dependent_unit=self._rad,
+                forced_diagonal_unit=self._per_rad,
             )
         return out
 
@@ -730,8 +716,9 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         if self.hasJ:
             out._chain_rule(
                 self,
-                self._rad / np.sqrt(self.variable**2 + 1),
-                dependent_unit=units.dimensionless_unscaled,
+                1.0 / np.sqrt(self.variable**2 + 1),
+                dependent_unit=self._dimensionless,
+                forced_diagonal_unit=self._rad,
             )
         return out
 
@@ -740,8 +727,9 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         if self.hasJ:
             out._chain_rule(
                 self,
-                self._rad / np.sqrt(self.variable**2 - 1),
-                dependent_unit=units.dimensionless_unscaled,
+                1.0 / np.sqrt(self.variable**2 - 1),
+                dependent_unit=self._dimensionless,
+                forced_diagonal_unit=self._rad,
             )
         return out
 
@@ -750,8 +738,9 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         if self.hasJ:
             out._chain_rule(
                 self,
-                self._rad / (1 - self.variable**2),
-                dependent_unit=units.dimensionless_unscaled,
+                1.0 / (1 - self.variable**2),
+                dependent_unit=self._dimensionless,
+                forced_diagonal_unit=self._rad,
             )
         return out
 
@@ -846,9 +835,11 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
             pass
         return _reshape(array, newshape, order)
 
-    @property
-    def uvalue(self):
-        return self.variable
+    def __str__(self):
+        return str(self.variable)
+
+    def __repr__(self):
+        return "dlarray-wrapped-" + repr(self.variable)
 
 
 # ------------------------------------------------------
@@ -924,11 +915,12 @@ def broadcast_arrays(*args, subok=False):
     values = []
     for a in args:
         values.append(a.value)
+    # This is going to give problems with pint, which does not implement it.
     result_ = np.broadcast_arrays(*values, subok=subok)
     shape = result_[0].shape
     result = []
     for i, a in enumerate(args):
-        thisResult = dlarray(result_[i] << a.unit)
+        thisResult = dlarray(result_[i])
         if hasattr(a, "jacobians"):
             thisResult.jacobians = dlarray._broadcast_jacobians(a.jacobians, shape)
         result.append(thisResult)
@@ -937,7 +929,7 @@ def broadcast_arrays(*args, subok=False):
 
 @implements(np.broadcast_to)
 def broadcast_to(array, shape, subok=False):
-    result_ = np.broadcast_to(array.value, shape, subok=subok) << array.unit
+    result_ = np.broadcast_to(array.value, shape, subok=subok)
     result = dlarray(result_)
     result.jacobians = dlarray._broadcast_jacobians(array.jacobians, shape)
     return result
@@ -981,7 +973,7 @@ def atleast_1d(*args):
 
 @implements(np.diff)
 def diff(array, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
-    result_ = np.diff(array.value, n, axis, prepend, append) << array.unit
+    result_ = np.diff(array.variable, n, axis, prepend, append)
     dependent_shape = result_.shape
     result = dlarray(result_)
     for name, jacobian in array.jacobians.items():
@@ -1147,24 +1139,21 @@ def real(a):
 @implements(np.empty_like)
 def empty_like(prototype, dtype=None, order="K", subok=True, shape=None):
     return dlarray(
-        np.empty_like(units.Quantity(prototype), dtype, order, subok, shape)
-        << prototype.unit
+        np.empty_like(prototype.variable, dtype, order, subok, shape)
     )
 
 
 @implements(np.zeros_like)
 def zeros_like(prototype, dtype=None, order="K", subok=True, shape=None):
     return dlarray(
-        np.zeros_like(units.Quantity(prototype), dtype, order, subok, shape)
-        << prototype.unit
+        np.zeros_like(prototype.variable, dtype, order, subok, shape)
     )
 
 
 @implements(np.ones_like)
 def ones_like(prototype, dtype=None, order="K", subok=True, shape=None):
     return dlarray(
-        np.ones_like(units.Quantity(prototype), dtype, order, subok, shape)
-        << prototype.unit
+        np.ones_like(prototype.variable, dtype, order, subok, shape)
     )
 
 
