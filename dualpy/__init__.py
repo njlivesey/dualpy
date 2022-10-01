@@ -2,4 +2,8 @@ from .duals import *
 from .user import *
 from .stashing import *
 from .config import *
+from .base_jacobian import *
+from .dense_jacobians import *
+from .sparse_jacobians import *
+from .diagonal_jacobians import *
 from .numeric_jacobians import *

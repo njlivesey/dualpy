@@ -7,6 +7,7 @@ from .jacobian_helpers import (
     _array_to_sparse_diagonal,
     _shapes_broadcastable,
     linear_interpolation_indices_and_weights,
+    apply_units,
 )
 from .base_jacobian import BaseJacobian
 
@@ -708,7 +709,7 @@ class SparseJacobian(BaseJacobian):
                 + f"{self.dependent_shape};{self.independent_shape}"
             )
         result_ = np.reshape(self.data2d.diagonal(), self.dependent_shape)
-        return result_ << (self.dependent_unit / self.independent_unit)
+        return apply_units(result_, self.dependent_unit / self.independent_unit)
 
     def todensearray(self):
         from .dense_jacobians import DenseJacobian
@@ -717,10 +718,10 @@ class SparseJacobian(BaseJacobian):
         return self_dense.todensearray()
 
     def to2ddensearray(self):
-        return self.data2d.toarray() << (self.dependent_unit / self.independent_unit)
+        return apply_units(self.data2d.toarray(), self.dependent_unit / self.independent_unit)
 
     def to2darray(self):
-        return self.data2d << (self.dependent_unit / self.independent_unit)
+        return apply_units(self.data2d, self.dependent_unit / self.independent_unit)
 
     def nan_to_num(self, copy=True, nan=0.0, posinf=None, neginf=None):
         if copy:

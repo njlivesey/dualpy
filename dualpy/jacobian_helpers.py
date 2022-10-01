@@ -197,3 +197,15 @@ def linear_interpolation_indices_and_weights(c_in, c_out, extrapolate=None):
             raise ValueError(f"Unable to handle extrapolate={extrapolate}")
     w_lower = 1.0 - w_upper
     return i_lower, i_upper, w_lower, w_upper
+
+
+def apply_units(values, unit):
+    """Apply units to Jacobian values extracted to duckarrays"""
+    import astropy.units as units
+    from .duals import Unitless
+    if isinstance(unit, Unitless):
+        return values
+    elif isinstance(unit, units.UnitBase):
+        return values << unit
+    else:
+        raise ValueError(f"Unsupported unit type {type(unit)}")

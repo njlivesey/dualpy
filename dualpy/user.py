@@ -17,7 +17,6 @@ from .jacobians import (
     SparseJacobian,
 )
 from .duals import dlarray
-from .dual_helpers import _setup_dual_operation
 from .config import get_config
 
 __all__ = [
@@ -92,7 +91,8 @@ def seed(
     # Otherwise, kwargs is illegal
     if kwargs:
         raise ValueError("No additional arguements to seed allowed for this quantity")
-    if type(value) is dlarray:
+    # Do some error checking in the case where it's already a dual
+    if isinstance(value, dlarray):
         if not force and not reset:
             raise ValueError("Proposed seed is already a dual (set force or reset?)")
         if name in value.jacobians and not overwrite and not reset:
@@ -100,6 +100,7 @@ def seed(
                 f"Proposed seed already has a jacobian named '{name}'"
                 + " (set overwrite as well as force?)"
             )
+    # If we're good to go, then act accordingly
     if not isinstance(value, dlarray):
         out = dlarray(value)
     else:
@@ -110,10 +111,10 @@ def seed(
     # Create the Jacobian as diaongal initially
     jacobian = SeedJacobian(
         np.ones(out.shape),
-        dependent_unit=value.unit,
-        independent_unit=value.unit,
-        dependent_shape=value.shape,
-        independent_shape=value.shape,
+        dependent_unit=out._dependent_unit,
+        independent_unit=out._dependent_unit,
+        dependent_shape=out.shape,
+        independent_shape=out.shape,
     )
     # Possibly cast it to other forms
     if initial_type == "seed":

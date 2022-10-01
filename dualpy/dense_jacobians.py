@@ -4,6 +4,7 @@ import numpy as np
 from .jacobian_helpers import (
     _array_to_sparse_diagonal,
     _prepare_jacobians_for_binary_op,
+    apply_units,
     linear_interpolation_indices_and_weights,
 )
 from .base_jacobian import BaseJacobian
@@ -266,13 +267,13 @@ class DenseJacobian(BaseJacobian):
         if self.dependent_shape != self.independent_shape:
             raise ValueError("Dense Jacobian is not square")
         result_ = np.reshape(self.data2d.diagonal(), self.dependent_shape)
-        return result_ << (self.dependent_unit / self.independent_unit)
+        return apply_units(result_, self.dependent_unit / self.independent_unit)
 
     def todensearray(self):
-        return self.data << (self.dependent_unit / self.independent_unit)
+        return apply_units(self.data, self.dependent_unit / self.independent_unit)
 
     def to2ddensearray(self):
-        return self.data2d << (self.dependent_unit / self.independent_unit)
+        return apply_units(self.data2d, self.dependent_unit / self.independent_unit)
 
     def to2darray(self):
         return self.to2ddensearray()

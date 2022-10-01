@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from .jacobian_helpers import apply_units
 from .base_jacobian import BaseJacobian
 from .sparse_jacobians import SparseJacobian
 from .dense_jacobians import DenseJacobian
@@ -165,7 +166,7 @@ class DiagonalJacobian(BaseJacobian):
 
     def diagonal(self):
         """Get diagonal elements (shape=dependent_shape)"""
-        return self.data << (self.dependent_unit / self.independent_unit)
+        return apply_units(self.data, (self.dependent_unit / self.independent_unit))
 
     # The reaons we have extract_diagonal and diagonal is that diagonal is
     # only populated for diagonal Jacobians.  extract_diagonal is
