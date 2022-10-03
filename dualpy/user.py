@@ -16,6 +16,7 @@ from .jacobians import (
     SeedJacobian,
     SparseJacobian,
 )
+from .dual_helpers import setup_dual_operation
 from .duals import dlarray
 from .config import get_config
 
@@ -179,7 +180,7 @@ def delete_jacobians(a, *names, wildcard=None, remain_dual=False, **kwargs):
 def solve_quadratic(a, b, c, sign=1):
     """Solve quadratic equation ax^2+bx+c=0 returning jacobians"""
     # Use Muller's equation for stability when a=0
-    a_, b_, c_, aj, bj, cj, out = dlarray._setup_dual_operation(a, b, c)
+    a_, b_, c_, aj, bj, cj, out = setup_dual_operation(a, b, c)
     d_ = np.sqrt(b_**2 - 4 * a_ * c_)
     x_ = -2 * c_ / (b_ + sign * d_)
     anyJ = aj or bj or cj
@@ -406,13 +407,10 @@ def multi_newton_raphson(
     while (i < max_iter or max_iter < 0) and not finish:
         # Seed our special Jacobian
         x = seed(x, j_name_x)
-        print(f"In iteration {i}, x is {type(x)}")
         if y is not None:
-            print(f"In iteration {i}, y_ is type {type(y_)}")
             delta_y = func(x, *args_, **kwargs_) - y_
         else:
             delta_y = func(x, *args_, **kwargs_)
-        print(f"In iteration {i}, delta_y is {type(delta_y)}")
         if dy_tolerance is not None:
             finish = np.all(abs(delta_y) < dy_tolerance)
             reason = "dy"
@@ -824,7 +822,7 @@ def simpson(y, x=None, dx=1.0, axis=-1, even="avg"):
 
     """
     # Prepare all the operands
-    y_, x_, dx_, yj, xj, dxj, out = dlarray._setup_dual_operation(y, x, dx)
+    y_, x_, dx_, yj, xj, dxj, out = setup_dual_operation(y, x, dx)
 
     if has_jacobians(x):
         raise ValueError("Cannot (yet?) have Jacobians on the integration x term")

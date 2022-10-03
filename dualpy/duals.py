@@ -125,8 +125,13 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
     # ----------------------------------------------- Helpers (staticmethods)
 
     @staticmethod
-    def _force_unit(quantity, *, unit=None, source=None):
+    def _force_unit(quantity, unit):
         """Apply a unit to a quantity"""
+        return quantity
+
+    @staticmethod
+    def _force_unit_from(quantity, source):
+        """Force a unit from source onto quantity"""
         return quantity
 
     # Find a better place for this one.
@@ -156,7 +161,6 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         # The comparators can just call their astropy.Quantity equivalents, I'm going to
         # blythely assert that we don't care to compare jacobians.  Later, we may decide
         # that other operators fall into this category.
-        print(f"dual array ufunc got a look in with {ufunc}")
         if ufunc in (
             np.equal,
             np.not_equal,
@@ -305,7 +309,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         forced_diagonal_unit: astropy.unit / pint unit, optional
            If set, force the diagonal to this unit before applying
         """
-        d = self._force_unit(d, unit=forced_diagonal_unit)
+        d = self._force_unit(d, forced_diagonal_unit)
         if dependent_unit is not None:
             for name, jacobian in a.jacobians.items():
                 if add and name in self.jacobians:
@@ -481,7 +485,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         # See Wikpedia page on atan2 which conveniently lists the derivatives
         a_, b_, aj, bj, out = setup_dual_operation(a, b)
         out = dlarray(np.arctan2(a_, b_))
-        rr2 = a._force_unit(np.reciprocal(a_**2 + b_**2), a._rad)
+        rr2 = a._rad * np.reciprocal(a_**2 + b_**2)
         for name, jacobian in aj.items():
             out.jacobians[name] = jacobian.premul_diag(b_ * rr2).to(out._dependent_unit)
         for name, jacobian in bj.items():
@@ -576,7 +580,6 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         self_rad = self._to_radians()
         out_ = np.sin(self_rad.variable)
         out = dlarray(out_)
-        print(f"per rad is {self._per_rad}")
         if self_rad.hasJ:
             out._chain_rule(
                 self_rad,
@@ -1012,8 +1015,7 @@ def append(arr, values, axis=None):
 
 @implements(np.searchsorted)
 def searchsorted(a, v, side="left", sorter=None):
-    a_, v_, aj, vj, out = setup_dual_operation(a, v)
-    return np.searchsorted(a_, v_, side=side, sorter=sorter)
+    return np.searchsorted(dedual(a), dedual(v), side=side, sorter=sorter)
 
 
 @implements(np.clip)

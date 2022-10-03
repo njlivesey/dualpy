@@ -57,17 +57,21 @@ class dlarray_astropy(dlarray):
         return self.to(units.rad)
 
     @staticmethod
-    def _force_unit(quantity, *, unit=None, source=None):
+    def _force_unit(quantity, unit):
         """Apply a unit to a quantity"""
-        if unit is not None and source is not None:
-            raise ValueError("Cannot supply both 'unit' and 'source'")
-        if unit is None and source is not None:
-            unit = source.units
         if unit is not None:
             return np.array(quantity) << unit
         else:
             return quantity
 
+    @staticmethod
+    def _force_unit_from(quantity, source):
+        """Apply a unit to a quantity"""
+        try:
+            unit = source.units
+            return np.array(quantity) << unit
+        except AttributeError:
+            return quantity
     # ------------------------------------------ Some dunders
     # def __mul__(self, other):
     #     # Needed for dual * unit case
