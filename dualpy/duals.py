@@ -6,7 +6,6 @@ import fnmatch
 import dask
 
 from .dual_helpers import broadcast_jacobians, dedual, setup_dual_operation
-from .dual_operators_mixin import DualOperatorsMixin
 from .config import get_config
 from .jacobians import (
     _setitem_jacobians,
@@ -40,6 +39,7 @@ class Unitless:
     # Will probably need more
 
 
+# class dlarray(DualOperatorsMixin):
 class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
     """A duck-array providing automatic differentiation using dual algebra
 
