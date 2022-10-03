@@ -21,9 +21,9 @@ class dlarray_astropy(dlarray):
     def unit(self):
         return self.variable.unit
 
-    @property
-    def value(self):
-        return self.variable.value
+    # @property
+    # def value(self):
+    #     return self.variable.value
 
     # --------------------------------------------- This replaces an attribute
     @property
@@ -69,15 +69,15 @@ class dlarray_astropy(dlarray):
             return quantity
 
     # ------------------------------------------ Some dunders
-    def __mul__(self, other):
-        # Needed for dual * unit case
-        if isinstance(other, (units.UnitBase, str)):
-            return self * units.Quantity(1.0, other)
-        return super().__mul__(other)
+    # def __mul__(self, other):
+    #     # Needed for dual * unit case
+    #     if isinstance(other, (units.UnitBase, str)):
+    #         return self * units.Quantity(1.0, other)
+    #     return super().__mul__(other)
 
-    def __truediv__(self, other):
-        # Needed for dual * unit case
-        if isinstance(other, (units.UnitBase, str)):
-            return self / units.Quantity(1.0, other)
-        return super().__truediv__(other)
+    # def __truediv__(self, other):
+    #     # Needed for dual * unit case
+    #     if isinstance(other, (units.UnitBase, str)):
+    #         return self / units.Quantity(1.0, other)
+    #     return super().__truediv__(other)
 

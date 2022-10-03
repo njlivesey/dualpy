@@ -116,7 +116,7 @@ class BaseJacobian(object):
             result_ = np.reshape(np.array(result_), self.shape)
         return result_type(data=result_, template=self)
 
-    def __lshift__(self, unit):
+    def _force_unit(self, unit):
         result = copy.copy(self)  # or should this be deepcopy
         result.dependent_unit = unit
 

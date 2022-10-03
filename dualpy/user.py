@@ -169,7 +169,7 @@ def delete_jacobians(a, *names, wildcard=None, remain_dual=False, **kwargs):
         result.delete_jacobians(*names, wildcard=wildcard)
         # Now possibly demote back to non-dual array if merited and desired
         if not result.jacobians and not remain_dual:
-            result = units.Quantity(result)
+            result = result.variable
         return result
     else:
         # OK, this isn't a dual, return the input unaffected
@@ -179,7 +179,7 @@ def delete_jacobians(a, *names, wildcard=None, remain_dual=False, **kwargs):
 def solve_quadratic(a, b, c, sign=1):
     """Solve quadratic equation ax^2+bx+c=0 returning jacobians"""
     # Use Muller's equation for stability when a=0
-    a_, b_, c_, aj, bj, cj, out = _setup_dual_operation(a, b, c)
+    a_, b_, c_, aj, bj, cj, out = dlarray._setup_dual_operation(a, b, c)
     d_ = np.sqrt(b_**2 - 4 * a_ * c_)
     x_ = -2 * c_ / (b_ + sign * d_)
     anyJ = aj or bj or cj
@@ -391,7 +391,7 @@ def multi_newton_raphson(
     # Define some prefixes we'll use to track Jacobians
     j_name_x = "_mnr_x"
     # Take off any input jacobians.
-    x = units.Quantity(x0)
+    x = delete_jacobians(x0)
     # Note if there are jacobians on the target, and take them off in any case
     y_has_jacobians = has_jacobians(y)
     if y is not None:
@@ -406,10 +406,13 @@ def multi_newton_raphson(
     while (i < max_iter or max_iter < 0) and not finish:
         # Seed our special Jacobian
         x = seed(x, j_name_x)
+        print(f"In iteration {i}, x is {type(x)}")
         if y is not None:
+            print(f"In iteration {i}, y_ is type {type(y_)}")
             delta_y = func(x, *args_, **kwargs_) - y_
         else:
             delta_y = func(x, *args_, **kwargs_)
+        print(f"In iteration {i}, delta_y is {type(delta_y)}")
         if dy_tolerance is not None:
             finish = np.all(abs(delta_y) < dy_tolerance)
             reason = "dy"
@@ -421,13 +424,10 @@ def multi_newton_raphson(
         if dx_tolerance is not None:
             finish = finish or np.all(abs(delta_x) < dx_tolerance)
             reason = "dx"
-        x = units.Quantity(x) - delta_x
+        x = x.variable - delta_x
         i += 1
     if reason == "":
         reason = "max_iter"
-
-    # NOTE TO SELF.  Once we're happy that get_jacobians_for_function_inverse works, we
-    # should replace the code below to a call to that.
 
     # OK, we're done iterating.  Now we have to think about any Jacobians on the output.
     # This is acutally both more and less complicated than it seems.  We're after dx/dt
@@ -824,7 +824,7 @@ def simpson(y, x=None, dx=1.0, axis=-1, even="avg"):
 
     """
     # Prepare all the operands
-    y_, x_, dx_, yj, xj, dxj, out = _setup_dual_operation(y, x, dx)
+    y_, x_, dx_, yj, xj, dxj, out = dlarray._setup_dual_operation(y, x, dx)
 
     if has_jacobians(x):
         raise ValueError("Cannot (yet?) have Jacobians on the integration x term")
