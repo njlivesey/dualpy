@@ -2,12 +2,12 @@
 import numpy as np
 
 from .jacobian_helpers import (
-    _array_to_sparse_diagonal,
-    _prepare_jacobians_for_binary_op,
-    apply_units,
+    array_to_sparse_diagonal,
+    prepare_jacobians_for_binary_op,
     linear_interpolation_indices_and_weights,
 )
 from .base_jacobian import BaseJacobian
+from .dual_helpers import apply_units
 
 
 __all__ = ["DenseJacobian"]
@@ -33,7 +33,7 @@ class DenseJacobian(BaseJacobian):
         if isinstance(data, BaseJacobian):
             if isinstance(data, DiagonalJacobian):
                 data_ = np.reshape(
-                    _array_to_sparse_diagonal(data.data).toarray(), data.shape
+                    array_to_sparse_diagonal(data.data).toarray(), data.shape
                 )
             elif isinstance(data, DenseJacobian):
                 data_ = data.data
@@ -89,7 +89,7 @@ class DenseJacobian(BaseJacobian):
     def _setjitem(self, key, value):
         """A getitem type method for dense Jacobians"""
         if value is not None:
-            self_, value_, result_type = _prepare_jacobians_for_binary_op(self, value)
+            self_, value_, result_type = prepare_jacobians_for_binary_op(self, value)
             if result_type != type(self):
                 return TypeError(
                     "Jacobian is not of correct type to receive new contents"
@@ -111,7 +111,7 @@ class DenseJacobian(BaseJacobian):
     def reshape(self, shape, order, parent_flags):
         """reshape dense Jacobian"""
         # Don't bother doing anything if the shape is already good
-        if shape == self.dependent_shape:
+        if np.all(shape == self.dependent_shape):
             return self
         if order == "K":
             order = "A"
@@ -134,6 +134,8 @@ class DenseJacobian(BaseJacobian):
     def premul_diag(self, diag):
         """Diagonal premulitply for dense Jacobian"""
         diag_, dependent_unit, dependent_shape = self._prepare_premul_diag(diag)
+        if diag_ is None:
+            return DenseJacobian(self, dependent_unit=dependent_unit)
         try:
             diag_ = np.reshape(diag_, (diag.shape + self._dummy_independent))
             # This will fail for scalars, but that's OK scalars don't
@@ -299,7 +301,10 @@ class DenseJacobian(BaseJacobian):
     ):
         """Return an interpolator for a given Jacobian axis"""
         return DenseJacobianLinearInterpolator(
-            self, x_in=x_in, axis=axis, extrapolate=extrapolate,
+            self,
+            x_in=x_in,
+            axis=axis,
+            extrapolate=extrapolate,
         )
 
     def spline_interpolator(

@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .jacobian_helpers import apply_units
+from .dual_helpers import apply_units
 from .base_jacobian import BaseJacobian
 from .sparse_jacobians import SparseJacobian
 from .dense_jacobians import DenseJacobian
@@ -101,6 +101,9 @@ class DiagonalJacobian(BaseJacobian):
     def premul_diag(self, diag):
         """Diagonal premulitply for diagonal Jacobian"""
         diag_, dependent_unit, dependent_shape = self._prepare_premul_diag(diag)
+        # Do something special if we're just multiplying by a unit
+        if diag_ is None:
+            return DiagonalJacobian(self, dependent_unit=dependent_unit)
         if dependent_shape == self.independent_shape:
             return DiagonalJacobian(
                 diag_ * self.data, template=self, dependent_unit=dependent_unit

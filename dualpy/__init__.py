@@ -1,4 +1,6 @@
 from .duals import *
+from .dual_pint import *
+from .dual_astropy import *
 from .user import *
 from .stashing import *
 from .config import *

@@ -2,7 +2,16 @@
 import copy
 import numpy as np
 
-from .jacobian_helpers import _broadcasted_shape, _prepare_jacobians_for_binary_op
+from .dual_helpers import (
+    get_unit_conversion_scale,
+    get_magnitude_and_unit,
+)
+
+from .jacobian_helpers import (
+    broadcasted_shape,
+    prepare_jacobians_for_binary_op,
+)
+
 
 __all__ = ["BaseJacobian"]
 
@@ -101,7 +110,7 @@ class BaseJacobian(object):
     def __add__(self, other):
         from .dense_jacobians import DenseJacobian
 
-        s_, o_, result_type = _prepare_jacobians_for_binary_op(self, other)
+        s_, o_, result_type = prepare_jacobians_for_binary_op(self, other)
         result_ = s_ + o_
         if result_type is DenseJacobian:
             result_ = np.reshape(np.array(result_), self.shape)
@@ -110,7 +119,7 @@ class BaseJacobian(object):
     def __sub__(self, other):
         from .dense_jacobians import DenseJacobian
 
-        s_, o_, result_type = _prepare_jacobians_for_binary_op(self, other)
+        s_, o_, result_type = prepare_jacobians_for_binary_op(self, other)
         result_ = s_ - o_
         if result_type is DenseJacobian:
             result_ = np.reshape(np.array(result_), self.shape)
@@ -167,17 +176,31 @@ class BaseJacobian(object):
         return type(self)(np.real(self.data), template=self)
 
     def _prepare_premul_diag(self, diag):
+        import astropy.units as units
+        import pint
+        from .dual_helpers import isunit
+
         """This routine is called by the child classes to set up for a
         premul_diag.  It works out the units issues and sets up for
         broadcasting.
         """
-        if hasattr(diag, "unit"):
+        # If we're actually mulitplying by a unit we have a different set of returns
+        if isunit(diag):
+            return None, self.dependent_unit * diag, self.dependent_shape
+        # Otherwise, setup to mutipply by this diagonal
+        if isinstance(diag, units.Quantity):
             dependent_unit = diag.unit * self.dependent_unit
             diag_ = diag.value
+        elif isinstance(diag, pint.Quantity):
+            dependent_unit = diag.units * self.dependent_unit
+            diag_ = diag.magnitude
         else:
             dependent_unit = self.dependent_unit
             diag_ = diag
-        dependent_shape = _broadcasted_shape(self.dependent_shape, diag_.shape)
+        try:
+            dependent_shape = broadcasted_shape(self.dependent_shape, diag_.shape)
+        except AttributeError:
+            dependent_shape = self.dependent_shape
         return diag_, dependent_unit, dependent_shape
 
     def flatten(self, order, parent_flags):
@@ -198,7 +221,7 @@ class BaseJacobian(object):
         """Change the dependent_unit for a Jacobian"""
         if unit == self.dependent_unit:
             return self
-        scale = self.dependent_unit._to(unit) * (unit / self.dependent_unit)
+        scale = get_unit_conversion_scale(self.dependent_unit, unit)
         return self.scalar_multiply(scale)
 
     def to_dense(self):
@@ -222,10 +245,11 @@ class BaseJacobian(object):
 
     def scalar_multiply(self, scale):
         """Multiply Jacobian by a scalar"""
+        magnitude, units = get_magnitude_and_unit(scale)
         return self.__class__(
             template=self,
-            data=self.data * scale.value,
-            dependent_unit=self.dependent_unit * scale.unit,
+            data=self.data * magnitude,
+            dependent_unit=self.dependent_unit * units,
         )
 
     def independents_compatible(self, other):

@@ -41,6 +41,7 @@ class dlarray_astropy(dlarray):
         # those function unit things (such as dB).
         if self.hasJ:
             scale = self.unit.to(unit, **kwargs) << unit / self.unit
+            print(f"In dual_astropy.to, scale is {scale}")
             out._chain_rule(self, scale)
         return out
 
@@ -77,11 +78,11 @@ class dlarray_astropy(dlarray):
     #     # Needed for dual * unit case
     #     if isinstance(other, (units.UnitBase, str)):
     #         return self * units.Quantity(1.0, other)
-    #     return super().__mul__(other)
+    #     return np.multiply(self, other)
 
     # def __truediv__(self, other):
     #     # Needed for dual * unit case
     #     if isinstance(other, (units.UnitBase, str)):
     #         return self / units.Quantity(1.0, other)
-    #     return super().__truediv__(other)
+    #     return np.true_dvide(self, other)
 

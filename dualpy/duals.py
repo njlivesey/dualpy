@@ -1,11 +1,18 @@
 """The dual type for dualpy"""
 
 import numpy as np
-import astropy.units as units
 import fnmatch
 import dask
 
-from .dual_helpers import broadcast_jacobians, dedual, setup_dual_operation
+from .unitless import Unitless
+from .dual_helpers import (
+    DualOperatorsMixin,
+    broadcast_jacobians,
+    dedual,
+    get_magnitude_and_unit,
+    get_unit,
+    setup_dual_operation,
+)
 from .config import get_config
 from .jacobians import (
     _setitem_jacobians,
@@ -15,32 +22,17 @@ from .jacobians import (
 )
 
 
-__all__ = ["dlarray", "nan_to_num_jacobians", "tensordot", "Unitless"]
+__all__ = [
+    "dlarray",
+    "dedual",
+    "nan_to_num_jacobians",
+    "tensordot",
+    "setup_dual_operation",
+]
 
 
-class Unitless:
-    """Identifies, and handles algebra for, non-existent units"""
-
-    def __str__(self):
-        return "Unitless"
-
-    def __repr__(self):
-        return "Unitless"
-
-    def __mul__(self, other):
-        return other
-
-    def __truediv__(self, other):
-        try:
-            return 1.0/other
-        except TypeError:
-            return self
-
-    # Will probably need more
-
-
-# class dlarray(DualOperatorsMixin):
-class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
+# class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
+class dlarray(DualOperatorsMixin):
     """A duck-array providing automatic differentiation using dual algebra
 
     In contrast with the previous version of dualpy this uses a wrapping approach,
@@ -53,13 +45,14 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
     """
 
     # ---------------------------------------------------------- Initialization
-    def __new__(cls, input_variable):
-        """Instance creator for dlarray
+    def __new__(cls, input_variable=None):
+        """Instance ecreator for dlarray
 
         Uses type of variable argument to work out what flavor of dlarray to create.
 
         """
         import astropy.units as units
+        import pint
 
         # import pint
         from .dual_astropy import dlarray_astropy
@@ -67,7 +60,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
 
         if isinstance(input_variable, units.Quantity):
             cls = dlarray_astropy
-        elif False:  # Is a pint thingy
+        elif isinstance(input_variable, pint.Quantity):
             cls = dlarray_pint
         else:
             cls = dlarray
@@ -83,6 +76,10 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
             self.variable = input_variable
             self.jacobians = {}
 
+    def __getnewargs__(self):
+        """Needed to correctly pickle/restore duals into right subclass"""
+        return (self.variable,)
+    
     # --------------------------------------------------- Fundamental properties
     # Avoid using attributes here, particularly as we might one day support in-place
     # reshaping (x.shape = new_shape).  For now that's disabled as it needs work
@@ -113,6 +110,10 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
     @property
     def dtype(self):
         return self.variable.dtype
+
+    @property
+    def flags(self):
+        return self.variable.flags
 
     # This attribute is None for plain dlarrays but is a property aliasing to the
     # unit/units attribute of the pint/astropy variable if appropriate.
@@ -150,12 +151,15 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
     # ----------------------------------------------------- ufuncs
     # This is based off the comparable one from xarray.DataArray
     def _binary_op(
-            self,
-            other,
-            f,
-            reflexive: bool = False,
+        self,
+        other,
+        f,
+        reflexive: bool = False,
     ):
         return f(self, other) if not reflexive else f(other, self)
+
+    def _unary_op(self, f):
+        return f()
 
     def __array_ufunc__(self, ufunc, method, *args, **kwargs):
         # The comparators can just call their astropy.Quantity equivalents, I'm going to
@@ -171,8 +175,8 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         ):
             return ufunc(self.variable, args[1])
         # Also, do the same for some unary operators
-        if ufunc in (np.isfinite,):
-            return ufunc(self.vaiable)
+        if ufunc in (np.isfinite, np.isnan):
+            return ufunc(self.variable)
         # Otherwise, we look for this same ufunc in our own type and
         # try to invoke that.
         # However, first some intervention
@@ -185,6 +189,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         result = dlufunc(*args, **kwargs)
         # result._check()
         return result
+
     # __array_ufunc__ = None
 
     def __array_function__(self, func, types, args, kwargs):
@@ -327,10 +332,12 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
         return _ravel(self, order=order)
 
     # Now a whole bunch of binary operators
+    @staticmethod
     def add(a, b, out=None):
         a_, b_, aj, bj, out = setup_dual_operation(a, b, out=out)
         if out is None:
             out = dlarray(a_ + b_)
+            # print(f"In dlarray.add: {a_.units}, {b_.units}, {out.units}")
         else:
             if not isinstance(out, dlarray):
                 out = dlarray(out)
@@ -341,9 +348,11 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
             if name in out.jacobians:
                 out.jacobians[name] += jacobian
             else:
+                # print(f"OK, inside dlarray.add {jacobian.dependent_unit}, {out._dependent_unit}")
                 out.jacobians[name] = jacobian.to(out._dependent_unit)
         return out
 
+    @staticmethod
     def subtract(a, b, out=None):
         a_, b_, aj, bj, out = setup_dual_operation(a, b, out=out)
         if out is None:
@@ -361,66 +370,50 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
                 out.jacobians[name] = -jacobian.to(out._dependent_unit)
         return out
 
+    @staticmethod
     def multiply(a, b, out=None):
+        if out is not None:
+            raise NotImplementedError("Unable to handle cases with out supplied")
         a_, b_, aj, bj, out = setup_dual_operation(a, b, out=out)
         # Because out may share memory with a or b, we need to do the
         # Jacobians first as they need access to a and b
         # unadulterated.
-        out_jacobians = {}
+        # out_jacobians = {}
+        # for name, jacobian in aj.items():
+        #     out_jacobians[name] = jacobian.premul_diag(b_)
+        # for name, jacobian in bj.items():
+        #     if name in out_jacobians:
+        #         out_jacobians[name] += jacobian.premul_diag(a_)
+        #     else:
+        #         out_jacobians[name] = jacobian.premul_diag(a_)
+        # if out is None:
+        #     out = dlarray(a_ * b_)
+        # else:
+        #     if not isinstance(out, dlarray):
+        #         out = dlarray(out)
+        #     out.variable[...] = a_ * b_
+        # out.jacobians = out_jacobians
+
+        out = dlarray(a_ * b_)
         for name, jacobian in aj.items():
-            out_jacobians[name] = jacobian.premul_diag(b_)
+            out.jacobians[name] = jacobian.premul_diag(b_)
         for name, jacobian in bj.items():
-            if name in out_jacobians:
-                out_jacobians[name] += jacobian.premul_diag(a_)
+            if name in out.jacobians:
+                out.jacobians[name] += jacobian.premul_diag(a_)
             else:
-                out_jacobians[name] = jacobian.premul_diag(a_)
-        if out is None:
-            out = dlarray(a_ * b_)
-        else:
-            if not isinstance(out, dlarray):
-                out = dlarray(out)
-            out.variable[...] = a_ * b_
-        out.jacobians = out_jacobians
+                out.jacobians[name] = jacobian.premul_diag(a_)
         return out
 
-    # def rmultiply(a, b, out=None):
-    #     a_, b_, aj, bj, out = setup_dual_operation(a, b, out=out)
-    #     # Because out may share memory with a or b, we need to do the
-    #     # Jacobians first as they need access to a and b
-    #     # unadulterated.
-    #     out_jacobians = {}
-    #     for name, jacobian in aj.items():
-    #         out_jacobians[name] = jacobian.premul_diag(b_)
-    #     for name, jacobian in bj.items():
-    #         if name in out_jacobians:
-    #             out_jacobians[name] += jacobian.premul_diag(a_)
-    #         else:
-    #             out_jacobians[name] = jacobian.premul_diag(a_).to(out._dependent_unit)
-    #     if out is None:
-    #         out = dlarray(a_ * b_)
-    #     else:
-    #         if not isinstance(out, dlarray):
-    #             out = dlarray(out)
-    #     out.jacobians = out_jacobians
-    #     return out
-
+    @staticmethod
     def true_divide(a, b, out=None):
+        if out is not None:
+            raise NotImplementedError("Unable to handle cases with out supplied")
         a_, b_, aj, bj, out = setup_dual_operation(a, b, out=out)
-        # Note that, the way this is constructed, it's OK if out
-        # shares memory with a and/or b, neither a or b are used after
-        # out is filled. We do need to keep 1/b though.
-        if b_.dtype.char in np.typecodes["AllInteger"]:
-            b_ = 1.0 * b_
-        r_ = np.reciprocal(b_)
-        if out is None:
-            out = dlarray(a_ * r_)
-        else:
-            if not isinstance(out, dlarray):
-                out = dlarray(out)
-            out.variable[...] = a_ * r_
-        out_ = out.variable
+        r_ = 1.0/b_
+        out_ = a_ * r_
+        out = dlarray(out_)
         # We're going to do the quotient rule as (1/b)a' - (a/(b^2))b'
-        # The premultiplier for a' is the reciprocal _r, computed above
+        # The premultiplier for a' is the reciprocal r_, computed above
         # The premultiplier for b' is that times the result
         c_ = out_ * r_
         for name, jacobian in aj.items():
@@ -432,6 +425,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
                 out.jacobians[name] = -jacobian.premul_diag(c_).to(out._dependent_unit)
         return out
 
+    @staticmethod
     def remainder(a, b, out=None):
         raise NotImplementedError("Pretty sure this is wrong")
         a_, b_, aj, bj, out = setup_dual_operation(a, b, out=out)
@@ -441,6 +435,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
             out.jacobians[name] = jacobian
         return out
 
+    @staticmethod
     def power(a, b):
         # In case it's more efficient this divides up according to
         # whether either a or b or both are duals.  Note that the
@@ -481,6 +476,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
                 )
         return out
 
+    @staticmethod
     def arctan2(a, b):
         # See Wikpedia page on atan2 which conveniently lists the derivatives
         a_, b_, aj, bj, out = setup_dual_operation(a, b)
@@ -533,9 +529,7 @@ class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
     def exp(self):
         out = dlarray(np.exp(self.variable))
         if self.hasJ:
-            out._chain_rule(
-                self, self.variable, dependent_unit=self._dimensionless
-            )
+            out._chain_rule(self, self.variable, dependent_unit=self._dimensionless)
         return out
 
     def log(self):
@@ -882,11 +876,11 @@ def cumsum(a, axis=None, dtype=None, out=None):
 # broadcast_to really need the subok argument, given that it's ignored.
 @implements(np.broadcast_arrays)
 def broadcast_arrays(*args, subok=False):
-    variables = []
-    for a in args:
-        variables.append(dedual(a))
+    from mls_scf_tools.mls_pint import mp_broadcast_arrays
+
+    variables = [dedual(a) for a in args]
     # This is going to give problems with pint, which does not implement it.
-    result_ = np.broadcast_arrays(*variables, subok=subok)
+    result_ = mp_broadcast_arrays(*variables, subok=subok)
     shape = result_[0].shape
     result = []
     for i, a in enumerate(args):
@@ -986,7 +980,7 @@ def insert(arr, obj, values, axis=None):
             values = values.flatten()
         except AttributeError:
             pass
-    arr_, values_, aj, vj, out = setup_dual_operation(arr, values)
+    arr_, values_, aj, vj, out = setup_dual_operation(arr, values, broadcast=False)
     result = dlarray(np.insert(arr_, obj, values_, axis))
     # Now deal with the Jacobians, first deal with anythat are in the values to add
     result.jacobians = _join_jacobians(arr, values, obj, axis, result.shape)
@@ -1007,7 +1001,7 @@ def append(arr, values, axis=None):
             values = values.flatten()
         except AttributeError:
             pass
-    arr_, values_, aj, vj, out = setup_dual_operation(arr, values)
+    arr_, values_, aj, vj, out = setup_dual_operation(arr, values, broadcast=False)
     result = dlarray(np.append(arr_, values_, axis))
     result.jacobians = _join_jacobians(arr, values, arr.shape[axis], axis, result.shape)
     return result
@@ -1034,7 +1028,7 @@ def clip(a, a_min, a_max, out=None, **kwargs):
         raise NotImplementedError("dlarray.clip cannot support out")
     if len(kwargs) != 0:
         raise NotImplementedError("dlarray.clip cannot support non-empty kwargs")
-    out = dlarray(np.clip(units.Quantity(a), a_min, a_max))
+    out = dlarray(np.clip(a.variable, a_min, a_max))
     if a.hasJ:
         factor = np.logical_and(a >= a_min, a <= a_max)
         out._chain_rule(a, factor.astype(int))
@@ -1044,13 +1038,13 @@ def clip(a, a_min, a_max, out=None, **kwargs):
 @implements(np.argmin)
 def argmin(a, axis=None, out=None, *, keepdims=np._NoValue):
     """Implements np.argmin"""
-    return np.argmin(units.Quantity(a, axis=axis, out=out, keepdims=keepdims))
+    return np.argmin(a.variable, axis=axis, out=out, keepdims=keepdims)
 
 
 @implements(np.argmax)
 def argmax(a, axis=None, out=None, *, keepdims=np._NoValue):
     """Implements np.argmax"""
-    return np.argmax(units.Quantity(a, axis=axis, out=out, keepdims=keepdims))
+    return np.argmax(a.variable, axis=axis, out=out, keepdims=keepdims)
 
 
 @implements(np.amin)
@@ -1063,7 +1057,7 @@ def amin(a, axis=None, out=None, keepdims=None, initial=None):
     if a.ndim == 0:
         return a
     else:
-        i_min = np.argmin(units.Quantity(a), axis=axis)
+        i_min = np.argmin(a.variable, axis=axis)
         return a[i_min]
 
 
@@ -1077,7 +1071,7 @@ def amax(a, axis=None, out=None, keepdims=None, initial=None):
     if a.ndim == 0:
         return a
     else:
-        i_max = np.argmax(units.Quantity(a), axis=axis)
+        i_max = np.argmax(a.variable, axis=axis)
         return a[i_max]
 
 
@@ -1099,7 +1093,7 @@ def nan_to_num(x, copy=True, nan=0.0, posinf=None, neginf=None, jacobians_only=F
 
 @implements(np.real)
 def real(a):
-    out = dlarray(np.real(units.Quantity(a)))
+    out = dlarray(np.real(a.variable))
     for name, jacobian in a.jacobians.items():
         out.jacobians[name] = jacobian.real()
     return out
@@ -1107,28 +1101,22 @@ def real(a):
 
 @implements(np.empty_like)
 def empty_like(prototype, dtype=None, order="K", subok=True, shape=None):
-    return dlarray(
-        np.empty_like(prototype.variable, dtype, order, subok, shape)
-    )
+    return dlarray(np.empty_like(prototype.variable, dtype, order, subok, shape))
 
 
 @implements(np.zeros_like)
 def zeros_like(prototype, dtype=None, order="K", subok=True, shape=None):
-    return dlarray(
-        np.zeros_like(prototype.variable, dtype, order, subok, shape)
-    )
+    return dlarray(np.zeros_like(prototype.variable, dtype, order, subok, shape))
 
 
 @implements(np.ones_like)
 def ones_like(prototype, dtype=None, order="K", subok=True, shape=None):
-    return dlarray(
-        np.ones_like(prototype.variable, dtype, order, subok, shape)
-    )
+    return dlarray(np.ones_like(prototype.variable, dtype, order, subok, shape))
 
 
 @implements(np.expand_dims)
 def expand_dims(a, axis):
-    result = dlarray(np.expand_dims(units.Quantity(a), axis))
+    result = dlarray(np.expand_dims(a.variable, axis))
     for name, jacobian in a.jacobians.items():
         result.jacobians[name] = jacobian.reshape(result.shape)
     return result
@@ -1143,7 +1131,7 @@ def concatenate(values, axis=0, out=None):
         values = [value.flatten() for value in values]
         axis = 0
     # Populate the result
-    values_ = [units.Quantity(value) for value in values]
+    values_ = [dedual(value) for value in values]
     result_ = np.concatenate(values_, axis, out)
     result = dlarray(result_)
     # Get the Jacobians concatenated
@@ -1156,7 +1144,7 @@ def stack(arrays, axis=0, out=None):
     if out is not None:
         raise ValueError("Cannot stack duals into an out")
     # Populate the result
-    arrays_ = [units.Quantity(array) for array in arrays]
+    arrays_ = [dedual(array) for array in arrays]
     result_ = np.stack(arrays_, axis, out)
     result = dlarray(result_)
     # Get the Jacobians stacked
@@ -1179,10 +1167,10 @@ def tensordot(a, b, axes):
     import sparse as st
 
     a_, b_, aj, bj, out = setup_dual_operation(a, b, out=None, broadcast=False)
-    result_unit = getattr(a_, "unit", units.dimensionless_unscaled) * getattr(
-        b_, "unit", units.dimensionless_unscaled
-    )
-    result = dlarray(st.tensordot(a_, b_, axes) * result_unit)
+    a_magnitude, a_unit = get_magnitude_and_unit(a_)
+    b_magnitude, b_unit = get_magnitude_and_unit(b_)
+    result = dlarray(st.tensordot(a_magnitude, b_magnitude, axes) * a_unit * b_unit)
+    result_unit = get_unit(result)
     # Now deal with the Jacobians.  For this, we need to ensure that axes are in the
     # (2,) array-like form that is the second version np.tensordot can accept them.
     if isinstance(axes, int):
@@ -1198,7 +1186,7 @@ def tensordot(a, b, axes):
         else:
             jacobian_tensordot = jacobian.tensordot
         result.jacobians[name] = jacobian_tensordot(
-            b_no_unit, axes, dependent_unit=result.unit
+            b_no_unit, axes, dependent_unit=result_unit
         )
     for name, jacobian in bj.items():
         if use_dask:

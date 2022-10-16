@@ -5,11 +5,11 @@ __all__ = [
     "DiagonalJacobian",
     "DenseJacobian",
     "SparseJacobian",
+    "SeedJacobian",
     "_concatenate_jacobians",
     "matrix_multiply_jacobians",
 ]
 
-import astropy.units as units
 import numpy as np
 import scipy.sparse as sparse
 
@@ -17,6 +17,7 @@ from .base_jacobian import BaseJacobian
 from .dense_jacobians import DenseJacobian
 from .diagonal_jacobians import DiagonalJacobian, SeedJacobian
 from .sparse_jacobians import SparseJacobian
+from .dual_helpers import get_unit
 
 
 def _setitem_jacobians(key, target, target_jacobians, source_jacobians):
@@ -34,7 +35,7 @@ def _setitem_jacobians(key, target, target_jacobians, source_jacobians):
             else:
                 raise TypeError(f"Unrecognized type for jacobian {type(source_j)}")
             target_jacobians[name] = newj(
-                dependent_unit=target.unit,
+                dependent_unit=get_unit(target),
                 independent_unit=source_j.independent_unit,
                 dependent_shape=target.shape,
                 independent_shape=source_j.independent_shape,
@@ -96,7 +97,7 @@ def _prep_jacobians_for_join(*args, result_dependent_shape):
                 # Otherwise, create an empty one
                 j = result_type(
                     dependent_shape=getattr(arg, "shape", tuple()),
-                    dependent_unit=getattr(arg, "unit", units.dimensionless_unscaled),
+                    dependent_unit=get_unit(arg),
                     independent_shape=template.independent_shape,
                     independent_unit=template.independent_unit,
                 )
@@ -157,6 +158,7 @@ def _concatenate_jacobians(values, axis, result_dependent_shape):
             raise TypeError(f"Unexpcted Jacobian type in result {result_types[name]}")
     return result
 
+
 def _stack_jacobians(arrays, axis, result_dependent_shape):
     """Support the numpy.stack operationf for Jacobians"""
     prepped_jacobians, result_types, result_jacobians = _prep_jacobians_for_join(
@@ -195,7 +197,6 @@ def _stack_jacobians(arrays, axis, result_dependent_shape):
     return result
 
 
-
 def matrix_multiply_jacobians(a, b):
     """Perform a matrix multiply on two Jacobians"""
     # I need this rarely enough that I'm not going to do it as an operator, in order to
@@ -203,10 +204,7 @@ def matrix_multiply_jacobians(a, b):
     # First check that things are going to make sense.
     scale = 1.0
     if a.independent_unit != b.dependent_unit:
-        try:
-            scale *= b.dependent_unit.to(a.dependent_unit)
-        except units.UnitsError:
-            raise ValueError("Units not compatible for Jacobian matrix multiply")
+        scale *= b.dependent_unit.to(a.dependent_unit)
     if a.independent_shape != b.dependent_shape:
         raise ValueError(
             f"Shapes not compatible for Jacobian matrix multiply "
