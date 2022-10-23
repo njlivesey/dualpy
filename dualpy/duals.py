@@ -527,9 +527,10 @@ class dlarray(DualOperatorsMixin):
         return out
 
     def exp(self):
-        out = dlarray(np.exp(self.variable))
+        out_ = np.exp(self.variable)
+        out = dlarray(out_)
         if self.hasJ:
-            out._chain_rule(self, self.variable, dependent_unit=self._dimensionless)
+            out._chain_rule(self, out_, dependent_unit=self._dimensionless)
         return out
 
     def log(self):
