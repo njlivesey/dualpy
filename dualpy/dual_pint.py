@@ -45,9 +45,9 @@ class dlarray_pint(dlarray):
             return self
         out_ = self.variable.to(units, **kwargs)
         out = dlarray(out_)
-        # This will probably (hopefully!) fail if we're using one of
-        # those function units things (such as dB).
         if self.hasJ:
+            # This will probably (hopefully!) fail if we're using one of
+            # those function units things (such as dB).
             scale = (1.0*self.units).to(units, **kwargs) / self.units
             out._chain_rule(self, scale)
         return out
