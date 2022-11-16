@@ -4,11 +4,12 @@ import numpy as np
 import copy
 
 from .jacobian_helpers import (
-    _array_to_sparse_diagonal,
-    _shapes_broadcastable,
+    array_to_sparse_diagonal,
+    shapes_broadcastable,
     linear_interpolation_indices_and_weights,
 )
 from .base_jacobian import BaseJacobian
+from .dual_helpers import apply_units, get_magnitude_and_unit
 
 __all__ = ["SparseJacobian"]
 
@@ -142,7 +143,7 @@ class SparseJacobian(BaseJacobian):
         if isinstance(data, SparseJacobian):
             data2d_ = data.data2d
         elif isinstance(data, DiagonalJacobian):
-            data2d_ = _array_to_sparse_diagonal(data.data.ravel())
+            data2d_ = array_to_sparse_diagonal(data.data.ravel())
         elif isinstance(data, DenseJacobian):
             data2d_ = sparse.csc_matrix(data.data2d)
         elif type(data) is sparse.csc_matrix:
@@ -228,7 +229,7 @@ class SparseJacobian(BaseJacobian):
         # Don't bother doing anything if the shape is already good
         if shape == self.dependent_shape:
             return self
-        if not _shapes_broadcastable(self.dependent_shape, shape):
+        if not shapes_broadcastable(self.dependent_shape, shape):
             raise ValueError("Unable to broadcast SparseJacobian to new shape")
         # This one has to be rather inefficient as it turns out.  Down
         # the road we might be able to do something with some kind of
@@ -283,6 +284,9 @@ class SparseJacobian(BaseJacobian):
         #     out = (diagonal matrix) @ self
         # However, when expressed that way it's less efficient then below
         diag_, dependent_unit, dependent_shape = self._prepare_premul_diag(diag)
+        # Special case when we're just multiplying by a unit
+        if diag_ is None:
+            return SparseJacobian(self, dependent_unit=dependent_unit)
         # Do a manual broadcast if needed (which, in the case of the
         # Jacobian is actually not a real broadcast, but unfortunately
         # a somewhat wasteful replicate opration.  But since the
@@ -708,7 +712,7 @@ class SparseJacobian(BaseJacobian):
                 + f"{self.dependent_shape};{self.independent_shape}"
             )
         result_ = np.reshape(self.data2d.diagonal(), self.dependent_shape)
-        return result_ << (self.dependent_unit / self.independent_unit)
+        return apply_units(result_, self.dependent_unit / self.independent_unit)
 
     def todensearray(self):
         from .dense_jacobians import DenseJacobian
@@ -717,10 +721,12 @@ class SparseJacobian(BaseJacobian):
         return self_dense.todensearray()
 
     def to2ddensearray(self):
-        return self.data2d.toarray() << (self.dependent_unit / self.independent_unit)
+        return apply_units(
+            self.data2d.toarray(), self.dependent_unit / self.independent_unit
+        )
 
     def to2darray(self):
-        return self.data2d << (self.dependent_unit / self.independent_unit)
+        return apply_units(self.data2d, self.dependent_unit / self.independent_unit)
 
     def nan_to_num(self, copy=True, nan=0.0, posinf=None, neginf=None):
         if copy:
@@ -734,8 +740,9 @@ class SparseJacobian(BaseJacobian):
 
     def scalar_multiply(self, scale):
         """Multiply Jacobian by a scalar"""
-        self.dependent_unit *= scale.unit
-        self.data2d *= scale.value
+        magnitude, units = get_magnitude_and_unit(scale)
+        self.dependent_unit *= units
+        self.data2d *= magnitude
         return self
 
     def _join(self, other, location, axis, result_dependent_shape):
@@ -752,7 +759,7 @@ class SparseJacobian(BaseJacobian):
         if len(other.dependent_shape) != nd:
             other_dependent_shape = list(self_dependent_shape)
             other_dependent_shape[axis] = 1
-            if not _shapes_broadcastable(other.dependent_shape, other_dependent_shape):
+            if not shapes_broadcastable(other.dependent_shape, other_dependent_shape):
                 raise ValueError(
                     "Shapes not broadcastable: "
                     + f"{other.dependent_shape} and {other_dependent_shape}"

@@ -4,23 +4,25 @@ import numpy as np
 import scipy.sparse as sparse
 import itertools
 
+from .dual_helpers import get_unit_conversion_scale
+
 __all__ = [
-    "_array_to_sparse_diagonal",
-    "_broadcasted_shape",
-    "_shapes_broadcastable",
-    "_prepare_jacobians_for_binary_op",
+    "array_to_sparse_diagonal",
+    "broadcasted_shape",
+    "prepare_jacobians_for_binary_op",
+    "shapes_broadcastable",
     "jacobian_2d_matrix_multiply",
 ]
 
 
-def _array_to_sparse_diagonal(x):
+def array_to_sparse_diagonal(x):
     """Turn an ndarray into a diagonal, stored as csc"""
     x_ = np.array(x).ravel()
     result = sparse.diags(x_, 0, format="csc")
     return result
 
 
-def _broadcasted_shape(shp1, shp2):
+def broadcasted_shape(shp1, shp2):
     # Return the broadcasted shape of the two arguments
     # Also check's they're legal
     result = []
@@ -32,7 +34,7 @@ def _broadcasted_shape(shp1, shp2):
     return tuple(result[::-1])
 
 
-def _shapes_broadcastable(shp1, shp2):
+def shapes_broadcastable(shp1, shp2):
     # Test if two shapes can be broadcast together
     for a, b in zip(shp1[::-1], shp2[::-1]):
         if a == 1 or b == 1 or a == b:
@@ -42,7 +44,7 @@ def _shapes_broadcastable(shp1, shp2):
     return True
 
 
-def _prepare_jacobians_for_binary_op(a, b):
+def prepare_jacobians_for_binary_op(a, b):
     """Take two Jacobians about to have something binary done to them and
     return their contents in mutually compatible form from a units
     perspective, and as efficiently as possible"""
@@ -56,9 +58,9 @@ def _prepare_jacobians_for_binary_op(a, b):
     # the result.
     scale = 1.0
     if b.dependent_unit != a.dependent_unit:
-        scale *= b.dependent_unit._to(a.dependent_unit)
+        scale *= get_unit_conversion_scale(b.dependent_unit, a.dependent_unit)
     if b.independent_unit != a.independent_unit:
-        scale /= b.independent_unit._to(a.independent_unit)
+        scale /= get_unit_conversion_scale(b.independent_unit, a.independent_unit)
     # Now go throught the various type combinations
     type_a = type(a)
     type_b = type(b)
@@ -81,13 +83,13 @@ def _prepare_jacobians_for_binary_op(a, b):
         # If a is diagonal (and by implication b is not, otherwise the
         # above code would have handled things), then promote a to
         # sparse and use the 2d view of b
-        a_ = _array_to_sparse_diagonal(a.data)
+        a_ = array_to_sparse_diagonal(a.data)
         b_ = b.data2d
         result_type = type_b
     elif type_b is DiagonalJacobian:
         # This is the converse case
         a_ = a.data2d
-        b_ = _array_to_sparse_diagonal(b.data)
+        b_ = array_to_sparse_diagonal(b.data)
         result_type = type_a
     elif type_a is SparseJacobian:
         # OK, so, here a must be sparse, b dense
@@ -184,16 +186,18 @@ def linear_interpolation_indices_and_weights(c_in, c_out, extrapolate=None):
     # And another where, to handle our rough fix to get round the warnings
     # assocaited with going over the edge
     w_upper = np.where(not_edge, (c_out - c_lower) / delta, 1.0)
-    if extrapolate is None or extrapolate == False:
+    if not extrapolate:
         w_upper = np.where(
             (w_upper >= 0.0) & (w_upper <= 1.0),
             w_upper,
             np.nan,
         )
     else:
-        if extrapolate == True:
+        if extrapolate is True:
             w_upper = np.clip(w_upper, 0.0, 1.0)
         else:
             raise ValueError(f"Unable to handle extrapolate={extrapolate}")
     w_lower = 1.0 - w_upper
     return i_lower, i_upper, w_lower, w_upper
+
+

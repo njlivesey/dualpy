@@ -1,7 +1,7 @@
 import numpy as np
 import astropy.units as units
+import pint
 import scipy.special as special
-import scipy.constants as constants
 import scipy.interpolate as interpolate
 import scipy.integrate as integrate
 import scipy.fft as fft
@@ -9,15 +9,23 @@ from typing import Union
 import copy
 import dask
 
+from mls_scf_tools.mls_pint import ureg
+
 from .jacobians import (
-    BaseJacobian,
     DenseJacobian,
     DiagonalJacobian,
     SeedJacobian,
     SparseJacobian,
 )
+from .dual_helpers import (
+    setup_dual_operation,
+    dedual,
+    to_dimensionless,
+    get_unit,
+    get_magnitude,
+    get_magnitude_and_unit,
+)
 from .duals import dlarray
-from .dual_helpers import _setup_dual_operation
 from .config import get_config
 
 __all__ = [
@@ -36,7 +44,7 @@ __all__ = [
     "voigt_profile",
 ]
 
-PossibleDual = Union[units.Quantity, dlarray]
+PossibleDual = Union[units.Quantity, pint.Quantity, np.ndarray, dlarray]
 
 
 def seed(
@@ -92,7 +100,8 @@ def seed(
     # Otherwise, kwargs is illegal
     if kwargs:
         raise ValueError("No additional arguements to seed allowed for this quantity")
-    if type(value) is dlarray:
+    # Do some error checking in the case where it's already a dual
+    if isinstance(value, dlarray):
         if not force and not reset:
             raise ValueError("Proposed seed is already a dual (set force or reset?)")
         if name in value.jacobians and not overwrite and not reset:
@@ -100,6 +109,7 @@ def seed(
                 f"Proposed seed already has a jacobian named '{name}'"
                 + " (set overwrite as well as force?)"
             )
+    # If we're good to go, then act accordingly
     if not isinstance(value, dlarray):
         out = dlarray(value)
     else:
@@ -110,10 +120,10 @@ def seed(
     # Create the Jacobian as diaongal initially
     jacobian = SeedJacobian(
         np.ones(out.shape),
-        dependent_unit=value.unit,
-        independent_unit=value.unit,
-        dependent_shape=value.shape,
-        independent_shape=value.shape,
+        dependent_unit=out._dependent_unit,
+        independent_unit=out._dependent_unit,
+        dependent_shape=out.shape,
+        independent_shape=out.shape,
     )
     # Possibly cast it to other forms
     if initial_type == "seed":
@@ -168,7 +178,7 @@ def delete_jacobians(a, *names, wildcard=None, remain_dual=False, **kwargs):
         result.delete_jacobians(*names, wildcard=wildcard)
         # Now possibly demote back to non-dual array if merited and desired
         if not result.jacobians and not remain_dual:
-            result = units.Quantity(result)
+            result = result.variable
         return result
     else:
         # OK, this isn't a dual, return the input unaffected
@@ -178,7 +188,7 @@ def delete_jacobians(a, *names, wildcard=None, remain_dual=False, **kwargs):
 def solve_quadratic(a, b, c, sign=1):
     """Solve quadratic equation ax^2+bx+c=0 returning jacobians"""
     # Use Muller's equation for stability when a=0
-    a_, b_, c_, aj, bj, cj, out = _setup_dual_operation(a, b, c)
+    a_, b_, c_, aj, bj, cj, out = setup_dual_operation(a, b, c)
     d_ = np.sqrt(b_**2 - 4 * a_ * c_)
     x_ = -2 * c_ / (b_ + sign * d_)
     anyJ = aj or bj or cj
@@ -210,12 +220,8 @@ def solve_quadratic(a, b, c, sign=1):
 # cos, etc. this leapfrongs straight to scipy.special, for now.
 # That may give us problems down the road.
 def wofz(z):
-    z_ = units.Quantity(z)
-    if z_.unit != units.dimensionless_unscaled:
-        raise units.UnitsError(
-            "Can only apply wofz function to dimensionless quantities"
-        )
-    out_ = special.wofz(z_.value) << units.dimensionless_unscaled
+    z_ = to_dimensionless(dedual(z))
+    out_ = special.wofz(z_)
     if isinstance(z, dlarray):
         out = dlarray(out_)
     else:
@@ -223,17 +229,15 @@ def wofz(z):
     # The derivative actually comes out of the definition of the
     # Fadeeva function pretty easily
     if hasattr(z, "jacobians"):
-        c = 2 * complex(0, 1) / np.sqrt(constants.pi)
+        c = 2 * complex(0, 1) / np.sqrt(np.pi)
         out._chain_rule(z, c - 2 * z_ * out_)
     return out
 
 
 def voigt_profile(x, sigma, gamma):
     i = complex(0, 1)
-    z = ((x + gamma * i) / (sigma * np.sqrt(2))).to(units.dimensionless_unscaled)
-    outZ = wofz(z) / (sigma * np.sqrt(2 * constants.pi))
-    out = np.real(outZ)
-    return out
+    z = (x + gamma * i) / (sigma * np.sqrt(2))
+    return np.real(wofz(z)) / (sigma * np.sqrt(2 * np.pi))
 
 
 def has_jacobians(a):
@@ -390,7 +394,7 @@ def multi_newton_raphson(
     # Define some prefixes we'll use to track Jacobians
     j_name_x = "_mnr_x"
     # Take off any input jacobians.
-    x = units.Quantity(x0)
+    x = delete_jacobians(x0)
     # Note if there are jacobians on the target, and take them off in any case
     y_has_jacobians = has_jacobians(y)
     if y is not None:
@@ -420,13 +424,10 @@ def multi_newton_raphson(
         if dx_tolerance is not None:
             finish = finish or np.all(abs(delta_x) < dx_tolerance)
             reason = "dx"
-        x = units.Quantity(x) - delta_x
+        x = x.variable - delta_x
         i += 1
     if reason == "":
         reason = "max_iter"
-
-    # NOTE TO SELF.  Once we're happy that get_jacobians_for_function_inverse works, we
-    # should replace the code below to a call to that.
 
     # OK, we're done iterating.  Now we have to think about any Jacobians on the output.
     # This is acutally both more and less complicated than it seems.  We're after dx/dt
@@ -490,9 +491,11 @@ def interp1d(
     """A dual/units.Quantity wrapper for scipy.interpoalte.interp1d"""
     if has_jacobians(x):
         raise ValueError("dualpy.interp1d cannot (yet) handle Jacobians for x-old")
+    x_magnitude_dedualed, x_unit = get_magnitude_and_unit(dedual(x))
+    y_magnitude_dedualed, y_unit = get_magnitude_and_unit(dedual(y))
     y_interpolator = interpolate.interp1d(
-        x,
-        y,
+        x_magnitude_dedualed,
+        y_magnitude_dedualed,
         kind=kind,
         axis=axis,
         copy=copy,
@@ -505,7 +508,7 @@ def interp1d(
         for name, jacobian in y.jacobians.items():
             jacobian = DenseJacobian(jacobian)
             j_interpolators[name] = interpolate.interp1d(
-                x,
+                x_magnitude_dedualed,
                 jacobian.data,
                 kind=kind,
                 axis=jacobian._get_jaxis(axis),
@@ -518,15 +521,15 @@ def interp1d(
     # Result - interpolator function
     def result(x_new):
         """Interpolator from dualpy.interp1d"""
-        x_new_np = x_new.to(x.unit).value
+        x_new_magnitude_dedualed = get_magnitude(x_new.to(x_unit))
         if has_jacobians(x_new):
             raise ValueError("dualpy.interp1d cannot (yet?) handle Jacobians on x-new")
-        y_new = y_interpolator(x_new_np) << y.unit
+        y_new = y_interpolator(x_new_magnitude_dedualed) * y_unit
         if has_jacobians(y):
             y_new = dlarray(y_new)
             for name, j_interpolator in j_interpolators.items():
                 j_original = y.jacobians[name]
-                new_data = j_interpolator(x_new_np)
+                new_data = j_interpolator(x_new_magnitude_dedualed)
                 y_new.jacobians[name] = DenseJacobian(
                     data=new_data,
                     template=j_original,
@@ -540,7 +543,8 @@ def interp1d(
 
 def rfft(x, axis=-1):
     """Compute the 1-D discrete Fourier Transform for real input (includes duals)"""
-    result = fft.rfft(np.array(x), axis=axis) << x.unit
+    x_magnitude, x_unit = get_magnitude_and_unit(dedual(x))
+    result = fft.rfft(x_magnitude, axis=axis) * x_unit
     if has_jacobians(x):
         # Preparet the result
         result = dlarray(result)
@@ -606,7 +610,8 @@ def rfft(x, axis=-1):
 
 def irfft(x, axis=-1):
     """Compute 1-D discrete inverse Fourier Transform giving real result (with duals)"""
-    result = fft.irfft(np.array(x), axis=axis) << x.unit
+    x_magnitude, x_unit = get_magnitude_and_unit(x)
+    result = fft.irfft(x_magnitude, axis=axis) * x_unit
     if has_jacobians(x):
         # Preparet the result
         result = dlarray(result)
@@ -694,33 +699,35 @@ class CubicSplineLinearJacobians:
         true_spline=False,
     ):
         """Setup a dual/unit aware CubicSpline interpolator"""
-        self.x_unit = x.unit
-        self.y_unit = y.unit
-        self.x_min = np.min(units.Quantity(x))
-        self.x_max = np.max(units.Quantity(x))
+        x_ = dedual(x)
+        y_ = dedual(y)
+        x_magnitude, self.x_unit = get_magnitude_and_unit(x_)
+        y_magnitude, self.y_unit = get_magnitude_and_unit(y_)
+        self.x_min = np.min(x_)
+        self.x_max = np.max(x_)
         self.axis = axis
         self.y_interpolator = interpolate.CubicSpline(
-            x.value,
-            y.value,
+            x_magnitude,
+            y_magnitude,
             axis=axis,
             bc_type=bc_type,
             extrapolate=extrapolate,
         )
-        if not true_spline and bc_type=="periodic":
-            extrapolate="periodic"
+        if not true_spline and bc_type == "periodic":
+            extrapolate = "periodic"
         # Deal with any input Jacobians on x
         if has_jacobians(x):
             self.jx_interpolators = dict()
             for name, jacobian in x.jacobians.items():
                 if not true_spline:
                     self.jx_interpolators[name] = jacobian.linear_interpolator(
-                        x.value,
+                        x_magnitude,
                         axis,
                         extrapolate=extrapolate,
                     )
                 else:
                     self.jx_interpolators[name] = jacobian.spline_interpolator(
-                        x.value,
+                        x_magnitude,
                         axis,
                         bc_type=bc_type,
                         extrapolate=extrapolate,
@@ -733,13 +740,13 @@ class CubicSplineLinearJacobians:
             for name, jacobian in y.jacobians.items():
                 if not true_spline:
                     self.jy_interpolators[name] = jacobian.linear_interpolator(
-                        x.value,
+                        x_magnitude,
                         axis,
                         extrapolate=extrapolate,
                     )
                 else:
                     self.jy_interpolators[name] = jacobian.spline_interpolator(
-                        x.value,
+                        x_magnitude,
                         axis,
                         bc_type=bc_type,
                         extrapolate=extrapolate,
@@ -753,18 +760,21 @@ class CubicSplineLinearJacobians:
         """Return a dual/unit aware spline interpolation (linear for Jacobains)"""
         # Make sure x is in the right units and bounded, then take units off
         x_out = np.clip(x.to(self.x_unit), self.x_min, self.x_max)
+        x_out_magnitude_dedualed = get_magnitude(dedual(x_out))
         # Get the interpolated value of y, make it a dual
-        y = dlarray(self.y_interpolator(x_out.value) << self.y_unit)
+        y = dlarray(self.y_interpolator(x_out_magnitude_dedualed) * self.y_unit)
         # Now deal with any jacobians with regard to the original y
         for name, jy_interpolator in self.jy_interpolators.items():
-            y.jacobians[name] = jy_interpolator(x_out.value)
+            y.jacobians[name] = jy_interpolator(x_out_magnitude_dedualed)
         # Now work out if we're going to need dydx, construct it if so.
         if has_jacobians(x_out) or self.jx_interpolators:
             # Construct the interpolator if we're going to need it
             if self.dydx_interpolator is None:
                 self.dydx_interpolator = self.y_interpolator.derivative()
             # Invoke it for this x
-            dydx = self.dydx_interpolator(x_out.value) << (self.y_unit / self.x_unit)
+            dydx = self.dydx_interpolator(x_out_magnitude_dedualed) * (
+                self.y_unit / self.x_unit
+            )
         # Now deal with any jacobians with regard to the output x, first identify a
         # padded out shape for x_new that includes dummys for the other dimensions in y.
         if has_jacobians(x_out) or self.jx_interpolators:
@@ -776,7 +786,7 @@ class CubicSplineLinearJacobians:
             y._chain_rule(x_out_reshaped, dydx, add=True)
         # Now deal with any Jacobians with regard to the input x
         for name, jx_interpolator in self.jx_interpolators.items():
-            jx_interpolated = jx_interpolator(x_out.value)
+            jx_interpolated = jx_interpolator(x_out_magnitude_dedualed)
             jx_interpolated = jx_interpolated.reshape(
                 padded_x_out_shape, order="K", parent_flags=y.flags
             )
@@ -788,7 +798,7 @@ class CubicSplineLinearJacobians:
                 y.jacobians[name] = -jy_contribution
         # Now, if the result doesn't have Jacobians make it not a dual
         if not has_jacobians(y):
-            y = units.Quantity(y)
+            y = dedual(y)
         return y
 
 
@@ -823,7 +833,7 @@ def simpson(y, x=None, dx=1.0, axis=-1, even="avg"):
 
     """
     # Prepare all the operands
-    y_, x_, dx_, yj, xj, dxj, out = _setup_dual_operation(y, x, dx)
+    y_, x_, dx_, yj, xj, dxj, out = setup_dual_operation(y, x, dx)
 
     if has_jacobians(x):
         raise ValueError("Cannot (yet?) have Jacobians on the integration x term")
