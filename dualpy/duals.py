@@ -79,7 +79,7 @@ class dlarray(DualOperatorsMixin):
     def __getnewargs__(self):
         """Needed to correctly pickle/restore duals into right subclass"""
         return (self.variable,)
-    
+
     # --------------------------------------------------- Fundamental properties
     # Avoid using attributes here, particularly as we might one day support in-place
     # reshaping (x.shape = new_shape).  For now that's disabled as it needs work
@@ -409,7 +409,7 @@ class dlarray(DualOperatorsMixin):
         if out is not None:
             raise NotImplementedError("Unable to handle cases with out supplied")
         a_, b_, aj, bj, out = setup_dual_operation(a, b, out=out)
-        r_ = 1.0/b_
+        r_ = 1.0 / b_
         out_ = a_ * r_
         out = dlarray(out_)
         # We're going to do the quotient rule as (1/b)a' - (a/(b^2))b'
@@ -564,10 +564,10 @@ class dlarray(DualOperatorsMixin):
     def T(self):
         return self.transpose()
 
-    # A note on the trigonometric cases.  Here we need to force to radiances to make
-    # sure our jacobians end up correct.  Use a built in method that is simply a
-    # passthrough for the numpy array case, and more intelligent for astropy.units and
-    # pint.
+    # A note on the trigonometric cases.  Here we need to force to radiances to
+    # make sure our jacobians end up correct.  Use a built in method that is
+    # simply a passthrough for the numpy array case, and more intelligent for
+    # astropy.units and pint.
     def _to_radians(self):
         return self
 
