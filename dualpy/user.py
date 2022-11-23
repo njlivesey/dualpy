@@ -8,6 +8,7 @@ import scipy.fft as fft
 from typing import Union
 import copy
 import dask
+import warnings
 
 from mls_scf_tools.mls_pint import ureg
 
@@ -30,6 +31,7 @@ from .config import get_config
 
 __all__ = [
     "CubicSplineLinearJacobians",
+    "DroppedJacobianWarning",
     "PossibleDual",
     "delete_jacobians",
     "get_jacobians_for_function_inverse",
@@ -45,6 +47,10 @@ __all__ = [
 ]
 
 PossibleDual = Union[units.Quantity, pint.Quantity, np.ndarray, dlarray]
+
+
+class DroppedJacobianWarning(Warning):
+    pass
 
 
 def seed(
