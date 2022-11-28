@@ -251,7 +251,7 @@ class DualOperatorsMixin:
         return self._binary_op(other, self.multiply, reflexive=True)
 
     def __rpow__(self, other):
-        return self._binary_op(other, self.pow, reflexive=True)
+        return self._binary_op(other, self.power, reflexive=True)
 
     def __rtruediv__(self, other):
         return self._binary_op(other, self.true_divide, reflexive=True)

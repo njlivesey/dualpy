@@ -205,15 +205,15 @@ def solve_quadratic(a, b, c, sign=1):
     if anyJ:
         # Precompute some terms
         scale = -1.0 / (2 * a_ * x_ + b_)
-        if len(aj):
+        if aj:
             x_2 = x_**2
         for name, jacobian in aj.items():
             x.jacobians[name] = jacobian.premul_diag(x_2 * scale)
         for name, jacobian in bj.items():
             if name in x.jacobians:
-                x.jacobians[name] += jacobian.premul_diag(x * scale)
+                x.jacobians[name] += jacobian.premul_diag(x_ * scale)
             else:
-                x.jacobians[name] = jacobian.premul_diag(x * scale)
+                x.jacobians[name] = jacobian.premul_diag(x_ * scale)
         for name, jacobian in cj.items():
             if name in x.jacobians:
                 x.jacobians[name] += jacobian.premul_diag(scale)

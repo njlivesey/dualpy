@@ -471,9 +471,7 @@ class dlarray(DualOperatorsMixin):
             out_ = a**b_
             out = dlarray(out_)
             for name, jacobian in bj.items():
-                out.jacobians[name] = jacobian.premul_diag(out_ * np.log(a_)).to(
-                    out._dependent_unit
-                )
+                out.jacobians[name] = jacobian.premul_diag(out_ * np.log(a_))
         return out
 
     @staticmethod
@@ -894,7 +892,7 @@ def broadcast_arrays(*args, subok=False):
 
 @implements(np.broadcast_to)
 def broadcast_to(array, shape, subok=False):
-    result_ = np.broadcast_to(array.value, shape, subok=subok)
+    result_ = np.broadcast_to(array.variable, shape, subok=subok)
     result = dlarray(result_)
     result.jacobians = broadcast_jacobians(array.jacobians, shape)
     return result
