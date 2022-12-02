@@ -3,10 +3,11 @@
 import numpy as np
 import pint
 import copy
+import warnings
 
 from .duals import dlarray
 from .unitless import Unitless
-from mls_scf_tools.mls_pint import ureg
+
 
 class dlarray_pint(dlarray):
     """A subclass of dlarray that wraps a pint variable.
@@ -16,9 +17,26 @@ class dlarray_pint(dlarray):
     """
 
     # --------------------------------------------- Overload attributes
-    _rad = ureg.rad
-    _per_rad = ureg.rad ** (-1)
-    _dimensionless = ureg.dimensionless
+    @property
+    def _rad(self):
+        return self.variable.units._REGISTRY.rad
+
+    @property
+    def _per_rad(self):
+        return self.variable.units._REGISTRY.rad ** (-1)
+
+    @property
+    def _dimensionless(self):
+        return self.variable.units._REGISTRY.dimensionless
+
+    # --------------------------------------------- Some customization
+    def __array__(self, dtype=None):
+        # Not 100% sure that this filterwarning is warranted here, but
+        # it raises warnings (e.g., in matplotlib) when regular pint
+        # does not, so deciding to mimic that approach.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=pint.UnitStrippedWarning)
+            return np.array(self.variable, dtype)
 
     # --------------------------------------------- Extra properties
     @property
@@ -48,7 +66,7 @@ class dlarray_pint(dlarray):
         if self.hasJ:
             # This will probably (hopefully!) fail if we're using one of
             # those function units things (such as dB).
-            scale = (1.0*self.units).to(units, **kwargs) / self.units
+            scale = (1.0 * self.units).to(units, **kwargs) / self.units
             out._chain_rule(self, scale)
         return out
 
@@ -61,7 +79,7 @@ class dlarray_pint(dlarray):
         return result
 
     def _to_radians(self):
-        return self.to(ureg.rad)
+        return self.to(self._rad)
 
     @staticmethod
     def _force_unit(quantity, units):
@@ -79,6 +97,7 @@ class dlarray_pint(dlarray):
             return np.array(quantity) * units
         except AttributeError:
             return quantity
+
     # ------------------------------------------ Some dunders
     # def __mul__(self, other):
     #     # Needed for dual * unit case
