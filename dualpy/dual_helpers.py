@@ -37,6 +37,8 @@ def dedual(x, units_ok=False):
     """
     from .duals import dlarray
 
+    if hasattr(x, "_dedual"):
+        return x._dedual()
     if isinstance(x, dlarray):
         return x.variable
     elif isinstance(x, np.ndarray) or hasattr(x, "__array__"):
@@ -88,8 +90,8 @@ def setup_dual_operation(*args, out=None, broadcast=True):
     # Get the variables for all the arguments, be they duals or a non-dual
     # duck-array, strip the units off for now.
     arrays_ = [dedual(x, units_ok=True) for x in args]
-    any_units = any(isunit(x) for x in arrays_)
-    if broadcast and not any_units:
+    any_are_units = any(isunit(x) for x in arrays_)
+    if broadcast and not any_are_units:
         # Down the road, pint will give us problems here.
         arrays_ = mp_broadcast_arrays(*arrays_, subok=True)
     # Now go through the jacobians
@@ -178,9 +180,13 @@ def get_unit_conversion_scale(old_unit, new_unit):
     """Get a scale factor for converting from old_unit to new_unit"""
     if isinstance(old_unit, units.UnitBase):
         return old_unit._to(new_unit) * (new_unit / old_unit)
-    elif isinstance(old_unit, pint.Unit):
+    elif isinstance(old_unit, pint.Unit) or isinstance(old_unit, pint.Quantity):
         assert new_unit is not None
-        return (1.0 * old_unit).to(new_unit) / old_unit
+        return (
+            ((1.0 * old_unit).to(new_unit) / old_unit)
+            .to(old_unit._REGISTRY.dimensionless)
+            .magnitude
+        )
     elif isinstance(old_unit, Unitless):
         return 1
     else:

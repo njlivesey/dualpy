@@ -199,5 +199,3 @@ def linear_interpolation_indices_and_weights(c_in, c_out, extrapolate=None):
             raise ValueError(f"Unable to handle extrapolate={extrapolate}")
     w_lower = 1.0 - w_upper
     return i_lower, i_upper, w_lower, w_upper
-
-

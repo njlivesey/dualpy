@@ -1,6 +1,7 @@
 """The base class for the jacobians"""
 import copy
 import numpy as np
+import warnings
 
 from .dual_helpers import (
     get_unit_conversion_scale,
@@ -12,6 +13,7 @@ from .jacobian_helpers import (
     prepare_jacobians_for_binary_op,
 )
 
+from .unitless import Unitless
 
 __all__ = ["BaseJacobian"]
 
@@ -197,6 +199,7 @@ class BaseJacobian(object):
         else:
             dependent_unit = self.dependent_unit
             diag_ = diag
+        # OK, we've worked out the units, now attend to shape
         try:
             dependent_shape = broadcasted_shape(self.dependent_shape, diag_.shape)
         except AttributeError:
@@ -344,3 +347,19 @@ class BaseJacobian(object):
             order="C",
             parent_flags=parent_flags,
         )
+
+    # Potentially temporary guard to get round some issues with pint.
+    @property
+    def dependent_unit(self):
+        return self._dependent_unit
+
+    @dependent_unit.setter
+    def dependent_unit(self, value):
+        import pint
+
+        if isinstance(value, pint.Quantity):
+            warnings.warn("Got non-unit for Unit")
+            if value.magnitude != 1.0:
+                raise ValueError("Cannot handle non-one unit")
+            value = value.units
+        self._dependent_unit = value

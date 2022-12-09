@@ -18,13 +18,19 @@ class Unitless:
     def __rmul__(self, other):
         return other
 
+    def __imul__(self, other):
+        return other
+
     def __truediv__(self, other):
         try:
-            return 1.0 / other
+            return other ** (-1)
         except TypeError:
             return self
 
     def __rtruediv__(self, other):
         return other
+
+    def __itruediv__(self, other):
+        return other ** (-1)
 
     # Will probably need more

@@ -348,7 +348,6 @@ class dlarray(DualOperatorsMixin):
             if name in out.jacobians:
                 out.jacobians[name] += jacobian
             else:
-                # print(f"OK, inside dlarray.add {jacobian.dependent_unit}, {out._dependent_unit}")
                 out.jacobians[name] = jacobian.to(out._dependent_unit)
         return out
 
