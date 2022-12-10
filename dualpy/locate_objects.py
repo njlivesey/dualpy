@@ -115,6 +115,9 @@ class LocatedObjectIterator:
             f"contents={self._tree}"
         )
 
+    def __len__(self):
+        return self._len
+
     def _object_is_target(self, obj):
         """Returns true if the objects supplied is a target"""
         return any([isinstance(obj, this_type) for this_type in self.targets])
@@ -186,7 +189,7 @@ class LocatedObjectIterator:
         for name, value in inspect.getmembers(obj):
             # Skip dunders, callables, and properties
             if (
-                name.startswith("__")
+                (name.startswith("__") and name.endswidth("__"))
                 or callable(value)
                 or isinstance(getattr(type(obj), name, None), property)
             ):
@@ -230,9 +233,6 @@ class LocatedObjectIterator:
             for child in branch:
                 elements = child.get_corresponding_items(*sources)
                 yield from self._iterate_worker(child.contents, *elements)
-
-    def __len__(self):
-        return self._len
 
     def __call__(self, *sources):
         """Iterate over all the matching elements within a collection of sources
