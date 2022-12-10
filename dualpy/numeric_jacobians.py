@@ -6,11 +6,7 @@ below.
 
 """
 
-from dataclasses import dataclass
-from typing import Any, Union
-import collections
 import copy
-import inspect
 import logging
 import numpy as np
 from tqdm import tqdm
@@ -36,14 +32,12 @@ def compute_numeric_jacobians(
 ):
     """Compute Jacobians by perturbation for comparison to analytical
 
-    Take a function and set of arguments, run the function once with
-    analytical Jacobians, then perturb each seeded element in turn
-    to compute equivalent numeric Jacobians.  This is used for
-    testing the analytical Jacobian calcualtions.  If "func" cannot
-    be called for non-duals (e.g., voigt_profile exists for ndarray
-    and dlarray, but not units.Quantity) then the optional
-    plain_func argument provides a non-dual compatible routine
-    (e.g., a wrapper that promotes one or more arguments to
+    Take a function and set of arguments, run the function once with analytical
+    Jacobians, then perturb each seeded element in turn to compute equivalent numeric
+    Jacobians.  This is used for testing the analytical Jacobian calcualtions.  If
+    "func" cannot be called for non-duals (e.g., voigt_profile exists for ndarray and
+    dlarray, but not units.Quantity) then the optional plain_func argument provides a
+    non-dual compatible routine (e.g., a wrapper that promotes one or more arguments to
     dual to then invoke func on).
 
     Arguments
@@ -56,14 +50,14 @@ def compute_numeric_jacobians(
     **kwargs - dict
         Any keyword arguments to func
     plain_func: callable, optional
-        A version of func that works for non-dual arguments if func is not suitable
-        for that
+        A version of func that works for non-dual arguments if func is not suitable for
+        that
 
     Returns
     -------
     analytical_result, numeric_result: duals
-        The result of calling func with args/kwargs with Jacobians computed
-        analytically and numericly, respecively.
+        The result of calling func with args/kwargs with Jacobians computed analytically
+        and numericly, respecively.
 
     Raises
     ------
