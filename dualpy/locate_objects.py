@@ -1,7 +1,6 @@
-"""Searches an object for instances of a given type.
+"""Enables recursive iteration through object to find particular types.
 
-
-
+Can iterate in parallel over multiple congruent types.
 """
 
 import collections
@@ -29,15 +28,15 @@ class LOTreeNode:
     Attributes:
     -----------
 
-    attribute_name: str, optional
-        If set, gives the name under which this node is to be found as an attribute of
-        its parent.
-    key: any, optional
-        If set, gives a key under which this node is to be found as an item of its
-        parent
-    contents : str or NJTreeNode
-        Contains the node that this child represents, or a str containing one of the
-        sought-after types if it is one of those.
+    targets : list[type]
+        Types that are sought
+
+    terminal_attributes : list[str]
+        Attributes not to be descended into
+
+    terminal_types : list[type]
+        The types not to be descended into (to avoid recursion)
+
     """
 
     attribute_name: str = None
@@ -73,6 +72,11 @@ class LocatedObjectIterator:
         targets : list[type, str]
             The objects to specifically identify within the object
 
+        terminal_attributes : list[str]
+            Attributes not to be descended into
+
+        terminal_types : list[type]
+            The types not to be descended into (to avoid recursion)
         """
         # Store the targets information
         if isinstance(targets, type):
@@ -136,7 +140,7 @@ class LocatedObjectIterator:
         Returns:
         --------
 
-        result : list[NJTreeNode]
+        result : list[SOTreeNode]
             List that constitutes the root of the recursed tree to find duals.  Irrelevant
             brances/leaves are dropped?
         """
