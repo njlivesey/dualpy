@@ -15,9 +15,11 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["LocatedObjectIterator"]
 
+_default_terminal_types = [np.ndarray, float]
+
 
 @dataclass
-class SOTreeNode:
+class LOTreeNode:
     """Describing inputs/outputs to functions in numeric Jacobian computation
 
     This is one node in a tree that decomoses an object to describe where dlarray
@@ -40,7 +42,7 @@ class SOTreeNode:
 
     attribute_name: str = None
     key: Any = None
-    contents: Union[type, "SOTreeNode"] = None
+    contents: Union[type, "LOTreeNode"] = None
 
     def get_corresponding_items(self, *sources):
         """Get from the source(s) the item that this tree node describes"""
@@ -84,7 +86,7 @@ class LocatedObjectIterator:
         self.terminal_attributes = terminal_attributes
         # Store the terminal types information
         if terminal_types is None:
-            terminal_types = [np.ndarray]
+            terminal_types = _default_terminal_types
         if isinstance(terminal_types, type):
             terminal_types = [terminal_types]
         self.terminal_types = terminal_types
@@ -168,7 +170,7 @@ class LocatedObjectIterator:
                 )
                 branch = self._search_object(item, depth=depth + 1)
                 if branch:
-                    branches.append(SOTreeNode(key=key, contents=branch))
+                    branches.append(LOTreeNode(key=key, contents=branch))
             return branches
         # Now consider dicts
         if isinstance(obj, collections.abc.Mapping):
@@ -177,7 +179,7 @@ class LocatedObjectIterator:
                 logger.debug(prefix + f"Checking out {key}, which is a {type(item)}")
                 branch = self._search_object(item, depth=depth + 1)
                 if branch:
-                    branches.append(SOTreeNode(key=key, contents=branch))
+                    branches.append(LOTreeNode(key=key, contents=branch))
             return branches
         # OK, it's not a target or a collection (or to be ignored), so instead we'll go
         # through its attributes and make nodes out of them.
@@ -198,7 +200,7 @@ class LocatedObjectIterator:
             branch = self._search_object(value, depth=depth + 1)
             if branch:
                 logger.debug(prefix + f"Appending {name}, {branch}")
-                branches.append(SOTreeNode(attribute_name=name, contents=branch))
+                branches.append(LOTreeNode(attribute_name=name, contents=branch))
         logger.debug(prefix + f"Returning {branches}")
         return branches
 

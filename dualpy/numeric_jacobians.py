@@ -114,7 +114,7 @@ def compute_numeric_jacobians(
     # them if needed.  We'll create a copy of the argument list with all seeds removed
     all_deseeded_args = []
     # For each argument, we'll keep information about any duals
-    all_arg_trees = []
+    all_arg_iterators = []
     # And any seeds
     all_arg_seed_names = []
     # We'll keep track of the names of all the seeds to complain about duplicates
@@ -123,10 +123,10 @@ def compute_numeric_jacobians(
     n_elements = 0
     for arg in all_args:
         # Find all the duals in this argument
-        dual_tree = LocatedObjectIterator(arg, targets=dlarray)
+        dual_iterator = LocatedObjectIterator(arg, targets=dlarray)
         # And note this information
-        all_arg_trees.append(dual_tree)
-        if not dual_tree:
+        all_arg_iterators.append(dual_iterator)
+        if not dual_iterator:
             # If there are none, simply append this argument to the unseeded argument
             # list unmodified
             all_deseeded_args.append(arg)
@@ -135,7 +135,7 @@ def compute_numeric_jacobians(
         else:
             # Otherwise this argument contains duals, see if any contain SeedJacobians.
             any_seed = False
-            for dual_arg in dual_tree(arg):
+            for dual_arg in dual_iterator(arg):
                 for jacobian in dual_arg.jacobians.values():
                     if type(jacobian) in included_jacobian_types:
                         any_seed = True
@@ -148,7 +148,7 @@ def compute_numeric_jacobians(
             else:
                 # Go through and note the seeds in this argument
                 these_seeds = []
-                for dual_arg in dual_tree(arg):
+                for dual_arg in dual_iterator(arg):
                     for seed_name, jacobian in dual_arg.jacobians.items():
                         if type(jacobian) in included_jacobian_types:
                             # This is a seed, check it's not a duplicate
@@ -171,7 +171,7 @@ def compute_numeric_jacobians(
                 # OK, we're going to need a de-seeded copy of this argument, so make a
                 # deep copy of it, then go through and delete all the seeds
                 arg_deseeded = copy.deepcopy(arg)
-                for dual_arg in dual_tree(arg_deseeded):
+                for dual_arg in dual_iterator(arg_deseeded):
                     for seed_name in these_seeds:
                         if seed_name in dual_arg.jacobians:
                             del dual_arg.jacobians[seed_name]
@@ -184,7 +184,7 @@ def compute_numeric_jacobians(
     # Call the function first and get the analytical Jacobians.
     result_a = func(*args, **kwargs)
     # Find the duals in the result
-    result_tree = LocatedObjectIterator(result_a, targets=dlarray)
+    result_iterator = LocatedObjectIterator(result_a, targets=dlarray)
     # Make a deep copy of the result for storing the numeric Jacobians
     result_n = copy.deepcopy(result_a)
     # And another one with all the Jacobians of any kind removed, to use as the
@@ -192,7 +192,7 @@ def compute_numeric_jacobians(
     result_0 = copy.deepcopy(result_a)
     # Set any Jacobians corresponding to seeds in the output_n to dense zero.  Delete
     # all the jacobians in output_0
-    for output_n, output_0 in result_tree(result_n, result_0):
+    for output_n, output_0 in result_iterator(result_n, result_0):
         for key in all_seed_names:
             if key in output_n.jacobians:
                 output_n.jacobians[key] = DenseJacobian(
@@ -214,25 +214,18 @@ def compute_numeric_jacobians(
     # ----------------------------------------------- Perturb each argument in turn
     #
     with tqdm(total=n_elements) as bar:
-        for (arg, arg_deseeded, arg_tree, seed_names) in zip(
+        for (arg, arg_deseeded, arg_iterator, seed_names) in zip(
             all_args,
             all_deseeded_args,
-            all_arg_trees,
+            all_arg_iterators,
             all_arg_seed_names,
         ):
             # Skip any arguments that do not contain duals
-            if not arg_tree:
+            if not arg_iterator:
                 continue
-            # Check out the iterations - keep needing to debug
-            # for seed_name in seed_names:
-            #     print(seed_name)
-            # for original_dual, deseeded_dual in iterate_nj_tree(
-            #         arg_tree, sources=(arg, arg_deseeded)):
-            #     print(original_dual.shape, deseeded_dual.shape)
-
             # Now iterate over all the duals in this argument
             for seed_name, (original_dual, deseeded_dual) in zip(
-                seed_names, arg_tree(arg, arg_deseeded)
+                seed_names, arg_iterator(arg, arg_deseeded)
             ):
                 seed_jacobian = original_dual.jacobians[seed_name]
                 seed_jacobian_values = seed_jacobian.extract_diagonal().ravel()
@@ -258,7 +251,7 @@ def compute_numeric_jacobians(
                     # container for the numerical Jacobians, and the perturbed and
                     # unperturbed result and insert the results for any Jacobians with
                     # respect to this seed.
-                    for output_n, output_p, output_0 in result_tree(
+                    for output_n, output_p, output_0 in result_iterator(
                         result_n, result_p, result_0
                     ):
                         if seed_name in output_n.jacobians:
