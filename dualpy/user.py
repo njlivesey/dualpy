@@ -22,7 +22,6 @@ from .dual_helpers import (
     setup_dual_operation,
     dedual,
     to_dimensionless,
-    get_unit,
     get_magnitude,
     get_magnitude_and_unit,
 )
@@ -30,7 +29,7 @@ from .duals import dlarray
 from .config import get_config
 
 __all__ = [
-    "CubicSplineLinearJacobians",
+    "CubicSplineWithJacobians",
     "DroppedJacobianWarning",
     "PossibleDual",
     "delete_jacobians",
@@ -62,11 +61,10 @@ def seed(
     initial_type="seed",
     **kwargs,
 ):
-    # In some senses, this is the most important routine in the package,
-    # as it's probably the only one most users will knowingly invoke on a
-    # regular basis.  It takes an astropy.Quantity and adds a diagonal
-    # unit jacobian for it.  From that point on, anything computed from
-    # the resulting dual will track Jacobians appropriately.
+    # In some senses, this is the most important routine in the package, as it's
+    # probably the only one most users will knowingly invoke on a regular basis.  It
+    # takes an array-like quantity unit jacobian for it.  From that point on, anything
+    # computed from the resulting dual will track Jacobians appropriately.
     """Return a dual for a quantity populated, with a unitary Jacobian matrix
 
     Parameters
@@ -547,10 +545,10 @@ def interp1d(
     return result
 
 
-def rfft(x, axis=-1):
+def rfft(x, axis=-1, workers=None):
     """Compute the 1-D discrete Fourier Transform for real input (includes duals)"""
     x_magnitude, x_unit = get_magnitude_and_unit(dedual(x))
-    result = fft.rfft(x_magnitude, axis=axis) * x_unit
+    result = fft.rfft(x_magnitude, axis=axis, workers=workers) * x_unit
     if has_jacobians(x):
         # Preparet the result
         result = dlarray(result)
@@ -575,18 +573,11 @@ def rfft(x, axis=-1):
             c = -2j * np.pi / n_in
             D = np.exp(c * p * q)
         # Now loop over the Jacobians and deal with them.
-        use_dask = "rfft" in get_config().dask
-        if use_dask:
-            rfft_routine = dask.delayed(fft.rfft)
-            make_dense_jacobian = dask.delayed(DenseJacobian)
-        else:
-            rfft_routine = fft.rfft
-            make_dense_jacobian = DenseJacobian
         for name, jacobian in x.jacobians.items():
             if isinstance(jacobian, DenseJacobian):
                 jaxis = jacobian._get_jaxis(axis)
-                jfft = rfft_routine(jacobian.data, axis=jaxis)
-                result.jacobians[name] = make_dense_jacobian(
+                jfft = fft.rfft(jacobian.data, axis=jaxis, workers=workers)
+                result.jacobians[name] = DenseJacobian(
                     jfft,
                     template=jacobian,
                     dependent_shape=result.shape,
@@ -597,27 +588,18 @@ def rfft(x, axis=-1):
                 jaxis = jacobian._get_jaxis(axis)
                 # Do it the matrix multiply way (note that the diagonal case invokes the
                 # sparse case under the hood).
-                if use_dask:
-                    result.jacobians[name] = dask.delayed(jacobian.rtensordot)(
-                        D,
-                        axes=[[1], [jaxis]],
-                        dependent_unit=result.unit,
-                    )
-                else:
-                    result.jacobians[name] = jacobian.rtensordot(
-                        D,
-                        axes=[[1], [jaxis]],
-                        dependent_unit=result.unit,
-                    )
-        if use_dask:
-            result.jacobians = dask.compute(result.jacobians)[0]
+                result.jacobians[name] = jacobian.rtensordot(
+                    D,
+                    axes=[[1], [jaxis]],
+                    dependent_unit=result.unit,
+                )
     return result
 
 
-def irfft(x, axis=-1):
+def irfft(x, axis=-1, workers=None):
     """Compute 1-D discrete inverse Fourier Transform giving real result (with duals)"""
     x_magnitude, x_unit = get_magnitude_and_unit(x)
-    result = fft.irfft(x_magnitude, axis=axis) * x_unit
+    result = fft.irfft(x_magnitude, axis=axis, workers=workers) * x_unit
     if has_jacobians(x):
         # Preparet the result
         result = dlarray(result)
@@ -644,18 +626,11 @@ def irfft(x, axis=-1):
             D[:, 0] *= 0.5
             D[:, -1] *= 0.5
         # Now loop over the Jacobians and deal with them.
-        use_dask = "irfft" in get_config().dask
-        if use_dask:
-            irfft_routine = dask.delayed(fft.irfft)
-            make_dense_jacobian = dask.delayed(DenseJacobian)
-        else:
-            irfft_routine = fft.irfft
-            make_dense_jacobian = DenseJacobian
         for name, jacobian in x.jacobians.items():
             if isinstance(jacobian, DenseJacobian):
                 jaxis = jacobian._get_jaxis(axis)
-                jfft = irfft_routine(jacobian.data, axis=jaxis)
-                result.jacobians[name] = make_dense_jacobian(
+                jfft = fft.irfft(jacobian.data, axis=jaxis, workers=workers)
+                result.jacobians[name] = DenseJacobian(
                     jfft,
                     template=jacobian,
                     dependent_shape=result.shape,
@@ -666,24 +641,15 @@ def irfft(x, axis=-1):
                 jaxis = jacobian._get_jaxis(axis)
                 # Do it the matrix multiply way (note that the diagonal case invokes the
                 # sparse case under the hood).
-                if use_dask:
-                    result.jacobians[name] = dask.delayed(jacobian.tensordot)(
-                        D,
-                        axes=[[jaxis], [1]],
-                        dependent_unit=result.unit,
-                    )
-                else:
-                    result.jacobians[name] = jacobian.tensordot(
-                        D,
-                        axes=[[jaxis], [1]],
-                        dependent_unit=result.unit,
-                    )
-        if use_dask:
-            result.jacobians = dask.compute(result.jacobians)[0]
+                result.jacobians[name] = jacobian.tensordot(
+                    D,
+                    axes=[[jaxis], [1]],
+                    dependent_unit=result.unit,
+                )
     return result
 
 
-class CubicSplineLinearJacobians:
+class CubicSplineWithJacobians:
     """This basically wraps scipy.interpolate.CubicSpline adding units/jacobians
 
     Note that the Jacobians are computed using linear interpolation.  This retains
@@ -702,7 +668,7 @@ class CubicSplineLinearJacobians:
         axis=0,
         bc_type="not-a-knot",
         extrapolate=None,
-        true_spline=False,
+        spline_jacobians=False,
     ):
         """Setup a dual/unit aware CubicSpline interpolator"""
         x_ = dedual(x)
@@ -719,13 +685,13 @@ class CubicSplineLinearJacobians:
             bc_type=bc_type,
             extrapolate=extrapolate,
         )
-        if not true_spline and bc_type == "periodic":
+        if not spline_jacobians and bc_type == "periodic":
             extrapolate = "periodic"
         # Deal with any input Jacobians on x
         if has_jacobians(x):
             self.jx_interpolators = dict()
             for name, jacobian in x.jacobians.items():
-                if not true_spline:
+                if not spline_jacobians:
                     self.jx_interpolators[name] = jacobian.linear_interpolator(
                         x_magnitude,
                         axis,
@@ -744,7 +710,7 @@ class CubicSplineLinearJacobians:
         if has_jacobians(y):
             self.jy_interpolators = dict()
             for name, jacobian in y.jacobians.items():
-                if not true_spline:
+                if not spline_jacobians:
                     self.jy_interpolators[name] = jacobian.linear_interpolator(
                         x_magnitude,
                         axis,
