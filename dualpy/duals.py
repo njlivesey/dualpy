@@ -86,10 +86,7 @@ class dlarray(DualOperatorsMixin):
     @property
     def shape(self):
         """We want to track cases where shape is changed on the fly"""
-        try:
-            return self.variable.shape
-        except AttributeError:
-            return tuple()
+        return self.variable.shape
 
     @shape.setter
     def shape(self, value):

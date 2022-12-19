@@ -32,9 +32,7 @@ class DenseJacobian(BaseJacobian):
         super().__init__(template=template, **kwargs)
         if isinstance(data, BaseJacobian):
             if isinstance(data, DiagonalJacobian):
-                data_ = np.reshape(
-                    array_to_sparse_diagonal(data.data).toarray(), data.shape
-                )
+                data_ = np.reshape(np.diag(data.data), data.shape)
             elif isinstance(data, DenseJacobian):
                 data_ = data.data
             elif isinstance(data, SparseJacobian):
@@ -140,7 +138,7 @@ class DenseJacobian(BaseJacobian):
             diag_ = np.reshape(diag_, (diag.shape + self._dummy_independent))
             # This will fail for scalars, but that's OK scalars don't
             # need to be handled specially
-        except ValueError:
+        except (ValueError, AttributeError):
             pass
         return DenseJacobian(
             diag_ * self.data,

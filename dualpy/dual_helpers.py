@@ -101,8 +101,12 @@ def setup_dual_operation(*args, out=None, broadcast=True):
             try:
                 x_shape = x.shape
             except AttributeError:
-                x_shape = []
-            if orig.shape != x_shape and broadcast:
+                x_shape = tuple()
+            try:
+                orig_shape = orig.shape
+            except AttributeError:
+                orig_shape = tuple()
+            if orig_shape != x_shape and broadcast:
                 j = broadcast_jacobians(orig.jacobians, x_shape)
             else:
                 j = orig.jacobians

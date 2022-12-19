@@ -143,7 +143,7 @@ class SparseJacobian(BaseJacobian):
         if isinstance(data, SparseJacobian):
             data2d_ = data.data2d
         elif isinstance(data, DiagonalJacobian):
-            data2d_ = array_to_sparse_diagonal(data.data.ravel())
+            data2d_ = array_to_sparse_diagonal(data.data)
         elif isinstance(data, DenseJacobian):
             data2d_ = sparse.csc_matrix(data.data2d)
         elif type(data) is sparse.csc_matrix:
@@ -188,7 +188,7 @@ class SparseJacobian(BaseJacobian):
         # avoid things that are the cartesian product of them.  Accordingly this
         # straightforward approach is probably good enough.
         i_full = np.reshape(np.arange(self.dependent_size), self.dependent_shape)
-        i_subset = i_full[key].ravel()
+        i_subset = np.ravel(i_full[key])
         dependent_slice = (i_subset,)
         # Note, I originally tried to sidestep the null-operation for the above, but it
         # didn't work when adding np.newaxes.  Simpler just to do it all the time.
@@ -212,7 +212,7 @@ class SparseJacobian(BaseJacobian):
         i_dependent_full = np.reshape(
             np.arange(self.dependent_size), self.dependent_shape
         )
-        i_dependent_subset = i_dependent_full[key].ravel()
+        i_dependent_subset = np.ravel(i_dependent_full[key])
         # Now, the dependent index is the "rows" for the sparse Jacobian.  Transform
         # both self and value into lil sparse matrices.
         self_lil = self.data2d.tolil()
@@ -243,7 +243,7 @@ class SparseJacobian(BaseJacobian):
         # Broadcast this to the new shape
         i_old = np.broadcast_to(i_old, shape)
         # Now convert to a 1D array
-        i_old = i_old.ravel()
+        i_old = np.ravel(i_old)
         # Get a matching i_new array
         i_new = np.arange(i_old.size)
         # Now put a 1 at every [i_new,i_old] point in a sparse matrix
@@ -295,7 +295,7 @@ class SparseJacobian(BaseJacobian):
         if dependent_shape != self.dependent_shape:
             self = self.broadcast_to(dependent_shape)
             diag_ = np.broadcast_to(diag_, dependent_shape)
-        diag_ = diag_.ravel()
+        diag_ = np.ravel(diag_)
 
         # out_ = self.data2d.copy()
         # if np.iscomplexobj(diag_) and not np.iscomplexobj(out_):
@@ -407,7 +407,7 @@ class SparseJacobian(BaseJacobian):
             # Broadcast this to the original shape
             i_reduced = np.broadcast_to(i_reduced, self.dependent_shape)
             # Turn this into a 1D vector
-            i_reduced = i_reduced.ravel()
+            i_reduced = np.ravel(i_reduced)
             # Get a matching index into the original array
             i_original = np.arange(self.dependent_size)
             # Now put a 1 at every [i_reduced, i_original] in a sparse matrix
@@ -476,7 +476,7 @@ class SparseJacobian(BaseJacobian):
             # Broadcast this to the original shape
             i_reduced = np.broadcast_to(i_reduced, self.dependent_shape)
             # Turn this into a 1D vector
-            i_reduced = i_reduced.ravel()
+            i_reduced = np.ravel(i_reduced)
             # Get a matching index into the original array
             i_original = np.arange(self.dependent_size)
             # Now put a 1 at every [i_reduced, i_original] in a sparse matrix

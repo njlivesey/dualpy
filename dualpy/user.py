@@ -122,12 +122,16 @@ def seed(
             # Blow away any previous Jacobians
             out.jacobians = {}
     # Create the Jacobian as diaongal initially
+    try:
+        out_shape = out.shape
+    except AttributeError:
+        out_shape = tuple()
     jacobian = SeedJacobian(
-        np.ones(out.shape),
+        np.ones(out_shape),
         dependent_unit=out._dependent_unit,
         independent_unit=out._dependent_unit,
-        dependent_shape=out.shape,
-        independent_shape=out.shape,
+        dependent_shape=out_shape,
+        independent_shape=out_shape,
     )
     # Possibly cast it to other forms
     if initial_type == "seed":
@@ -591,7 +595,7 @@ def rfft(x, axis=-1, workers=None):
                 result.jacobians[name] = jacobian.rtensordot(
                     D,
                     axes=[[1], [jaxis]],
-                    dependent_unit=result.unit,
+                    dependent_unit=result.units,
                 )
     return result
 
@@ -644,7 +648,7 @@ def irfft(x, axis=-1, workers=None):
                 result.jacobians[name] = jacobian.tensordot(
                     D,
                     axes=[[jaxis], [1]],
-                    dependent_unit=result.unit,
+                    dependent_unit=result.units,
                 )
     return result
 
