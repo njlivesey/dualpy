@@ -7,8 +7,6 @@ import scipy.integrate as integrate
 import scipy.fft as fft
 from typing import Union
 import copy
-import dask
-import warnings
 
 from mls_scf_tools.mls_pint import ureg
 
@@ -27,6 +25,8 @@ from .dual_helpers import (
 )
 from .duals import dlarray
 from .config import get_config
+
+import mls_scf_tools.njlutil as njlutil
 
 __all__ = [
     "CubicSplineWithJacobians",
@@ -551,6 +551,8 @@ def interp1d(
 
 def rfft(x, axis=-1, workers=None):
     """Compute the 1-D discrete Fourier Transform for real input (includes duals)"""
+    if workers is None:
+        workers = njlutil.get_n_workers()
     x_magnitude, x_unit = get_magnitude_and_unit(dedual(x))
     result = fft.rfft(x_magnitude, axis=axis, workers=workers) * x_unit
     if has_jacobians(x):
@@ -602,6 +604,8 @@ def rfft(x, axis=-1, workers=None):
 
 def irfft(x, axis=-1, workers=None):
     """Compute 1-D discrete inverse Fourier Transform giving real result (with duals)"""
+    if workers is None:
+        workers = njlutil.get_n_workers()
     x_magnitude, x_unit = get_magnitude_and_unit(x)
     result = fft.irfft(x_magnitude, axis=axis, workers=workers) * x_unit
     if has_jacobians(x):
