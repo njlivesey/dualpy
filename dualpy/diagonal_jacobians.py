@@ -1,6 +1,7 @@
 """The class for diagonal jacobians"""
 
 import numpy as np
+from typing import Union
 
 from .dual_helpers import apply_units
 from .base_jacobian import BaseJacobian
@@ -9,6 +10,18 @@ from .dense_jacobians import DenseJacobian
 
 
 __all__ = ["DiagonalJacobian", "SeedJacobian"]
+
+
+# This function takes a DiagonalJacobian that is about to become non-diagonal and
+# changes it to another type.  Typically this is a SparseJacobian, but if the
+# independent size is small, then DenseJacobian is used instead.
+def to_non_diagonal(
+    jacobian: type["DiagonalJacobian"],
+) -> Union[DenseJacobian, SparseJacobian]:
+    if jacobian.independent_size <= 3:
+        return DenseJacobian(jacobian)
+    else:
+        return SparseJacobian(jacobian)
 
 
 class DiagonalJacobian(BaseJacobian):
@@ -64,39 +77,37 @@ class DiagonalJacobian(BaseJacobian):
 
     def _getjitem(self, new_shape, key):
         """A getitem type method for diagonal Jacobians"""
-        # OK, once we extract items, this will no longer be diagonal,
-        # so we convert to sparse before doing the subset.
-        self_sparse = SparseJacobian(self)
-        result = self_sparse._getjitem(new_shape, key)
+        # OK, once we extract items, this will no longer be diagonal, so we convert to
+        # sparse/dense before doing the subset.
+        self = to_non_diagonal(self)
+        result = self._getjitem(new_shape, key)
         return result
 
     def _setjitem(self, key, value):
         """A setitem type method for diagonal Jacobians"""
-        # OK, once we insert items, this will no longer be diagonal,
-        # so we convert to sparse before doing the subset
-        self = SparseJacobian(self)
+        # OK, once we insert items, this will no longer be diagonal, so we convert to
+        # sparse/dense before doing the subset
+        self = to_non_diagonal(self)
         self._setjitem(key, value)
 
     def broadcast_to(self, shape):
         """Broadcast diagonal jacobian to new dependent shape"""
-        # OK, once you broadcast a diagonal, it is not longer,
-        # strictly speaking, a diagonal So, convert to sparse and
-        # broadcast that.  However, don't bother doing anything if
-        # there is no actual broadcast going on.
+        # OK, once you broadcast a diagonal, it is not longer, strictly speaking, a
+        # diagonal So, convert to sparse/dense and broadcast that.  However, don't
+        # bother doing anything if there is no actual broadcast going on.
         if shape == self.dependent_shape:
             return self
-        self_sparse = SparseJacobian(self)
-        return self_sparse.broadcast_to(shape)
+        self = to_non_diagonal(self)
+        return self.broadcast_to(shape)
 
     def reshape(self, shape, order, parent_flags):
-        # OK, once you reshape a diagonal, it is not longer,
-        # strictly speaking, a diagonal So, convert to sparse and
-        # reshape that.  However, don't bother doing anything if
-        # there is no actual reshape going on.
+        # OK, once you reshape a diagonal, it is not longer, strictly speaking, a
+        # diagonal So, convert to sparse/dense and reshape that.  However, don't bother
+        # doing anything if there is no actual reshape going on.
         if shape == self.dependent_shape:
             return self
-        self_sparse = SparseJacobian(self)
-        return self_sparse.reshape(shape, order, parent_flags)
+        self = to_non_diagonal(self)
+        return self.reshape(shape, order, parent_flags)
 
     def premul_diag(self, diag):
         """Diagonal premulitply for diagonal Jacobian"""
@@ -109,23 +120,23 @@ class DiagonalJacobian(BaseJacobian):
                 diag_ * self.data, template=self, dependent_unit=dependent_unit
             )
         else:
-            return SparseJacobian(self).premul_diag(diag)
+            return to_non_diagonal(self).premul_diag(diag)
 
     def insert(self, obj, axis, dependent_shape):
         """insert method for diagonal Jacobian"""
         # By construction this is no longer diagonal once inserted to
-        # change to sparse and insert there.
-        self_sparse = SparseJacobian(self)
-        return self_sparse.insert(obj, axis, dependent_shape)
+        # change to sparse/dense and insert there.
+        self = to_non_diagonal(self)
+        return self.insert(obj, axis, dependent_shape)
 
     def diff(
         self, dependent_shape, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue
     ):
         """diff method for diagonal jacobian"""
-        # Again, the result will not be diagonal, so change to sparse and do diff in
-        # that space.
-        self_sparse = SparseJacobian(self)
-        return self_sparse.diff(dependent_shape, n, axis, prepend, append)
+        # Again, the result will not be diagonal, so change to sparse/dense and do diff
+        # in that space.
+        self = to_non_diagonal(self)
+        return self.diff(dependent_shape, n, axis, prepend, append)
 
     def transpose(self, axes, result_dependent_shape):
         return DiagonalJacobian(
@@ -136,44 +147,37 @@ class DiagonalJacobian(BaseJacobian):
 
     def tensordot(self, other, axes, dependent_unit, reverse_order=False):
         """Compute self(.)other, or other(.)self if reverse_order is True"""
-        # Once we do this, we will no longer be diagonal, so convert to sparse
-        self_sparse = SparseJacobian(self)
-        return self_sparse.tensordot(other, axes, dependent_unit, reverse_order)
+        # Once we do this, we will no longer be diagonal, so convert to sparse/dense
+        self = to_non_diagonal(self)
+        return self.tensordot(other, axes, dependent_unit, reverse_order)
 
     def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):
         """Performs sum for the diagonal Jacobians"""
-        # Once we take the sum, along any or all axes, the jacobian is
-        # no longer diagonal by construction, so it needs to be
-        # converted to sparse.
-        self_sparse = SparseJacobian(self)
-        return self_sparse.sum(
-            dependent_shape, axis=axis, dtype=dtype, keepdims=keepdims
-        )
+        # Once we take the sum, along any or all axes, the jacobian is no longer
+        # diagonal by construction, so it needs to be converted to sparse/dense.
+        self = to_non_diagonal(self)
+        return self.sum(dependent_shape, axis=axis, dtype=dtype, keepdims=keepdims)
 
     def mean(self, dependent_shape, axis=None, dtype=None, keepdims=False):
         """Performs mean for the diagonal Jacobians"""
-        # Once we take the sum, along any or all axes, the jacobian is
-        # no longer diagonal by construction, so it needs to be
-        # converted to sparse.
-        self_sparse = SparseJacobian(self)
-        return self_sparse.mean(
-            dependent_shape, axis=axis, dtype=dtype, keepdims=keepdims
-        )
+        # Once we take the sum, along any or all axes, the jacobian is no longer
+        # diagonal by construction, so it needs to be converted to sparse/dense.
+        self = to_non_diagonal(self)
+        return self.mean(dependent_shape, axis=axis, dtype=dtype, keepdims=keepdims)
 
     def cumsum(self, axis):
         """Perform cumsum for the diagonal Jacobians"""
-        # Once it's been cumsummed then it's no longer diagonal.  For
-        # that matter it's not going to be particularly sparse either,
-        # so we might as well convert it to dense.
+        # Once it's been cumsummed then it's no longer diagonal.  For that matter it's
+        # not going to be particularly sparse either, so we might as well convert it to
+        # dense.
         return DenseJacobian(self).cumsum(axis)
 
     def diagonal(self):
         """Get diagonal elements (shape=dependent_shape)"""
         return apply_units(self.data, (self.dependent_unit / self.independent_unit))
 
-    # The reaons we have extract_diagonal and diagonal is that diagonal is
-    # only populated for diagonal Jacobians.  extract_diagonal is
-    # populated for all.
+    # The reaons we have extract_diagonal and diagonal is that diagonal is only
+    # populated for diagonal Jacobians.  extract_diagonal is populated for all.
     def extract_diagonal(self):
         """Extract the diagonal from a diagonal Jacobian"""
         return self.diagonal()
@@ -181,20 +185,20 @@ class DiagonalJacobian(BaseJacobian):
     def todensearray(self):
         from .dense_jacobians import DenseJacobian
 
-        self_dense = DenseJacobian(self)
-        return self_dense.todensearray()
+        selfdense = DenseJacobian(self)
+        return selfdense.todensearray()
 
     def to2darray(self):
-        self_sparse = SparseJacobian(self)
-        return self_sparse.to2darray()
+        self = to_non_diagonal(self)
+        return self.to2darray()
 
     def to2ddensearray(self):
-        self_dense = DenseJacobian(self)
-        return self_dense.to2ddensearray()
+        selfdense = DenseJacobian(self)
+        return selfdense.to2ddensearray()
 
     def linear_interpolator(self, x_in, axis=-1, extrapolate=None):
         """Return an interpolator for a given Jacobian axis"""
-        return SparseJacobian(self).linear_interpolator(
+        return to_non_diagonal(self).linear_interpolator(
             x_in=x_in,
             axis=axis,
             extrapolate=extrapolate,
