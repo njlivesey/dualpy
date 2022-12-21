@@ -32,7 +32,7 @@ class DenseJacobian(BaseJacobian):
         super().__init__(template=template, **kwargs)
         if isinstance(data, BaseJacobian):
             if isinstance(data, DiagonalJacobian):
-                data_ = np.reshape(np.diag(data.data), data.shape)
+                data_ = np.reshape(np.diag(np.ravel(data.data)), data.shape)
             elif isinstance(data, DenseJacobian):
                 data_ = data.data
             elif isinstance(data, SparseJacobian):
