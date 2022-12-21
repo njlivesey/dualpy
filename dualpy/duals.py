@@ -235,7 +235,13 @@ class dlarray(DualOperatorsMixin):
 
     def __setitem__(self, key, value):
         s, v, sj, vj, out_ = setup_dual_operation(self, value, broadcast=False)
-        self.variable[key] = v
+        try:
+            self.variable[key] = v
+        except TypeError:
+            if not key:
+                self.variable = v
+            else:
+                raise TypeError("Dual variable does not support non-empty indexing")
         # Doing a setitem on the Jacobians requires some more intimate knowledge so let
         # the jacobians module handle it.
         _setitem_jacobians(key, s, sj, vj)
