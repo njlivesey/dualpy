@@ -619,7 +619,8 @@ class SparseJacobian(BaseJacobian):
             )
         )
         result_ = np.transpose(result_, new_axis_order)
-        result_dependent_shape = result_.shape[: -self.independent_ndim]
+        # Do this next bit long hand in scale independent_ndim==0
+        result_dependent_shape = result_.shape[: result_.ndim - self.independent_ndim]
         if isinstance(result_, np.ndarray):
             return DenseJacobian(
                 data=result_,
@@ -667,7 +668,8 @@ class SparseJacobian(BaseJacobian):
         # actually easier than regular tensordot because the axes end up in the right
         # order.
         result_ = st.tensordot(other, self_st, axes)
-        result_dependent_shape = result_.shape[: -self.independent_ndim]
+        # Do this next bit long hand in scale independent_ndim==0
+        result_dependent_shape = result_.shape[: result_.ndim - self.independent_ndim]
         if isinstance(result_, np.ndarray):
             return DenseJacobian(
                 data=result_,

@@ -340,7 +340,6 @@ class dlarray(DualOperatorsMixin):
         a_, b_, aj, bj, out = setup_dual_operation(a, b, out=out)
         if out is None:
             out = dlarray(a_ + b_)
-            # print(f"In dlarray.add: {a_.units}, {b_.units}, {out.units}")
         else:
             if not isinstance(out, dlarray):
                 out = dlarray(out)
@@ -1059,7 +1058,10 @@ def amin(a, axis=None, out=None, keepdims=None, initial=None):
         return a
     else:
         i_min = np.argmin(a.variable, axis=axis)
-        return a[i_min]
+        if axis is None:
+            return a.ravel()[i_min]
+        else:
+            raise NotImplementedError("Not yet written this")
 
 
 @implements(np.amax)
@@ -1073,7 +1075,10 @@ def amax(a, axis=None, out=None, keepdims=None, initial=None):
         return a
     else:
         i_max = np.argmax(a.variable, axis=axis)
-        return a[i_max]
+        if axis is None:
+            return a.ravel()[i_max]
+        else:
+            raise NotImplementedError("Not yet written this")
 
 
 @implements(np.nan_to_num)
@@ -1170,41 +1175,41 @@ def tensordot(a, b, axes):
     a_, b_, aj, bj, out = setup_dual_operation(a, b, out=None, broadcast=False)
     a_magnitude, a_unit = get_magnitude_and_unit(a_)
     b_magnitude, b_unit = get_magnitude_and_unit(b_)
-    result = dlarray(st.tensordot(a_magnitude, b_magnitude, axes) * a_unit * b_unit)
+    result_ = st.tensordot(a_magnitude, b_magnitude, axes) * a_unit * b_unit
+    result_ = result_.astype(np.result_type(a_magnitude.dtype, b_magnitude.dtype))
+    result = dlarray(result_)
+
     result_unit = get_unit(result)
     # Now deal with the Jacobians.  For this, we need to ensure that axes are in the
     # (2,) array-like form that is the second version np.tensordot can accept them.
     if isinstance(axes, int):
         axes = [list(range(a.ndim - axes, a.ndim)), list(range(axes))]
-    # Remove units from a_ and b_ for doing the tensor dot product
-    a_no_unit = getattr(a_, "value", a_)
-    b_no_unit = getattr(b_, "value", b_)
+    # Go in and set all the negative axes to the correct positive values (easiest to do
+    # it here rathe than in each of the jacobian routines).
+    cleaned_axes = []
+    for original_axes, ndim in zip(axes, [a.ndim, b.ndim]):
+        cleaned_axes.append(
+            [axis if axis >= 0 else ndim - axis for axis in original_axes]
+        )
+    axes = cleaned_axes
     # Get the jacobian tensordot routines
     use_dask = "tensordot" in get_config().dask
     for name, jacobian in aj.items():
-        if use_dask:
-            jacobian_tensordot = dask.delayed(jacobian.tensordot)
-        else:
-            jacobian_tensordot = jacobian.tensordot
-        result.jacobians[name] = jacobian_tensordot(
-            b_no_unit, axes, dependent_unit=result_unit
+        result.jacobians[name] = jacobian.rtensordot(
+            b_magnitude, axes, dependent_unit=result_unit
         )
     for name, jacobian in bj.items():
-        if use_dask:
-            jacobian_rtensordot = dask.delayed(jacobian.rtensordot)
-        else:
-            jacobian_rtensordot = jacobian.rtensordot
         if name in result.jacobians:
-            result.jacobains[name] += jacobian_rtensordot(
-                a_no_unit,
+            result.jacobains[name] += jacobian.rtensordot(
+                a_magnitude,
                 axes,
-                dependent_unit=result.unit,
+                dependent_unit=result_unit,
             )
         else:
-            result.jacobians[name] = jacobian_rtensordot(
-                a_no_unit,
+            result.jacobians[name] = jacobian.rtensordot(
+                a_magnitude,
                 axes,
-                dependent_unit=result.unit,
+                dependent_unit=result_unit,
             )
     if use_dask:
         result.jacobians = dask.compute(result.jacobians)[0]

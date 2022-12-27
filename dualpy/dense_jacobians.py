@@ -218,6 +218,8 @@ class DenseJacobian(BaseJacobian):
         # Note that axes here must be in the list of two lists form, with no negative
         # numbers.
         n_contractions = len(axes[0])
+        # Make sure the axes are all in appropriate form
+
         # With this order of the tensordot, the annoying thing here is that we actually
         # want our independent dimensions (part of self) at the end, so will have to do
         # a transpose.  Let's do the tensor dot anyway.
@@ -240,7 +242,8 @@ class DenseJacobian(BaseJacobian):
             )
         )
         result_ = result_.transpose(new_axis_order)
-        result_dependent_shape = result_.shape[: -self.independent_ndim]
+        # Do this next bit long hand in scale independent_ndim==0
+        result_dependent_shape = result_.shape[: result_.ndim - self.independent_ndim]
         return DenseJacobian(
             data=result_,
             dependent_shape=result_dependent_shape,
@@ -254,7 +257,8 @@ class DenseJacobian(BaseJacobian):
         # This one is actually easier than regular tensordot, because the axes end up in
         # the right order
         result_ = np.tensordot(other, self.data, axes)
-        result_dependent_shape = result_.shape[: -self.independent_ndim]
+        # Do this next bit long hand in scale independent_ndim==0
+        result_dependent_shape = result_.shape[: result_.ndim - self.independent_ndim]
         return DenseJacobian(
             data=result_,
             template=self,
