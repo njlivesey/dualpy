@@ -1,32 +1,26 @@
-import numpy as np
-import astropy.units as units
-import pint
-import scipy.special as special
-import scipy.interpolate as interpolate
-import scipy.integrate as integrate
-import scipy.fft as fft
-from typing import Union
 import copy
+from typing import Union
 
+import astropy.units as units
+import mls_scf_tools.njlutil as njlutil
+import numpy as np
+import pint
+import scipy.fft as fft
+import scipy.integrate as integrate
+import scipy.interpolate as interpolate
+import scipy.special as special
 from mls_scf_tools.mls_pint import ureg
 
-from .jacobians import (
-    DenseJacobian,
-    DiagonalJacobian,
-    SeedJacobian,
-    SparseJacobian,
-)
 from .dual_helpers import (
-    setup_dual_operation,
     dedual,
-    to_dimensionless,
     get_magnitude,
     get_magnitude_and_unit,
+    has_jacobians,
+    setup_dual_operation,
+    to_dimensionless,
 )
 from .duals import dlarray
-from .config import get_config
-
-import mls_scf_tools.njlutil as njlutil
+from .jacobians import DenseJacobian, DiagonalJacobian, SeedJacobian, SparseJacobian
 
 __all__ = [
     "CubicSplineWithJacobians",
@@ -34,7 +28,6 @@ __all__ = [
     "PossibleDual",
     "delete_jacobians",
     "get_jacobians_for_function_inverse",
-    "has_jacobians",
     "interp1d",
     "irfft",
     "multi_newton_raphson",
@@ -246,16 +239,6 @@ def voigt_profile(x, sigma, gamma):
     i = complex(0, 1)
     z = (x + gamma * i) / (sigma * np.sqrt(2))
     return np.real(wofz(z)) / (sigma * np.sqrt(2 * np.pi))
-
-
-def has_jacobians(a):
-    """Return true if a is a dual with Jacobians"""
-    # If it has a _has_jacobians method, invoke that.
-    if hasattr(a, "_has_jacobians"):
-        return a._has_jacobians()
-    if not hasattr(a, "jacobians"):
-        return False
-    return bool(a.jacobians)
 
 
 def get_jacobians_for_function_inverse(

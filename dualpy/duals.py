@@ -9,6 +9,7 @@ from .dual_helpers import (
     DualOperatorsMixin,
     broadcast_jacobians,
     dedual,
+    has_jacobians,
     get_magnitude_and_unit,
     get_unit,
     setup_dual_operation,
@@ -31,7 +32,6 @@ __all__ = [
 ]
 
 
-# class dlarray(np.lib.mixins.NDArrayOperatorsMixin):
 class dlarray(DualOperatorsMixin):
     """A duck-array providing automatic differentiation using dual algebra
 
@@ -1193,7 +1193,6 @@ def tensordot(a, b, axes):
         )
     axes = cleaned_axes
     # Get the jacobian tensordot routines
-    use_dask = "tensordot" in get_config().dask
     for name, jacobian in aj.items():
         result.jacobians[name] = jacobian.rtensordot(
             b_magnitude, axes, dependent_unit=result_unit
@@ -1211,8 +1210,9 @@ def tensordot(a, b, axes):
                 axes,
                 dependent_unit=result_unit,
             )
-    if use_dask:
-        result.jacobians = dask.compute(result.jacobians)[0]
+    # If there are no Jacobians in the result, then demote to a non dualed result.
+    if not has_jacobians(result):
+        result = dedual(result)
     return result
 
 

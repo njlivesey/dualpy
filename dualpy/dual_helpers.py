@@ -21,6 +21,7 @@ __all__ = [
     "get_magnitude",
     "get_magnitude_and_unit",
     "get_unit_conversion_scale",
+    "has_jacobians",
     "apply_units",
 ]
 
@@ -195,6 +196,16 @@ def get_unit_conversion_scale(old_unit, new_unit):
         return 1
     else:
         raise TypeError(f"Unable to handle units of type {type(old_unit)}")
+
+
+def has_jacobians(a):
+    """Return true if a is a dual with Jacobians"""
+    # If it has a _has_jacobians method, invoke that.
+    if hasattr(a, "_has_jacobians"):
+        return a._has_jacobians()
+    if not hasattr(a, "jacobians"):
+        return False
+    return bool(a.jacobians)
 
 
 class DualOperatorsMixin:
