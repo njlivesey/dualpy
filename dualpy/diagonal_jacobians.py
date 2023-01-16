@@ -170,7 +170,8 @@ class DiagonalJacobian(BaseJacobian):
         # Once it's been cumsummed then it's no longer diagonal.  For that matter it's
         # not going to be particularly sparse either, so we might as well convert it to
         # dense.
-        return DenseJacobian(self).cumsum(axis)
+        self = to_non_diagonal(self)
+        return self.cumsum(axis)
 
     def diagonal(self):
         """Get diagonal elements (shape=dependent_shape)"""

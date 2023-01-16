@@ -193,7 +193,7 @@ class LocatedObjectIterator:
         for name, value in inspect.getmembers(obj):
             # Skip dunders, callables, and properties
             if (
-                (name.startswith("__") and name.endswidth("__"))
+                (name.startswith("__") and name.endswith("__"))
                 or callable(value)
                 or isinstance(getattr(type(obj), name, None), property)
             ):
