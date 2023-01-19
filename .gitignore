@@ -10,6 +10,7 @@
 **/*.stats
 **/.DS_Store
 **/.h5
+**/Untitled*.ipynb
 *.pyc
 *.egg-info
 *~
