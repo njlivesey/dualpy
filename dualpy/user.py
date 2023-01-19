@@ -221,17 +221,16 @@ def solve_quadratic(a, b, c, sign=1):
 # cos, etc. this leapfrongs straight to scipy.special, for now.
 # That may give us problems down the road.
 def wofz(z):
-    z_ = to_dimensionless(dedual(z))
+    z = to_dimensionless(z)
+    z_ = dedual(z)
     out_ = special.wofz(z_)
-    if isinstance(z, dlarray):
-        out = dlarray(out_)
-    else:
-        out = out_
+    if not has_jacobians(z):
+        return out_
+    out = dlarray(out_)
     # The derivative actually comes out of the definition of the
     # Fadeeva function pretty easily
-    if hasattr(z, "jacobians"):
-        c = 2 * complex(0, 1) / np.sqrt(np.pi)
-        out._chain_rule(z, c - 2 * z_ * out_)
+    c = 2 * complex(0, 1) / np.sqrt(np.pi)
+    out._chain_rule(z, c - 2 * z_ * out_)
     return out
 
 
