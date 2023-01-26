@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["LocatedObjectIterator"]
 
+# This lists the types that should not be probed furhter (typically because doing so
+# leads to infinite loops).
 _default_terminal_types = [np.ndarray, float]
 
 
