@@ -221,22 +221,23 @@ def solve_quadratic(a, b, c, sign=1):
 # cos, etc. this leapfrongs straight to scipy.special, for now.
 # That may give us problems down the road.
 def wofz(z):
+    z_orig = z
+    z_orig_ = dedual(z_orig)
     z = to_dimensionless(z)
     z_ = dedual(z)
-    out_ = special.wofz(z_)
+    out_ = special.wofz(get_magnitude(z_))
     if not has_jacobians(z):
         return out_
     out = dlarray(out_)
     # The derivative actually comes out of the definition of the
     # Fadeeva function pretty easily
-    c = 2 * complex(0, 1) / np.sqrt(np.pi)
-    out._chain_rule(z, c - 2 * z_ * out_)
+    c = 2j / np.sqrt(np.pi)
+    out._chain_rule(z_orig, c - 2 * dedual(z_orig_) * out_)
     return out
 
 
 def voigt_profile(x, sigma, gamma):
-    i = complex(0, 1)
-    z = (x + gamma * i) / (sigma * np.sqrt(2))
+    z = (x + gamma * 1j) / (sigma * np.sqrt(2))
     return np.real(wofz(z)) / (sigma * np.sqrt(2 * np.pi))
 
 

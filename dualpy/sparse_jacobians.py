@@ -743,9 +743,11 @@ class SparseJacobian(BaseJacobian):
     def scalar_multiply(self, scale):
         """Multiply Jacobian by a scalar"""
         magnitude, units = get_magnitude_and_unit(scale)
-        self.dependent_unit = self.dependent_unit * units
-        self.data2d *= magnitude
-        return self
+        return SparseJacobian(
+            template=self,
+            data=self.data2d * magnitude,
+            dependent_unit=self.dependent_unit * units,
+        )
 
     def _join(self, other, location, axis, result_dependent_shape):
         """Insert/append sparse Jacobians"""

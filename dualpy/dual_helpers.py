@@ -80,9 +80,9 @@ def to_dimensionless(x):
 
     """Convert astropy/pint quantity to dimensionless and return as ndarray/dlarray"""
     if isinstance(x, dlarray_pint) or isinstance(x, pint.Quantity):
-        return x.to(ureg.dimensionless).magnitude
+        return x.to(ureg.dimensionless)
     elif isinstance(x, dlarray_astropy) or isinstance(x, units.Quantity):
-        return x.to(units.dimensionless_unscaled).value
+        return x.to(units.dimensionless_unscaled)
     else:
         return x
 
