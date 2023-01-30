@@ -473,6 +473,8 @@ class dlarray(DualOperatorsMixin):
             out = dlarray(out_)
             for name, jacobian in bj.items():
                 out.jacobians[name] = jacobian.premul_diag(out_ * np.log(a_))
+            if hasattr(b, "units") or hasattr(b, "unit"):
+                out = out * b._dimensionless
         return out
 
     @staticmethod

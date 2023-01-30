@@ -115,6 +115,7 @@ def jacobian_2d_matrix_multiply(a, b):
     from .sparse_jacobians import SparseJacobian
     from .diagonal_jacobians import DiagonalJacobian
 
+    raise NotImplementedError("Pretty sure this has bugs, as doesn't deal with units")
     # Check that the dimensions and units are agreeable
     if a.independent_shape != b.dependent_shape:
         raise ValueError("Shape mismatch for dense Jacobian matrix multiply")
@@ -178,6 +179,7 @@ def linear_interpolation_indices_and_weights(c_in, c_out, extrapolate=None):
         tiny = np.finfo(delta.dtype).tiny
         small = np.sqrt(tiny)
         if hasattr(delta, "unit"):
+            raise NotImplementedError("This still uses astropy!")
             small = small << delta.unit
     except ValueError:
         small = 1

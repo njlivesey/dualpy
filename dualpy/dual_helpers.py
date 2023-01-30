@@ -187,11 +187,7 @@ def get_unit_conversion_scale(old_unit, new_unit):
         return old_unit._to(new_unit) * (new_unit / old_unit)
     elif isinstance(old_unit, pint.Unit) or isinstance(old_unit, pint.Quantity):
         assert new_unit is not None
-        return (
-            ((1.0 * old_unit).to(new_unit) / old_unit)
-            .to(old_unit._REGISTRY.dimensionless)
-            .magnitude
-        )
+        return new_unit.from_(old_unit) / old_unit
     elif isinstance(old_unit, Unitless):
         return 1
     else:

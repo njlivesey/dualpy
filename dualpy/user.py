@@ -36,6 +36,7 @@ __all__ = [
     "simpson",
     "solve_quadratic",
     "voigt_profile",
+    "wofz",
 ]
 
 PossibleDual = Union[units.Quantity, pint.Quantity, np.ndarray, dlarray]
@@ -222,23 +223,23 @@ def solve_quadratic(a, b, c, sign=1):
 # That may give us problems down the road.
 def wofz(z):
     z_orig = z
-    z_orig_ = dedual(z_orig)
     z = to_dimensionless(z)
     z_ = dedual(z)
-    out_ = special.wofz(get_magnitude(z_))
+    out_ = special.wofz(get_magnitude(z_)) * ureg.dimensionless
     if not has_jacobians(z):
         return out_
     out = dlarray(out_)
     # The derivative actually comes out of the definition of the
     # Fadeeva function pretty easily
     c = 2j / np.sqrt(np.pi)
-    out._chain_rule(z_orig, c - 2 * dedual(z_orig_) * out_)
+    out._chain_rule(z, c - 2 * dedual(z_) * out_)
     return out
 
 
 def voigt_profile(x, sigma, gamma):
     z = (x + gamma * 1j) / (sigma * np.sqrt(2))
-    return np.real(wofz(z)) / (sigma * np.sqrt(2 * np.pi))
+    w = wofz(z) * ureg.dimensionless
+    return (np.real(w.magnitude) * w.units) / (sigma * np.sqrt(2 * np.pi))
 
 
 def get_jacobians_for_function_inverse(
