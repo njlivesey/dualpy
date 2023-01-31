@@ -71,6 +71,8 @@ class BaseJacobian(object):
         self.dtype = dtype
 
     def __str__(self):
+        # Run a check on the Jacobian while we're at it.
+        self._check()
         return (
             f"Jacobian of type {type(self)}\n"
             f"Dependent shape is {self.dependent_shape} <{self.dependent_size}>\n"
@@ -99,6 +101,14 @@ class BaseJacobian(object):
         assert (
             np.prod(self.shape) == self.size
         ), f"Overall size mismatch for {name}, product({self.shape}) != {self.size}"
+        if hasattr(self, "data"):
+            assert not hasattr(self.data, "units") and not hasattr(
+                self.data, "unit"
+            ), "Jacobian data has units"
+        if hasattr(self, "data2d"):
+            assert not hasattr(self.data2d, "units") and not hasattr(
+                self.data2d, "unit"
+            ), "Jacobian data2d has units"
 
     def __repr__(self):
         return self.__str__()

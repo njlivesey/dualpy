@@ -53,6 +53,7 @@ class DenseJacobian(BaseJacobian):
             self.data, [self.dependent_size, self.independent_size]
         )
         self.dtype = self.data.dtype
+        self._check()
 
     def __str__(self):
         return (
@@ -61,8 +62,10 @@ class DenseJacobian(BaseJacobian):
             + f"data2d is {self.data2d.shape}"
         )
 
-    def _check(self, name):
+    def _check(self, name=None):
         """Integrity checks on dense Jacobian"""
+        if name is None:
+            name = "<unknown dense Jacobian>"
         self._check_jacobian_fundamentals(name)
         assert (
             self.data.shape == self.shape

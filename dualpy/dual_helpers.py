@@ -186,7 +186,6 @@ def get_unit_conversion_scale(old_unit, new_unit):
     if isinstance(old_unit, units.UnitBase):
         return old_unit._to(new_unit) * (new_unit / old_unit)
     elif isinstance(old_unit, pint.Unit) or isinstance(old_unit, pint.Quantity):
-        assert new_unit is not None
         return new_unit.from_(old_unit) / old_unit
     elif isinstance(old_unit, Unitless):
         return 1

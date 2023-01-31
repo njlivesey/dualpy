@@ -55,18 +55,21 @@ class DiagonalJacobian(BaseJacobian):
             )
         self.data = data_
         self.dtype = self.data.dtype
+        self._check()
 
     def __str__(self):
         return super().__str__() + f"\ndata is {self.data.shape}"
 
-    def _check(self, name):
+    def _check(self, name=None):
         """Integrity checks on diagonal Jacobian"""
+        if name is None:
+            name = "<unknown diagonal Jacobian>"
         self._check_jacobian_fundamentals(name)
-        assert self.depdent_shape == self.independent_shape, (
+        assert self.dependent_shape == self.independent_shape, (
             f"Non-diagonal shape for diagonal Jacobian {name}"
             f"{self.dependent_shape} != {self.independent_shape}"
         )
-        assert self.depdent_size == self.independent_size, (
+        assert self.dependent_size == self.independent_size, (
             f"Non-diagonal size for diagonal Jacobian {name}"
             f"{self.dependent_size} != {self.independent_size}"
         )

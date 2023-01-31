@@ -4,7 +4,7 @@ import numpy as np
 import scipy.sparse as sparse
 import itertools
 
-from .dual_helpers import get_unit_conversion_scale
+from .dual_helpers import get_unit_conversion_scale, get_magnitude
 
 __all__ = [
     "array_to_sparse_diagonal",
@@ -57,9 +57,13 @@ def prepare_jacobians_for_binary_op(a, b):
     # the result.
     scale = 1.0
     if b.dependent_unit != a.dependent_unit:
-        scale *= get_unit_conversion_scale(b.dependent_unit, a.dependent_unit)
+        scale *= get_magnitude(
+            get_unit_conversion_scale(b.dependent_unit, a.dependent_unit)
+        )
     if b.independent_unit != a.independent_unit:
-        scale /= get_unit_conversion_scale(b.independent_unit, a.independent_unit)
+        scale /= get_magnitude(
+            get_unit_conversion_scale(b.independent_unit, a.independent_unit)
+        )
     # Now go throught the various type combinations
     type_a = type(a)
     type_b = type(b)

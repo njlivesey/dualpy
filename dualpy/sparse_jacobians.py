@@ -156,6 +156,7 @@ class SparseJacobian(BaseJacobian):
             raise ValueError("Attempt to create jacobian_sparse with wrong-sized input")
         else:
             self.data2d = data2d_
+        self._check()
 
     def __str__(self):
         """Provide a string summary of a sparse Jacobian"""
@@ -168,8 +169,10 @@ class SparseJacobian(BaseJacobian):
         )
         return super().__str__() + suffix
 
-    def _check(self, name):
+    def _check(self, name=None):
         """Integrity checks for sparse Jacobians"""
+        if name is None:
+            name = "<unknown sparse Jacobian>"
         self._check_jacobian_fundamentals(name)
         correct_2dshape = (self.dependent_size, self.independent_size)
         assert self.data2d.shape == correct_2dshape, (
