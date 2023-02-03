@@ -36,7 +36,7 @@ class dlarray_pint(dlarray):
         # does not, so deciding to mimic that approach.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=pint.UnitStrippedWarning)
-            if dtype is None and hasattr(self, dtype):
+            if dtype is None and hasattr(self, "dtype"):
                 dtype = self.dtype
             return np.array(self.variable, dtype=dtype)
 
