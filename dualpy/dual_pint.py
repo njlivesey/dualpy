@@ -116,7 +116,12 @@ class dlarray_pint(dlarray):
 
 # ------------------------------------------- Upcasting
 # Make sure pint defers to us when appropriate
-if dlarray not in pint.compat.upcast_types:
-    pint.compat.upcast_types.append(dlarray)
-if dlarray_pint not in pint.compat.upcast_types:
-    pint.compat.upcast_types.append(dlarray_pint)
+upcast_list = (
+    pint.compat.upcast_types
+    if hasattr(pint.compat, "upcast_types")
+    else pint.compat.upcast_type_names
+)
+if dlarray not in upcast_list:
+    upcast_list.append(dlarray)
+if dlarray_pint not in upcast_list:
+    upcast_list.append(dlarray_pint)
