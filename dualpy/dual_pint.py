@@ -13,7 +13,7 @@ class dlarray_pint(dlarray):
     """A subclass of dlarray that wraps a pint variable.
 
     To wrap a regular numpy array, see dlarray (see there also for most of the
-    documentation).  To wrap an astropy.Quantity see dlarray_pint. (More may follow).
+    documentation).  To wrap an astropy.Quantity see dlarray_astropy. (More may follow).
     """
 
     # --------------------------------------------- Overload attributes
