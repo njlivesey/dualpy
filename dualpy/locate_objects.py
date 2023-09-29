@@ -1,5 +1,8 @@
 """Enables recursive iteration through object to find particular types.
 
+This is used in the numeric_jacobians to navigate through the quantites for which
+derivatives are sought.
+
 Can iterate in parallel over multiple congruent types.
 """
 

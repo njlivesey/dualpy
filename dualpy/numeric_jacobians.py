@@ -72,12 +72,6 @@ def compute_numeric_jacobians(
     repeatedly.  Any Jacobians in the result from the first (analytical) run are noted
     and replaced with corresponding numerical values based on the perturbed runs.
 
-    Classes wanting to participate in the computation of numerical Jacobians, through
-    being an input or an output to the routine being tested, should include an attribute
-    _numeric_jacobian_support, which tests True.  If it is a list of strings, then it
-    conveys the subset of the attributes that are to be considered when looking for
-    duals that can participate in the numeric Jacobians.
-
     """
     # ----------------------------------------------- Initial setup
     if plain_func is None:

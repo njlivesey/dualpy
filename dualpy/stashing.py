@@ -59,6 +59,7 @@ class Stash:
             return dual
         original_jacobians = dual.jacobians
         # Create a jacobian-less version of dual for the result
+        raise NotImplementedError("Not working, line below this message needs update for pint etc.")
         result = dlarray(units.Quantity(dual))
         result.jacobians = {}
         # Now loop over the original Jacobians and find out what they map to
