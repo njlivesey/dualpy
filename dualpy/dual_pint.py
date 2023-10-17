@@ -4,6 +4,7 @@ import numpy as np
 import pint
 import copy
 import warnings
+from typing import Union
 
 from .duals import dlarray
 from .unitless import Unitless
@@ -115,13 +116,52 @@ class dlarray_pint(dlarray):
 
 
 # ------------------------------------------- Upcasting
-# Make sure pint defers to us when appropriate
-upcast_list = (
-    pint.compat.upcast_types
-    if hasattr(pint.compat, "upcast_types")
-    else pint.compat.upcast_type_names
-)
-if dlarray not in upcast_list:
-    upcast_list.append(dlarray)
-if dlarray_pint not in upcast_list:
-    upcast_list.append(dlarray_pint)
+
+# Make sure pint defers to us when appropriate.  Do this by adding dlarray and
+# dlarray_pint to the pint.compat.upcast ecosystem.  This varies by pint version
+
+def add_upcast_types(types_to_add: Union[list[Union[type, str]], str]):
+    """Add a type to the upcast mechanism in a pint-version agnostic way
+    
+    Parameters:
+    -----------
+    name : list[str] or str
+        Names of types to be added
+    """
+    # Force names into a list
+    if isinstance(types_to_add, str) or isinstance(types_to_add, type):
+        types_to_add = [types_to_add]
+    # Work out how we do this (pint-version-dependent)
+    upcast_list = None
+    upcast_dict = None
+    # Work out where these things are going go
+    if hasattr(pint.compat, "upcast_type_map"):
+        upcast_dict = pint.compat.upcast_type_map
+    elif hasattr(pint.compat, "upcast_types"):
+        upcast_list = pint.compat.upcast_types
+    else:
+        upcast_list = pint.compat.upcast_type_names
+    # Work out actually what we're inserting
+    if upcast_dict:
+        # If we have a dict to fill, then we fill it with the names of types
+        items_to_add = [
+            type_to_add.__module__ + "." + type_to_add.__qualname__
+            for type_to_add in types_to_add
+        ]
+    else:
+        items_to_add = types_to_add
+
+    # Insert them
+    for item in items_to_add:
+        if upcast_list:
+            if item not in upcast_list:
+                upcast_list.append(item)
+        elif upcast_dict:
+            if item not in upcast_dict:
+                upcast_dict[item] = None
+        else:
+            raise NotImplementedError("Do not understand current version of pint")
+
+
+# Now actually do it for our types
+add_upcast_types([dlarray, dlarray_pint])
