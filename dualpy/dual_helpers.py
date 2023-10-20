@@ -48,7 +48,7 @@ def dedual(x, units_ok=False):
         isinstance(x, int)
         or isinstance(x, float)
         or isinstance(x, complex)
-        or isinstance(x, sparse.base.spmatrix)
+        or isinstance(x, sparse.spmatrix)
     ):
         return x
     elif units_ok and (isinstance(x, units.core.UnitBase) or isinstance(x, pint.Unit)):
