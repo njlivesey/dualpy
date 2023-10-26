@@ -541,7 +541,7 @@ def rfft(x, axis=-1, workers=None):
     if has_jacobians(x):
         # Preparet the result
         result = dlarray(result)
-        # Dense Jacobian's are simply handled as their own fourier transform.  Dense
+        # Dense Jacobian's are simply handled as their own fourier transform.  Sparse
         # ones dictate a different (hopefully more efficient approach that recognizes
         # that a Fourier transform is simply a matrix multiply (granted a multiplication
         # by a matrix whose properties allow for the efficiencies implicit in the FFT
