@@ -113,26 +113,37 @@ class DiagonalJacobian(BaseJacobian):
         # Check out the Jacobian to make sure everything is as it should be
         self._check()
 
-    def get_data_nd(self) -> ArrayLike:
+    def get_data_nd(self, form: str = None) -> ArrayLike:
         """Return the n-dimensional array of data in self"""
-        result = get_config().default_zero_array_type(shape=self.shape)
-        try:
-            i_diagonal = np.unravel_index(
-                np.arange(self.dependent_size), self.dependent_shape
-            )
-            result[i_diagonal + i_diagonal] = self.data.ravel()
-        except ValueError:
-            result[...] = self.data.ravel()
-        return result
+        if form is None or form == "dense":
+            result = get_config().default_zero_array_type(shape=self.shape)
+            try:
+                i_diagonal = np.unravel_index(
+                    np.arange(self.dependent_size), self.dependent_shape
+                )
+                result[i_diagonal + i_diagonal] = self.data.ravel()
+            except ValueError:
+                result[...] = self.data.ravel()
+            return result
+        elif form == "sparse":
+            raise TypeError("Unable to return sparse form of DenseJacobian data")
+        else:
+            raise ValueError(f"Invalid value for form argument: {form}")
 
-    def get_data_2d(self) -> ArrayLike:
+    def get_data_2d(self, form: str = None) -> ArrayLike:
         """Return a 2-dimensional array of data in self"""
         # Avoid invoking np.diagonal here, as we might want to create arrays of a
         # different type (e.g., dask, cupy etc.)
-        result = get_config().default_zero_array_type(shape=self.shape_2d)
-        i_diagonal = np.arange(self.dependent_size)
-        result[i_diagonal, i_diagonal] = self.data
-        return result
+        if form is None or form == "dense":
+            result = get_config().default_zero_array_type(shape=self.shape_2d)
+            i_diagonal = np.arange(self.dependent_size)
+            result[i_diagonal, i_diagonal] = self.data
+            return result
+        elif form == "sparse":
+            raise NotImplementedError("More work needed")
+            raise TypeError("Unable to return sparse form of DenseJacobian data")
+        else:
+            raise ValueError(f"Invalid value for form argument: {form}")
 
     def get_data_diagonal(self) -> ArrayLike:
         """Return array of data along the diagonal"""

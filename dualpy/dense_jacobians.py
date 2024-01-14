@@ -93,17 +93,27 @@ class DenseJacobian(BaseJacobian):
         # Check out the Jacobian to make sure everything is as it should be
         self._check()
 
-    def get_data_nd(self) -> ArrayLike:
+    def get_data_nd(self, form: str = None) -> ArrayLike:
         """Return the n-dimensional array of data in self"""
-        return self.data
+        if form is None or form == "dense":
+            return self.data
+        elif form == "sparse":
+            raise TypeError("Unable to return sparse form of DenseJacobian data")
+        else:
+            raise ValueError(f"Invalid value for form argument: {form}")
 
-    def get_data_2d(self) -> ArrayLike:
+    def get_data_2d(self, form: str = None) -> ArrayLike:
         """Return the 2-dimensional array of the data in self"""
-        return np.reshape(self.data, self.shape_2d)
+        if form is None or form == "dense":
+            return np.reshape(self.data, self.shape_2d)
+        elif form == "sparse":
+            raise TypeError("Unable to return 2D-sparse form of DenseJacobian data")
+        else:
+            raise ValueError(f"Invalid value for form argument: {form}")
 
     def get_data_diagonal(self) -> ArrayLike:
         """Return the diagonal form of the array in self"""
-        raise ValueError("Not possible to get diagonal from DenseJacobian")
+        raise TypeError("Unable to return diagonal from DenseJacobian")
 
     def _check(self, name: str = None):
         """Integrity checks on dense Jacobian
@@ -312,12 +322,6 @@ class DenseJacobian(BaseJacobian):
         obj : int, slice or sequence of ints
             Object that defines the index or indices before which `values` is
             inserted.
-
-            .. versionadded:: 1.8.0
-
-            Support for multiple insertions when `obj` is a single scalar or a
-            sequence with one element (similar to calling insert multiple
-            times).
         values : array_like
             Values to insert into `arr`. If the type of `values` is different
             from that of `arr`, `values` is converted to the type of `arr`.
@@ -329,7 +333,7 @@ class DenseJacobian(BaseJacobian):
 
         Returns
         -------
-        out : ndarray
+        out : SparseJacobian
             A copy of `arr` with `values` inserted.  Note that `insert`
             does not occur in-place: a new array is returned. If
             `axis` is None, `out` is a flattened array.

@@ -154,11 +154,11 @@ class BaseJacobian(object):
         return self.__str__()
 
     @abstractmethod
-    def get_data_nd(self) -> ArrayLike:
+    def get_data_nd(self, form: str = None) -> ArrayLike:
         """Get mutli-dimensional version of Jacobian's data"""
 
     @abstractmethod
-    def get_data_2d(self) -> ArrayLike:
+    def get_data_2d(self, form: str = None) -> ArrayLike:
         """Get 2D version of Jacobian's data"""
 
     @abstractmethod
@@ -175,6 +175,10 @@ class BaseJacobian(object):
     def __pos__(self):
         """Unary positive for Jacobian"""
         return self
+
+    def real(self):
+        """Return real part of the Jacobians"""
+        return type(self)(source=np.real(self.data), template=self)
 
     # pylint: disable=import-outside-toplevel
     def __add__(self, other: "BaseJacobian"):
@@ -276,10 +280,6 @@ class BaseJacobian(object):
     #     if axis is None:
     #         raise ValueError("Axis cannot be None in this context")
     #     return [slice(None)] * axis + [s] + [slice(none)] * (self.ndim - axis - 1)
-
-    def real(self):
-        """Return real part of the Jacobians"""
-        return type(self)(source=np.real(self.data), template=self)
 
     def _prepare_premultiply_diagonal(
         self,
