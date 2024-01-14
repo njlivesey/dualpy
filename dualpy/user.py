@@ -204,17 +204,17 @@ def solve_quadratic(a, b, c, sign=1):
         if aj:
             x_2 = x_**2
         for name, jacobian in aj.items():
-            x.jacobians[name] = jacobian.premul_diag(x_2 * scale)
+            x.jacobians[name] = jacobian.premultiply_diagonal(x_2 * scale)
         for name, jacobian in bj.items():
             if name in x.jacobians:
-                x.jacobians[name] += jacobian.premul_diag(x_ * scale)
+                x.jacobians[name] += jacobian.premultiply_diagonal(x_ * scale)
             else:
-                x.jacobians[name] = jacobian.premul_diag(x_ * scale)
+                x.jacobians[name] = jacobian.premultiply_diagonal(x_ * scale)
         for name, jacobian in cj.items():
             if name in x.jacobians:
-                x.jacobians[name] += jacobian.premul_diag(scale)
+                x.jacobians[name] += jacobian.premultiply_diagonal(scale)
             else:
-                x.jacobians[name] = jacobian.premul_diag(scale)
+                x.jacobians[name] = jacobian.premultiply_diagonal(scale)
     return x
 
 
@@ -322,7 +322,7 @@ def get_jacobians_for_function_inverse(
     # OK, now we can compute the Jacobians for the solution
     j_reciprocal = 1.0 / y_solution.jacobians[dx_key].extract_diagonal()
     for j_name, jacobian in accumulator.items():
-        x_solution_jacobians[j_name] = jacobian.premul_diag(j_reciprocal)
+        x_solution_jacobians[j_name] = jacobian.premultiply_diagonal(j_reciprocal)
     return x_solution_jacobians
 
 
@@ -465,7 +465,7 @@ def multi_newton_raphson(
         x = dlarray(x)
         j_reciprocal = 1.0 / y_solution.jacobians[j_name_x].extract_diagonal()
         for j_name, jacobian in accumulator.items():
-            x.jacobians[j_name] = jacobian.premul_diag(j_reciprocal)
+            x.jacobians[j_name] = jacobian.premultiply_diagonal(j_reciprocal)
     return x
 
 
@@ -754,7 +754,7 @@ class CubicSplineWithJacobians:
                 padded_x_out_shape, order="K", parent_flags=y.flags
             )
             jx_interpolated = jx_interpolated.broadcast_to(y.shape)
-            jy_contribution = jx_interpolated.premul_diag(dydx)
+            jy_contribution = jx_interpolated.premultiply_diagonal(dydx)
             if name in y.jacobians:
                 y.jacobians[name] -= jy_contribution
             else:

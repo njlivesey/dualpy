@@ -149,10 +149,10 @@ class SparseJacobian(BaseJacobian):
         elif type(data) is sparse.csc_matrix:
             data2d_ = data
         elif data is None:
-            data2d_ = sparse.csc_matrix(self.shape2d)
+            data2d_ = sparse.csc_matrix(self.shape_2d)
         else:
             raise TypeError("Values supplied to SparseJacobian are not suitable")
-        if data2d_.shape != self.shape2d:
+        if data2d_.shape != self.shape_2d:
             raise ValueError("Attempt to create jacobian_sparse with wrong-sized input")
         else:
             self.data2d = data2d_
@@ -163,17 +163,14 @@ class SparseJacobian(BaseJacobian):
         percent = (
             100.0 * self.data2d.nnz / (self.dependent_size * self.independent_size)
         )
-        suffix = (
-            f"\ndata2d is {self.data2d.shape}"
-            + f" with {self.data2d.nnz} numbers stored ({percent:.2g}%)"
-        )
+        suffix = f" with {self.data2d.nnz} numbers stored ({percent:.2g}%)"
         return super().__str__() + suffix
 
     def _check(self, name=None):
         """Integrity checks for sparse Jacobians"""
         if name is None:
             name = "<unknown sparse Jacobian>"
-        self._check_jacobian_fundamentals(name)
+        super()._check(name)
         correct_2dshape = (self.dependent_size, self.independent_size)
         assert self.data2d.shape == correct_2dshape, (
             f"array2d shape mismatch for {name}, "
@@ -280,13 +277,15 @@ class SparseJacobian(BaseJacobian):
             data=input_jacobian.data2d, template=input_jacobian, dependent_shape=shape
         )
 
-    def premul_diag(self, diag):
+    def premultiply_diagonal(self, diag):
         """Dependent-Element by element multiply of an other quantity"""
         # This is a hand-woven diagnonal/sparse-csc multiply
         # equivalent to
         #     out = (diagonal matrix) @ self
         # However, when expressed that way it's less efficient then below
-        diag_, dependent_unit, dependent_shape = self._prepare_premul_diag(diag)
+        diag_, dependent_unit, dependent_shape = self._prepare_premultiply_diagonal(
+            diag
+        )
         # Special case when we're just multiplying by a unit
         if diag_ is None:
             return SparseJacobian(self, dependent_unit=dependent_unit)

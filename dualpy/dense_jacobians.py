@@ -1,72 +1,122 @@
 """Class for dense jacobians"""
+
+from collections.abc import Sequence
+
 import numpy as np
+import scipy.interpolate as interpolate
+from numpy.typing import ArrayLike, DTypeLike
 
-from .jacobian_helpers import (
-    array_to_sparse_diagonal,
-    prepare_jacobians_for_binary_op,
-    linear_interpolation_indices_and_weights,
-)
 from .base_jacobian import BaseJacobian
-from .dual_helpers import apply_units
-
+from .config import get_config
+from .dual_helpers import apply_units, has_jacobians
+from .jacobian_helpers import (  # array_to_sparse_diagonal,
+    linear_interpolation_indices_and_weights,
+    prepare_jacobians_for_binary_op,
+    GenericUnit,
+)
 
 __all__ = ["DenseJacobian"]
 
 
 class DenseJacobian(BaseJacobian):
-    """A dljacobian that's a full on ndarray"""
+    """A dljacobian that's a full-on ndarray"""
 
-    def __init__(self, data=None, template=None, data2d=None, **kwargs):
-        from .sparse_jacobians import SparseJacobian
-        from .diagonal_jacobians import DiagonalJacobian
+    def __init__(
+        self,
+        source: BaseJacobian | ArrayLike = None,
+        template: BaseJacobian = None,
+        dependent_unit: GenericUnit = None,
+        independent_unit: GenericUnit = None,
+        dependent_shape: Sequence = None,
+        independent_shape: Sequence = None,
+        dtype: DTypeLike = None,
+    ):
+        """Create and populate a DenseJacobian
 
-        if data is not None and data2d is not None:
-            raise ValueError("Cannot supply both data and data2d")
-        if isinstance(data, BaseJacobian):
+        Parameters
+        ----------
+        template : BaseJacobian or child thereof, optional
+            If supplied, can be source of shape and units information
+        source : ArrayLike or another Jacobian
+            Source for Jacobian data
+        dependent_unit : GenericUnit, optional
+            Units for the dependent quantity
+        independent_unit : GenericUnit, optional
+            Units for the independent quantity
+        dependent_shape : Sequence, optional
+            Shape for the dependent quantity
+        independent_shape : Sequence, optional
+            Shape for the independent quantity
+        dtype : DTypeLike, optional
+            dtype for the data values
+        """
+        # First, establish the shape, units, etc. of this Jacobian.  See if we can get
+        # it from a template (or from source if it is itself a Jacobian.)
+        if isinstance(source, BaseJacobian):
             if template is None:
-                template = data
+                template = source
             else:
-                raise ValueError(
-                    "Cannot supply template with jacobian data simultaneously"
-                )
-        super().__init__(template=template, **kwargs)
-        if isinstance(data, BaseJacobian):
-            if isinstance(data, DiagonalJacobian):
-                data_ = np.reshape(np.diag(np.ravel(data.data)), data.shape)
-            elif isinstance(data, DenseJacobian):
-                data_ = data.data
-            elif isinstance(data, SparseJacobian):
-                data_ = np.reshape(data.data2d.toarray(), template.shape)
-            else:
-                raise ValueError("Unrecognized type for input jacobian")
-        else:
-            if data is not None:
-                data_ = data
-            elif data2d is not None:
-                data_ = np.reshape(data2d, self.shape)
-            else:
-                data_ = np.zeros(shape=self.shape, dtype=self.dtype)
-        if data_.shape != self.shape:
-            raise ValueError("Attempt to create jacobian_dense with wrong-shaped input")
-        self.data = data_
-        self.data2d = np.reshape(
-            self.data, [self.dependent_size, self.independent_size]
+                raise ValueError("Got a Jacobian in source and also a template")
+        # OK, now set up the key parameters based on the information in template, if
+        # any, and the keword arguments (depdendent_shape etc. etc.)
+        super().__init__(
+            template=template,
+            dependent_unit=dependent_unit,
+            independent_unit=independent_unit,
+            dependent_shape=dependent_shape,
+            independent_shape=independent_shape,
         )
-        self.dtype = self.data.dtype
+        # Now try to get the data for this Jacobian, an n-dimensional array
+        data = None
+        if isinstance(source, BaseJacobian):
+            # If source is a Jacobian, then get it from that
+            data = source.get_data_nd()
+        else:
+            # Otherwise, try to get it from source.  First densify it if it's some kind of
+            # sparse representation.
+            try:
+                data = data.todense()
+            except AttributeError:
+                pass
+            # Now try to reshape it.
+            try:
+                data = np.reshape(source, self.shape)
+            except AttributeError:
+                # If that fails then it's probably not any kind of array, perhaps it's a
+                # scalar or something, turn it into an ndarray.
+                data = np.reshape(np.array(source), self.shape)
+        # If we weren't able to get anywhere with data, make it an array of zeros.
+        if data is None:
+            data = get_config().default_zero_array_type(shape=self.shape, dtype=dtype)
+        # OK, lodge data in self
+        self.data = data
+        # Check out the Jacobian to make sure everything is as it should be
         self._check()
 
-    def __str__(self):
-        return (
-            super().__str__()
-            + f"\ndata is {self.data.shape}\n"
-            + f"data2d is {self.data2d.shape}"
-        )
+    def get_data_nd(self) -> ArrayLike:
+        """Return the n-dimensional array of data in self"""
+        return self.data
 
-    def _check(self, name=None):
-        """Integrity checks on dense Jacobian"""
+    def get_data_2d(self) -> ArrayLike:
+        """Return the 2-dimensional array of the data in self"""
+        return np.reshape(self.data, self.shape_2d)
+
+    def get_data_diagonal(self) -> ArrayLike:
+        """Return the diagonal form of the array in self"""
+        raise ValueError("Not possible to get diagonal from DenseJacobian")
+
+    def _check(self, name: str = None):
+        """Integrity checks on dense Jacobian
+
+        Parameters
+        ----------
+        name : str, optional
+            Name for the Jacobian for use in error messages
+        """
         if name is None:
             name = "<unknown dense Jacobian>"
-        self._check_jacobian_fundamentals(name)
+        # Get the base class to do the main checking
+        super()._check(name)
         assert (
             self.data.shape == self.shape
         ), f"Array shape mismatch for {name}, {self.data.shape} != {self.shape}"
@@ -74,45 +124,114 @@ class DenseJacobian(BaseJacobian):
             self.data.size == self.size
         ), f"Array size mismatch for {name}, {self.data.size} != {self.size}"
 
-    def _getjitem(self, new_shape, key):
-        """A getitem type method for dense Jacobians"""
+    def _getjitem(
+        self,
+        new_dependent_shape: tuple,
+        key: tuple | ArrayLike,
+    ) -> "DenseJacobian":
+        """Enacts getitem for dense Jacobians
+
+        Invoked by dlarray.__getitem__
+
+        Parameters
+        ----------
+        new_shape : tuple
+            The new shape of the dependent variable in the
+
+        key : tuple | ArrayLike
+            The getitem key
+
+        Returns
+        -------
+        result : DenseJacobian
+            Appropriate subset of the Jacobian
+        """
+        # Do some preprocessing on the key (basically ensures is the right shape, as
+        # sometimes, things like matplotlib add Ellipses etc.)
         key = self._preprocess_getsetitem_key(key)
+        # Append full selections for the independent axes
         jkey = key + (slice(None),) * self.independent_ndim
-        result_ = self.data.__getitem__(jkey)
-        new_full_shape = new_shape + self.independent_shape
-        if result_.shape != new_full_shape:
+        result_data = self.data[jkey]
+        new_full_shape = new_dependent_shape + self.independent_shape
+        if result_data.shape != new_full_shape:
             raise NotImplementedError(
                 "Looks like we do need to do a reshape after all!"
             )
-        # result_ = np.reshape(result_, new_full_shape)
-        return DenseJacobian(data=result_, template=self, dependent_shape=new_shape)
+            # result_ = np.reshape(result_, new_full_shape)
+        return DenseJacobian(
+            source=result_data, template=self, dependent_shape=new_dependent_shape
+        )
 
-    def _setjitem(self, key, value):
-        """A getitem type method for dense Jacobians"""
+    def _setjitem(
+        self,
+        key: tuple | ArrayLike,
+        value: BaseJacobian,
+    ):
+        """Enacts setitem for dense Jacobians
+
+        Invoked by dlarray.__setitem___
+
+        Parameters
+        ----------
+        key : tuple | ArrayLike
+            The setitem key
+        value : BaseJacobian
+            The values for this part of the Jacobian to be set to
+        """
         if value is not None:
-            self_, value_, result_type = prepare_jacobians_for_binary_op(self, value)
+            # Try to get the "output" and "input" Jacobians to be compatible, as we
+            # would for a binary operation.
+            dummy_self_data, value_data, result_type = prepare_jacobians_for_binary_op(
+                self, value
+            )
             if result_type != type(self):
-                return TypeError(
+                raise TypeError(
                     "Jacobian is not of correct type to receive new contents"
                 )
         else:
-            value_ = 0.0
+            raise NotImplementedError("Not sure why we ever need to get here.")
+            # value_data = 0.0
         key = self._preprocess_getsetitem_key(key)
-        self.data.__setitem__(key, value_)
+        # Do the value insetion
+        self.data[key] = value_data
 
-    def broadcast_to(self, shape):
+    def broadcast_to(self, new_dependent_shape: tuple) -> "DenseJacobian":
         """Broadcast dense Jacobian to new dependent_shape"""
         # Don't bother doing anything if the shape is already good
-        if shape == self.dependent_shape:
+        if new_dependent_shape == self.dependent_shape:
             return self
-        full_shape = shape + self.independent_shape
-        result_ = np.broadcast_to(self.data, full_shape)
-        return DenseJacobian(data=result_, template=self, dependent_shape=shape)
+        full_shape = new_dependent_shape + self.independent_shape
+        data = np.broadcast_to(self.data, full_shape)
+        return DenseJacobian(
+            source=data,
+            template=self,
+            dependent_shape=new_dependent_shape,
+        )
 
-    def reshape(self, shape, order, parent_flags):
-        """reshape dense Jacobian"""
+    def reshape(
+        self,
+        new_dependent_shape: tuple,
+        order: str,
+        parent_flags,
+    ) -> "DenseJacobian":
+        """Reshape a DenseJacobian
+
+        Parameters
+        ----------
+        new_shape : tuple
+            The new shape
+        order : str
+            "F", "C", "A", see documentation for numpy
+        parent_flags : numpy.ndarray.flags
+            The flags for the parent quantity for which these are jacobians
+
+        Returns
+        -------
+        DenseJacobian
+            Result
+        """
         # Don't bother doing anything if the shape is already good
-        if np.all(shape == self.dependent_shape):
+        if new_dependent_shape == self.dependent_shape:
             return self
         if order == "K":
             order = "A"
@@ -124,70 +243,150 @@ class DenseJacobian(BaseJacobian):
         else:
             input_jacobian = self
         try:
-            full_shape = tuple(shape) + tuple(input_jacobian.independent_shape)
+            full_shape = tuple(new_dependent_shape) + tuple(
+                input_jacobian.independent_shape
+            )
         except TypeError:
-            full_shape = (shape,) + tuple(input_jacobian.independent_shape)
-        result_ = np.reshape(input_jacobian.data, full_shape, order)
+            full_shape = (new_dependent_shape,) + tuple(
+                input_jacobian.independent_shape
+            )
+        data = np.reshape(input_jacobian.data, full_shape, order)
         return DenseJacobian(
-            data=result_, template=input_jacobian, dependent_shape=shape
+            source=data, template=input_jacobian, dependent_shape=new_dependent_shape
         )
 
-    def premul_diag(self, diag):
-        """Diagonal premulitply for dense Jacobian"""
-        diag_, dependent_unit, dependent_shape = self._prepare_premul_diag(diag)
-        if diag_ is None:
+    def premultiply_diagonal(self, diagonal: ArrayLike) -> "DenseJacobian":
+        """Diagonal premulitply for dense Jacobian
+
+        This is a key routine as the vast majority of dual operations involve a
+        chain-rule-invoked premultiplication along the dependent axis.  In this case
+        diagonal needs to be broadcastable to self.dependent_shape, in which case a simple
+        element-wise multiply accomplishes what is needed.
+
+        Parameters
+        ----------
+        diagonal : ArrayLike
+            The array to multiply down the diagonal
+
+        Returns
+        -------
+        result : DenseJacobian
+            The resulting DenseJacobian
+        """
+        (
+            diagonal_data,
+            dependent_unit,
+            dependent_shape,
+        ) = self._prepare_premultiply_diagonal(diagonal)
+        # Special case if we're just multiplying by a unit
+        if diagonal_data is None:
             return DenseJacobian(self, dependent_unit=dependent_unit)
         try:
-            diag_ = np.reshape(diag_, (diag.shape + self._dummy_independent))
+            diagonal_data = np.reshape(
+                diagonal_data, (diagonal.shape + self._dummy_independent)
+            )
             # This will fail for scalars, but that's OK scalars don't
             # need to be handled specially
         except (ValueError, AttributeError):
             pass
         return DenseJacobian(
-            diag_ * self.data,
+            diagonal_data * self.data,
             template=self,
             dependent_unit=dependent_unit,
             dependent_shape=dependent_shape,
         )
 
-    def insert(self, obj, values, axis, dependent_shape):
-        """insert method for dense Jacobian"""
+    def insert(
+        self,
+        obj: int | slice | Sequence[int],
+        values: ArrayLike,
+        axis: int,
+        dependent_shape: tuple,
+    ) -> "DenseJacobian":
+        """Performms numpy.insert-like actions on DenseJacobian
+
+        Parameters
+        ----------
+        arr : array_like
+            Input array.
+        obj : int, slice or sequence of ints
+            Object that defines the index or indices before which `values` is
+            inserted.
+
+            .. versionadded:: 1.8.0
+
+            Support for multiple insertions when `obj` is a single scalar or a
+            sequence with one element (similar to calling insert multiple
+            times).
+        values : array_like
+            Values to insert into `arr`. If the type of `values` is different
+            from that of `arr`, `values` is converted to the type of `arr`.
+            `values` should be shaped so that ``arr[...,obj,...] = values``
+            is legal.
+        axis : int, optional
+            Axis along which to insert `values`.  If `axis` is None then `arr`
+            is flattened first.
+
+        Returns
+        -------
+        out : ndarray
+            A copy of `arr` with `values` inserted.  Note that `insert`
+            does not occur in-place: a new array is returned. If
+            `axis` is None, `out` is a flattened array.
+        """
+
+        if has_jacobians(values):
+            raise NotImplementedError(
+                "Not implemented the case where a a dual is being inserted"
+            )
         jaxis = self._get_jaxis(axis, none="flatten")
         data = np.insert(self.data, obj, 0.0, jaxis)
         return DenseJacobian(data, template=self, dependent_shape=dependent_shape)
 
-    def sum(self, dependent_shape, axis=None, dtype=None, keepdims=False):
-        """Performs sum for the dense Jacobians"""
-        # Negative axis requests count backwards from the last index,
-        # but the Jacobians have the independent_shape appended to
-        # their shape, so we need to correct for that (or not if its positive)
+    def _reduce(
+        self,
+        function: callable,
+        new_dependent_shape: tuple,
+        axis: int = None,
+        **kwargs,
+    ) -> "DenseJacobian":
+        """A generic reduction operation for DenseJacobians
+
+        Parameters
+        ----------
+        function : callable
+            The operation to perform (e.g., np.sum)
+        All other arguments as the various numpy reduce operations.
+        """
         jaxis = self._get_jaxis(axis, none="all")
         return DenseJacobian(
-            data=np.sum(self.data, axis=jaxis, dtype=dtype, keepdims=keepdims),
+            source=function(self.data, axis=jaxis, **kwargs),
             template=self,
-            dependent_shape=dependent_shape,
+            dependent_shape=new_dependent_shape,
         )
 
-    def mean(self, dependent_shape, axis=None, dtype=None, keepdims=False):
-        """Performs mean for the dense Jacobians"""
-        # Negative axis requests count backwards from the last index,
-        # but the Jacobians have the independent_shape appended to
-        # their shape, so we need to correct for that (or not if its positive)
-        jaxis = self._get_jaxis(axis, none="all")
-        return DenseJacobian(
-            data=np.mean(self.data, axis=jaxis, dtype=dtype, keepdims=keepdims),
-            template=self,
-            dependent_shape=dependent_shape,
+    def sum(self, new_dependent_shape: tuple, **kwargs) -> "DenseJacobian":
+        """Performs sum for the dense Jacobians.  See numpy help for details"""
+        return self._reduce(
+            function=np.sum, new_dependent_shape=new_dependent_shape, **kwargs
         )
 
-    def cumsum(self, axis):
-        """Perform cumsum for a dense Jacobian"""
-        jaxis = self._get_jaxis(axis, none="all")
-        return DenseJacobian(template=self, data=np.cumsum(self.data, axis=jaxis))
+    def mean(self, new_dependent_shape: tuple, **kwargs) -> "DenseJacobian":
+        """Performs mean for the dense Jacobians.  See numpy help for details"""
+        return self._reduce(
+            function=np.mean, new_dependent_shape=new_dependent_shape, **kwargs
+        )
 
+    def cumsum(self, new_dependent_shape: tuple, **kwargs) -> "DenseJacobian":
+        """Performs cumsum for the dense Jacobians.  See numpy help for details"""
+        return self._reduce(
+            function=np.cumsum, new_dependent_shape=new_dependent_shape, **kwargs
+        )
+
+    # pylint: disable=protected-access
     def diff(
         self, dependent_shape, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue
-    ):
+    ) -> "DenseJacobian":
         """diff method for dense jacobian"""
         jaxis = self._get_jaxis(axis)
         if prepend is not np._NoValue:
@@ -202,21 +401,24 @@ class DenseJacobian(BaseJacobian):
             )
         result_ = np.diff(self.data, n, jaxis, prepend, append)
         return DenseJacobian(
-            data=result_, template=self, dependent_shape=dependent_shape
+            source=result_, template=self, dependent_shape=dependent_shape
         )
 
-    def transpose(self, axes, result_dependent_shape):
+    def transpose(self, axes, result_dependent_shape) -> "DenseJacobian":
+        """Transpose DenseJacobian in response to transpose of parent dual"""
         jaxes = self._get_jaxis(axes, none="transpose")
         jaxes = tuple(jaxes) + tuple(range(self.dependent_ndim, self.ndim))
         return DenseJacobian(
-            data=self.data.transpose(jaxes),
+            source=self.data.transpose(jaxes),
             template=self,
             dependent_shape=result_dependent_shape,
         )
 
-    def tensordot(self, other, axes, dependent_unit):
+    def tensordot(
+        self, other: BaseJacobian, axes: tuple, dependent_unit: GenericUnit
+    ) -> "DenseJacobian":
         """Compute self(.)other"""
-        import sparse as st
+        import sparse as st  # pylint: disable=import-outside-toplevel
 
         # Note that axes here must be in the list of two lists form, with no negative
         # numbers.
@@ -227,15 +429,15 @@ class DenseJacobian(BaseJacobian):
         # want our independent dimensions (part of self) at the end, so will have to do
         # a transpose.  Let's do the tensor dot anyway.
         if isinstance(self.data, np.ndarray) and isinstance(other, np.ndarray):
-            result_ = np.tensordot(self.data, other, axes)
+            data = np.tensordot(self.data, other, axes)
         else:
-            result_ = st.tensordot(self.data, other, axes)
+            data = st.tensordot(self.data, other, axes)
         # Move the indepenent axes to the end.  First we want the non-contracted
         # dependent dimensions from self, these are currently at the start
         new_axis_order = list(range(self.dependent_ndim - n_contractions))
         # Then the non-contracted dimensions from other, currently at the end
         new_axis_order += list(
-            range(result_.ndim - other.ndim + n_contractions, result_.ndim)
+            range(data.ndim - other.ndim + n_contractions, data.ndim)
         )
         # Finally the independent dimensions, currently in the middle
         new_axis_order += list(
@@ -244,45 +446,52 @@ class DenseJacobian(BaseJacobian):
                 self.dependent_ndim - n_contractions + self.independent_ndim,
             )
         )
-        result_ = result_.transpose(new_axis_order)
+        data = data.transpose(new_axis_order)
         # Do this next bit long hand in scale independent_ndim==0
-        result_dependent_shape = result_.shape[: result_.ndim - self.independent_ndim]
+        result_dependent_shape = data.shape[: data.ndim - self.independent_ndim]
         return DenseJacobian(
-            data=result_,
+            source=data,
             dependent_shape=result_dependent_shape,
             dependent_unit=dependent_unit,
             independent_shape=self.independent_shape,
             independent_unit=self.independent_unit,
         )
 
-    def rtensordot(self, other, axes, dependent_unit):
+    def rtensordot(
+        self, other: BaseJacobian, axes: tuple, dependent_unit: GenericUnit
+    ) -> "DenseJacobian":
         """Compute other(.)self"""
         # This one is actually easier than regular tensordot, because the axes end up in
         # the right order
-        result_ = np.tensordot(other, self.data, axes)
+        data = np.tensordot(other, self.data, axes)
         # Do this next bit long hand in scale independent_ndim==0
-        result_dependent_shape = result_.shape[: result_.ndim - self.independent_ndim]
+        result_dependent_shape = data.shape[: data.ndim - self.independent_ndim]
         return DenseJacobian(
-            data=result_,
+            source=data,
             template=self,
             dependent_shape=result_dependent_shape,
             dependent_unit=dependent_unit,
         )
 
     def extract_diagonal(self):
-        """Extract the diagonal from a dense Jacobian"""
+        """Extract the diagonal from a dense Jacobian with units"""
         if self.dependent_shape != self.independent_shape:
             raise ValueError("Dense Jacobian is not square")
-        result_ = np.reshape(self.data2d.diagonal(), self.dependent_shape)
-        return apply_units(result_, self.dependent_unit / self.independent_unit)
+        result = np.reshape(self.get_data_2d(), self.dependent_shape)
+        return apply_units(result, self.dependent_unit / self.independent_unit)
 
     def todensearray(self):
+        """Get Jacobian as n-dimensional dense array with units"""
         return apply_units(self.data, self.dependent_unit / self.independent_unit)
 
     def to2ddensearray(self):
-        return apply_units(self.data2d, self.dependent_unit / self.independent_unit)
+        """Get Jacobian as 2-dimensional dense array with units"""
+        return apply_units(
+            self.get_data_2d(), self.dependent_unit / self.independent_unit
+        )
 
     def to2darray(self):
+        """Get Jacobian as 2-dimensional array with units"""
         return self.to2ddensearray()
 
     def _join(self, other, location, axis, result_dependent_shape):
@@ -357,15 +566,15 @@ class DenseJacobianLinearInterpolator(object):
         w_lower = np.reshape(w_lower, w_shape)
         w_upper = np.reshape(w_upper, w_shape)
         # Now do the linear interpolation
-        result = (
+        data = (
             self.jacobian.data[tuple(lower_key)] * w_lower
             + self.jacobian.data[tuple(upper_key)] * w_upper
         )
         # Prepare the result and return
-        new_dependent_shape = result.shape[: self.jacobian.dependent_ndim]
+        new_dependent_shape = data.shape[: self.jacobian.dependent_ndim]
         return DenseJacobian(
             template=self.jacobian,
-            data=result,
+            source=data,
             dependent_shape=new_dependent_shape,
         )
 
@@ -375,7 +584,6 @@ class DenseJacobianSplineInterpolator(object):
 
     def __init__(self, jacobian, x_in, axis=-1, bc_type="not-a-knot", extrapolate=None):
         """Setup an interpolator for a given DenseJacobian"""
-        import scipy.interpolate as interpolate
 
         self.jacobian = jacobian
         self.jaxis = jacobian._get_jaxis(axis, none="first")
@@ -389,10 +597,10 @@ class DenseJacobianSplineInterpolator(object):
 
     def __call__(self, x_out):
         """Inpoterpolate a DenseJacobian to new values along an axis"""
-        result = self.interpolator(x_out)
-        new_dependent_shape = result.shape[: self.jacobian.dependent_ndim]
+        data = self.interpolator(x_out)
+        new_dependent_shape = data.shape[: self.jacobian.dependent_ndim]
         return DenseJacobian(
             template=self.jacobian,
-            data=result,
+            source=data,
             dependent_shape=new_dependent_shape,
         )

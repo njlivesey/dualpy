@@ -14,12 +14,11 @@ from .dual_helpers import (
     get_unit,
     setup_dual_operation,
 )
-from .config import get_config
 from .jacobians import (
-    _setitem_jacobians,
-    _join_jacobians,
-    _concatenate_jacobians,
-    _stack_jacobians,
+    setitem_jacobians as _setitem_jacobians,
+    join_jacobians as _join_jacobians,
+    concatenate_jacobians as _concatenate_jacobians,
+    stack_jacobians as _stack_jacobians,
 )
 
 
@@ -299,7 +298,7 @@ class dlarray(DualOperatorsMixin):
         (where * works in a diagonal matrix-multiply sense)
 
         Updates all the Jacobians in a dlarray by premultiplying them by a diagonal.
-        Most of the work is done by the premul_diag method for the Jacobian itself.
+        Most of the work is done by the premultiply_diagonal method for the Jacobian itself.
         This method is invoked by almost every single dual method, so needs to aim for
         efficiency.
 
@@ -321,15 +320,19 @@ class dlarray(DualOperatorsMixin):
         if dependent_unit is not None:
             for name, jacobian in a.jacobians.items():
                 if add and name in self.jacobians:
-                    self.jacobians[name] += jacobian.to(dependent_unit).premul_diag(d)
+                    self.jacobians[name] += jacobian.to(
+                        dependent_unit
+                    ).premultiply_diagonal(d)
                 else:
-                    self.jacobians[name] = jacobian.to(dependent_unit).premul_diag(d)
+                    self.jacobians[name] = jacobian.to(
+                        dependent_unit
+                    ).premultiply_diagonal(d)
         else:
             for name, jacobian in a.jacobians.items():
                 if add and name in self.jacobians:
-                    self.jacobians[name] += jacobian.premul_diag(d)
+                    self.jacobians[name] += jacobian.premultiply_diagonal(d)
                 else:
-                    self.jacobians[name] = jacobian.premul_diag(d)
+                    self.jacobians[name] = jacobian.premultiply_diagonal(d)
 
     def ravel(self, order="C"):
         return _ravel(self, order=order)
@@ -381,12 +384,12 @@ class dlarray(DualOperatorsMixin):
         # unadulterated.
         # out_jacobians = {}
         # for name, jacobian in aj.items():
-        #     out_jacobians[name] = jacobian.premul_diag(b_)
+        #     out_jacobians[name] = jacobian.premultiply_diagonal(b_)
         # for name, jacobian in bj.items():
         #     if name in out_jacobians:
-        #         out_jacobians[name] += jacobian.premul_diag(a_)
+        #         out_jacobians[name] += jacobian.premultiply_diagonal(a_)
         #     else:
-        #         out_jacobians[name] = jacobian.premul_diag(a_)
+        #         out_jacobians[name] = jacobian.premultiply_diagonal(a_)
         # if out is None:
         #     out = dlarray(a_ * b_)
         # else:
@@ -397,12 +400,12 @@ class dlarray(DualOperatorsMixin):
 
         out = dlarray(a_ * b_)
         for name, jacobian in aj.items():
-            out.jacobians[name] = jacobian.premul_diag(b_)
+            out.jacobians[name] = jacobian.premultiply_diagonal(b_)
         for name, jacobian in bj.items():
             if name in out.jacobians:
-                out.jacobians[name] += jacobian.premul_diag(a_)
+                out.jacobians[name] += jacobian.premultiply_diagonal(a_)
             else:
-                out.jacobians[name] = jacobian.premul_diag(a_)
+                out.jacobians[name] = jacobian.premultiply_diagonal(a_)
         return out
 
     @staticmethod
@@ -418,12 +421,14 @@ class dlarray(DualOperatorsMixin):
         # The premultiplier for b' is that times the result
         c_ = out_ * r_
         for name, jacobian in aj.items():
-            out.jacobians[name] = jacobian.premul_diag(r_)
+            out.jacobians[name] = jacobian.premultiply_diagonal(r_)
         for name, jacobian in bj.items():
             if name in out.jacobians:
-                out.jacobians[name] += -jacobian.premul_diag(c_)
+                out.jacobians[name] += -jacobian.premultiply_diagonal(c_)
             else:
-                out.jacobians[name] = -jacobian.premul_diag(c_).to(out._dependent_unit)
+                out.jacobians[name] = -jacobian.premultiply_diagonal(c_).to(
+                    out._dependent_unit
+                )
         return out
 
     @staticmethod
@@ -454,25 +459,25 @@ class dlarray(DualOperatorsMixin):
             dB_ = out_ * np.log(a_)
             out = dlarray(out_)
             for name, jacobian in aj.items():
-                out.jacobians[name] = jacobian.premul_diag(dA_)
+                out.jacobians[name] = jacobian.premultiply_diagonal(dA_)
             for name, jacobian in bj.items():
                 if name in out.jacobians:
-                    out.jacobians[name] += jacobian.premul_diag(dB_)
+                    out.jacobians[name] += jacobian.premultiply_diagonal(dB_)
                 else:
-                    out.jacobians[name] = jacobian.premul_diag(dB_).to(
+                    out.jacobians[name] = jacobian.premultiply_diagonal(dB_).to(
                         out._dependent_unit
                     )
         elif isinstance(a, dlarray):
             out = dlarray(a_**b)
             d_ = b * a_ ** (b - 1)
             for name, jacobian in aj.items():
-                out.jacobians[name] = jacobian.premul_diag(d_)
+                out.jacobians[name] = jacobian.premultiply_diagonal(d_)
         elif isinstance(b, dlarray):
             a_, b_, aj, bj, out = setup_dual_operation(a, b)
             out_ = a**b_
             out = dlarray(out_)
             for name, jacobian in bj.items():
-                out.jacobians[name] = jacobian.premul_diag(out_ * np.log(a_))
+                out.jacobians[name] = jacobian.premultiply_diagonal(out_ * np.log(a_))
             if hasattr(b, "units") or hasattr(b, "unit"):
                 out = out * b._dimensionless
         return out
@@ -484,14 +489,16 @@ class dlarray(DualOperatorsMixin):
         out = dlarray(np.arctan2(a_, b_))
         rr2 = a._rad * np.reciprocal(a_**2 + b_**2)
         for name, jacobian in aj.items():
-            out.jacobians[name] = jacobian.premul_diag(b_ * rr2).to(out._dependent_unit)
+            out.jacobians[name] = jacobian.premultiply_diagonal(b_ * rr2).to(
+                out._dependent_unit
+            )
         for name, jacobian in bj.items():
             if name in out.jacobians:
-                out.jacobians[name] += jacobian.premul_diag(-a_ * rr2).to(
+                out.jacobians[name] += jacobian.premultiply_diagonal(-a_ * rr2).to(
                     out._dependent_unit
                 )
             else:
-                out.jacobians[name] = jacobian.premul_diag(-a_ * rr2).to(
+                out.jacobians[name] = jacobian.premultiply_diagonal(-a_ * rr2).to(
                     out._dependent_unit
                 )
         return out
@@ -960,12 +967,12 @@ def where(condition, a=None, b=None):
     # Now go through the jacobians and insert them where the condition
     # applies, otherwise they're zero.
     for name, jacobian in aj.items():
-        out.jacobians[name] = jacobian.premul_diag(cond_)
+        out.jacobians[name] = jacobian.premultiply_diagonal(cond_)
     for name, jacobian in bj.items():
         if name in out.jacobians:
-            out.jacobians[name] += jacobian.premul_diag(np.logical_not(cond_))
+            out.jacobians[name] += jacobian.premultiply_diagonal(np.logical_not(cond_))
         else:
-            out.jacobians[name] = jacobian.premul_diag(np.logical_not(cond_))
+            out.jacobians[name] = jacobian.premultiply_diagonal(np.logical_not(cond_))
     return out
 
 

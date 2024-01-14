@@ -4,6 +4,7 @@ import astropy.units as units
 
 from .duals import dlarray
 
+
 class dlarray_astropy(dlarray):
     """A subclass of dlarray that wraps an astropy.Quantity variable.
 
@@ -14,7 +15,7 @@ class dlarray_astropy(dlarray):
     # --------------------------------------------- Overload attributes
     _rad = units.rad
     _per_rad = units.rad ** (-1)
-    _dimensionless = units.dimensionless_unscaled 
+    _dimensionless = units.dimensionless_unscaled
 
     # --------------------------------------------- Extra properties
     @property
@@ -73,6 +74,7 @@ class dlarray_astropy(dlarray):
             return np.array(quantity) << unit
         except AttributeError:
             return quantity
+
     # ------------------------------------------ Some dunders
     # def __mul__(self, other):
     #     # Needed for dual * unit case
@@ -85,4 +87,3 @@ class dlarray_astropy(dlarray):
     #     if isinstance(other, (units.UnitBase, str)):
     #         return self / units.Quantity(1.0, other)
     #     return np.true_dvide(self, other)
-

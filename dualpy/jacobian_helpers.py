@@ -6,12 +6,14 @@ import itertools
 
 from .dual_helpers import get_unit_conversion_scale, get_magnitude
 
+
 __all__ = [
     "array_to_sparse_diagonal",
     "broadcasted_shape",
     "prepare_jacobians_for_binary_op",
     "shapes_broadcastable",
     "jacobian_2d_matrix_multiply",
+    "GenericUnit",
 ]
 
 
@@ -204,3 +206,16 @@ def linear_interpolation_indices_and_weights(c_in, c_out, extrapolate=None):
             raise ValueError(f"Unable to handle extrapolate={extrapolate}")
     w_lower = 1.0 - w_upper
     return i_lower, i_upper, w_lower, w_upper
+
+
+# pylint: disable=import-outside-toplevel
+def get_unit_class():
+    """Generate a generic unit class for type checking"""
+    from pint import Unit as PintUnit
+    from astropy.units import Unit as AstropyUnit
+    from .unitless import Unitless
+
+    return Unitless | PintUnit | AstropyUnit
+
+
+GenericUnit = get_unit_class()

@@ -1,15 +1,5 @@
 """The various Jacobians for duals"""
 
-__all__ = [
-    "BaseJacobian",
-    "DiagonalJacobian",
-    "DenseJacobian",
-    "SparseJacobian",
-    "SeedJacobian",
-    "_concatenate_jacobians",
-    "matrix_multiply_jacobians",
-]
-
 import numpy as np
 import scipy.sparse as sparse
 
@@ -20,32 +10,34 @@ from .sparse_jacobians import SparseJacobian
 from .dual_helpers import get_unit
 
 
-def _setitem_jacobians(key, target, target_jacobians, source_jacobians):
+def setitem_jacobians(key, target, target_jacobians, source_jacobians):
     """Called by dual __setitem__ to set jacobian items"""
     # Loop over the jacobians in the value (which is the source)
-    for name, source_j in source_jacobians.items():
+    for name, source_jacobian in source_jacobians.items():
         if name not in target_jacobians:
-            if isinstance(source_j, DenseJacobian):
-                newj = DenseJacobian
-            elif isinstance(source_j, SparseJacobian):
-                newj = SparseJacobian
-            elif isinstance(source_j, DiagonalJacobian):
-                source_j = SparseJacobian(source_j)
-                newj = SparseJacobian
+            if isinstance(source_jacobian, DenseJacobian):
+                result_type = DenseJacobian
+            elif isinstance(source_jacobian, SparseJacobian):
+                result_type = SparseJacobian
+            elif isinstance(source_jacobian, DiagonalJacobian):
+                source_jacobian = SparseJacobian(source_jacobian)
+                result_type = SparseJacobian
             else:
-                raise TypeError(f"Unrecognized type for jacobian {type(source_j)}")
-            target_jacobians[name] = newj(
+                raise TypeError(
+                    f"Unrecognized type for jacobian {type(source_jacobian)}"
+                )
+            target_jacobians[name] = result_type(
                 dependent_unit=get_unit(target),
-                independent_unit=source_j.independent_unit,
+                independent_unit=source_jacobian.independent_unit,
                 dependent_shape=target.shape,
-                independent_shape=source_j.independent_shape,
-                dtype=source_j.dtype,
+                independent_shape=source_jacobian.independent_shape,
+                dtype=source_jacobian.dtype,
             )
         # Now insert the values
-        target_jacobians[name]._setjitem(key, source_j)
+        target_jacobians[name]._setjitem(key, source_jacobian)
 
 
-def _prep_jacobians_for_join(*args, result_dependent_shape):
+def prep_jacobians_for_join(*args, result_dependent_shape):
     """Used by insert, append, concatenate, others(?) to prepare Jacobians"""
     from .user import has_jacobians
 
@@ -107,7 +99,7 @@ def _prep_jacobians_for_join(*args, result_dependent_shape):
     return prepped_jacobians, result_types, result_jacobians
 
 
-def _join_jacobians(a, b, location, axis, result_dependent_shape):
+def join_jacobians(a, b, location, axis, result_dependent_shape):
     """Used by insert and append to do the work for Jocobians"""
     prepped_jacobians, result_types, result_jacobians = _prep_jacobians_for_join(
         a, b, result_dependent_shape=result_dependent_shape
@@ -118,7 +110,7 @@ def _join_jacobians(a, b, location, axis, result_dependent_shape):
     return result_jacobians
 
 
-def _concatenate_jacobians(values, axis, result_dependent_shape):
+def concatenate_jacobians(values, axis, result_dependent_shape):
     """Concatenate the Jacobians, supports dual concatenation"""
     prepped_jacobians, result_types, result_jacobians = _prep_jacobians_for_join(
         *values, result_dependent_shape=result_dependent_shape
@@ -159,7 +151,7 @@ def _concatenate_jacobians(values, axis, result_dependent_shape):
     return result
 
 
-def _stack_jacobians(arrays, axis, result_dependent_shape):
+def stack_jacobians(arrays, axis, result_dependent_shape):
     """Support the numpy.stack operationf for Jacobians"""
     prepped_jacobians, result_types, result_jacobians = _prep_jacobians_for_join(
         *arrays, result_dependent_shape=result_dependent_shape

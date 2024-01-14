@@ -1,7 +1,12 @@
-"""The base class for the jacobians"""
+"""Module defining the BaseJacobian class from which other types of Jacobian are descended"""
+
 import copy
-import numpy as np
 import warnings
+from collections.abc import Sequence
+from abc import abstractmethod
+
+import numpy as np
+from numpy.typing import ArrayLike, DTypeLike
 
 from .dual_helpers import (
     get_unit_conversion_scale,
@@ -11,52 +16,70 @@ from .dual_helpers import (
 from .jacobian_helpers import (
     broadcasted_shape,
     prepare_jacobians_for_binary_op,
+    GenericUnit,
 )
-
-from .unitless import Unitless
-
-__all__ = ["BaseJacobian"]
 
 
 class BaseJacobian(object):
-
     """This is a container for a jacobian "matrix".  The various child
-    classes store the information as either diagonal, a dense array,
-    or a sparse array.
+    classes store the information as either diagonal, a dense array, or a sparse array.
+    They all share information on the shape and units (if applicable) of the dependent
+    and independent terms in the Jacobian."""
 
-    """
-
+    @abstractmethod
+    # pylint: disable=too-many-arguments
     def __init__(
         self,
-        template=None,
-        dependent_unit=None,
-        independent_unit=None,
-        dependent_shape=None,
-        independent_shape=None,
-        dtype=None,
+        source: ArrayLike | "BaseJacobian" = None,  # pylint: disable=unused-argument
+        template: "BaseJacobian" = None,
+        dependent_unit: GenericUnit = None,
+        independent_unit: GenericUnit = None,
+        dependent_shape: Sequence = None,
+        independent_shape: Sequence = None,
+        dtype: DTypeLike = None,
     ):
-        """Define a new jacobian"""
+        """Populate the basic contents of a BaseJacobian
 
+        Parameters
+        ----------
+        template : BaseJacobian or child thereof, optional
+            If supplied, can be source of shape and units information
+        source : ArrayLike or another Jacobian
+            Source for Jacobian data (ignored in base class)
+        dependent_unit : GenericUnit, optional
+            Units for the dependent quantity
+        independent_unit : GenericUnit, optional
+            Units for the independent quantity
+        dependent_shape : Sequence, optional
+            Shape for the dependent quantity
+        independent_shape : Sequence, optional
+            Shape for the independent quantity
+        dtype : DTypeLike, optional
+            dtype for the data values
+        """
+
+        # Define a quick helper rutine
         def pick(*args):
+            """Return the first non-none value in the supplied arguments or None"""
             return next((item for item in args if item is not None), None)
 
-        # Set up the core metadata
-        if isinstance(template, BaseJacobian):
+        # Set up the core metadata.  First try to populate it from the template if
+        # supplied (letting supplied arguments take precedence)
+        if template:
             self.dependent_unit = pick(dependent_unit, template.dependent_unit)
             self.independent_unit = pick(independent_unit, template.independent_unit)
             self.dependent_shape = pick(dependent_shape, template.dependent_shape)
             self.independent_shape = pick(independent_shape, template.independent_shape)
         else:
+            # Otherwise, just get it from the
             self.dependent_unit = dependent_unit
             self.independent_unit = independent_unit
-            self.dependent_shape = tuple(dependent_shape)
-            self.independent_shape = tuple(independent_shape)
+            self.dependent_shape = dependent_shape
+            self.independent_shape = independent_shape
         # Do a quick piece of housekeepting
-        if type(self.dependent_shape) != tuple:
-            self.dependent_shape = tuple(self.dependent_shape)
-        if type(self.independent_shape) != tuple:
-            self.independent_shape = tuple(self.independent_shape)
-        # Now derive a bunch of metadata from that
+        self.dependent_shape = tuple(self.dependent_shape)
+        self.independent_shape = tuple(self.independent_shape)
+        # Now derive a bunch of metadata from the other parameters
         self.shape = tuple(self.dependent_shape + self.independent_shape)
         self.dependent_size = int(np.prod(self.dependent_shape))
         self.independent_size = int(np.prod(self.independent_shape))
@@ -65,15 +88,22 @@ class BaseJacobian(object):
         self.independent_ndim = len(self.independent_shape)
         self.independent_ndim_axis_corrrection = self.independent_ndim
         self.ndim = self.dependent_ndim + self.independent_ndim
-        self.shape2d = (self.dependent_size, self.independent_size)
+        self.shape_2d = (self.dependent_size, self.independent_size)
         self._dummy_dependent = (1,) * self.dependent_ndim
         self._dummy_independent = (1,) * self.independent_ndim
         self.dtype = dtype
+        # Create an empty data value
+        self.data: ArrayLike = None
 
     def __str__(self):
+        """Return a string describing the Jacobians
+
+        Note that this doesn't print the values, arguably a deviation from standard
+        python, but perhaps forgivable.
+        """
         # Run a check on the Jacobian while we're at it.
         self._check()
-        return (
+        result = (
             f"Jacobian of type {type(self)}\n"
             f"Dependent shape is {self.dependent_shape} <{self.dependent_size}>\n"
             f"Independent shape is {self.independent_shape}"
@@ -83,9 +113,22 @@ class BaseJacobian(object):
             f"Units are d<{self.dependent_unit}>/d<{self.independent_unit}> = "
             f"<{(self.dependent_unit/self.independent_unit)}>"
         )
+        if self.data is not None:
+            result += f"\ndata is {type(self.data)}({list(self.data.shape)}, dtype={self.data.dtype})"
+        else:
+            result += "\ndata is None"
+        return result
 
-    def _check_jacobian_fundamentals(self, name):
-        """Perform some basic checks on a Jacobian"""
+    def _check(self, name: str = None):
+        """Perform fundamental checkes on a BaseJacobian
+
+        Parameters
+        ----------
+        name : str, optional
+            An optional name to attach to error messages
+        """
+        if name is None:
+            name = "<unknown>"
         assert self.dependent_shape + self.independent_shape == self.shape, (
             f"Shape mismatch for Jacobian {name}, "
             f"{self.dependent_shape} + {self.independent_shape} != {self.shape}"
@@ -101,55 +144,101 @@ class BaseJacobian(object):
         assert (
             np.prod(self.shape) == self.size
         ), f"Overall size mismatch for {name}, product({self.shape}) != {self.size}"
-        if hasattr(self, "data"):
-            assert not hasattr(self.data, "units") and not hasattr(
-                self.data, "unit"
-            ), "Jacobian data has units"
-        if hasattr(self, "data2d"):
-            assert not hasattr(self.data2d, "units") and not hasattr(
-                self.data2d, "unit"
-            ), "Jacobian data2d has units"
+        # Check about the data fields
+        assert not hasattr(self.data, "unit") and not hasattr(
+            self.data, "units"
+        ), f"Jacobian {name} has units in the data field"
 
     def __repr__(self):
+        """Return a representation of the Jacobians"""
         return self.__str__()
 
+    @abstractmethod
+    def get_data_nd(self) -> ArrayLike:
+        """Get mutli-dimensional version of Jacobian's data"""
+
+    @abstractmethod
+    def get_data_2d(self) -> ArrayLike:
+        """Get 2D version of Jacobian's data"""
+
+    @abstractmethod
+    def get_data_diagonal(self) -> ArrayLike:
+        """Get diagonal version of Jacobian's data
+
+        This should only work for DiagonalJacobians"""
+
     def __neg__(self):
-        return type(self)(-self.data, template=self)
+        """Unary negative for Jacobian"""
+        # pylint: disable-next=invalid-unary-operand-type
+        return type(self)(source=-self.data, template=self)
 
     def __pos__(self):
+        """Unary positive for Jacobian"""
         return self
 
-    def __add__(self, other):
+    # pylint: disable=import-outside-toplevel
+    def __add__(self, other: "BaseJacobian"):
+        """Add two Jacobians"""
         from .dense_jacobians import DenseJacobian
 
-        s_, o_, result_type = prepare_jacobians_for_binary_op(self, other)
-        result_ = s_ + o_
+        self_data, other_data, result_type = prepare_jacobians_for_binary_op(
+            self, other
+        )
+        result_data = self_data + other_data
         if result_type is DenseJacobian:
-            result_ = np.reshape(np.array(result_), self.shape)
-        return result_type(data=result_, template=self)
+            result_data = np.reshape(np.array(result_data), self.shape)
+        return result_type(source=result_data, template=self)
 
-    def __sub__(self, other):
+    # pylint: disable=import-outside-toplevel
+    def __sub__(self, other: "BaseJacobian"):
+        """Subtract two Jacobians"""
         from .dense_jacobians import DenseJacobian
 
-        s_, o_, result_type = prepare_jacobians_for_binary_op(self, other)
-        result_ = s_ - o_
+        self_data, other_data, result_type = prepare_jacobians_for_binary_op(
+            self, other
+        )
+        result_data = self_data - other_data
         if result_type is DenseJacobian:
-            result_ = np.reshape(np.array(result_), self.shape)
-        return result_type(data=result_, template=self)
+            result_data = np.reshape(np.array(result_data), self.shape)
+        return result_type(source=result_data, template=self)
 
     def _force_unit(self, unit):
-        result = copy.copy(self)  # or should this be deepcopy
+        """Force a jacobian to take the given dependent_unit"""
+        result = copy.copy(self)
         result.dependent_unit = unit
 
-    def _get_jaxis(self, axis, none="none"):
-        """Correct negative axis arguments so they're valid for jacobians
+    def _get_jaxis(
+        self,
+        axis: int | Sequence | None,
+        none: str = "none",
+    ):
+        """Make (-ve) axis arguments in reduce-type operations valid for jacobians
 
         Negative axis requests count backwards from the last index, but the Jacobians
         have the independent_shape appended to their shape, so we need to correct for
         that (or not if its positive).
 
-        The none argument says what to do if the supplied axis is missing/None.
-        [MORE DOCUMENTATION ON THOSE OPTIONS NEEDED]
+        The none argument says what to do if the supplied axis is missing/None.  See
+        below.
+
+        Parameters
+        ----------
+        axis : int
+            axis for operations ()
+        none : str, optional
+            Says what should be done if the supplied axis is none.  A variety of options
+            are possible, reflecting the diversity of actions that various numpy
+            routines take in this eventuality.
+             - "none" : return None
+             - "flatten": return zero
+             - "first" : return the first axis (i.e., zero)
+             - "last" : return the final axis (ndim - 1)
+             - "all" : return all the dependent axies [0, 1, 2, ...]
+             - "transpose" : as "all", but return them in reverse order.
+        Returns
+        -------
+        result : int
+            The axis appropriately correctly
         """
         if axis is None:
             if none == "none":
@@ -165,50 +254,71 @@ class BaseJacobian(object):
             if none == "transpose":
                 return tuple(range(self.dependent_ndim)[::-1])
             else:
-                ValueError(
+                raise ValueError(
                     '"none" argument must be one of '
-                    + '"none", "first", "last", "all", or "transpose"'
+                    '"none", "flatten", "first", "last", "all", or "transpose"'
                 )
         else:
+            # Let non-negative axis requests pass through, correct negative ones to be
+            # the right positive number (dependent dimensions only)
             try:
+                # First the cases where axis is a sequency of axes
                 return tuple(
                     a if a >= 0 else self.ndim + a - self.independent_ndim for a in axis
                 )
             except TypeError:
+                # Otherwise axis is a scalar
                 return axis if axis >= 0 else self.ndim + axis - self.independent_ndim
 
-    def _slice_axis(self, axis, s, none="none"):
-        """Return a key that has full slices for all axes, but s for axis"""
-        axis = self._get_jaxis(axis, none=none)
-        if axis is None:
-            raise ValueError("Axis cannot be None in this context")
-        return [slice(None)] * axis + [s] + [slice(none)] * (self.ndim - axis - 1)
+    # def _slice_axis(self, axis, s, none="none"):
+    #     """Return a key that has full slices for all axes, but s for axis"""
+    #     axis = self._get_jaxis(axis, none=none)
+    #     if axis is None:
+    #         raise ValueError("Axis cannot be None in this context")
+    #     return [slice(None)] * axis + [s] + [slice(none)] * (self.ndim - axis - 1)
 
     def real(self):
-        return type(self)(np.real(self.data), template=self)
+        """Return real part of the Jacobians"""
+        return type(self)(source=np.real(self.data), template=self)
 
-    def _prepare_premul_diag(self, diag):
-        import astropy.units as units
+    def _prepare_premultiply_diagonal(
+        self,
+        diagonal: ArrayLike | GenericUnit,
+    ) -> tuple[ArrayLike | None, GenericUnit, tuple[int]]:
+        """Called by child classes to set up for a premultiply_diagonal.  It works out the
+        units issues and sets up for broadcasting.
+
+        Parameters
+        ----------
+        diagonal : ArrayLike | GenericUnit
+            Term to multiply the diagonal of this Jacobian by
+
+        Returns
+        -------
+        diagonal_values : ArrayLike
+            The diagonal as an array (stripped of units etc.)
+        dependent_unit : Unit-like (pint/astropy/Unitless)
+            The dependent unit for the result
+        dependent_shape: tuple[int]
+            The dependent shape for the result
+        """
+        from astropy import units
         import pint
         from .dual_helpers import isunit
 
-        """This routine is called by the child classes to set up for a
-        premul_diag.  It works out the units issues and sets up for
-        broadcasting.
-        """
         # If we're actually mulitplying by a unit we have a different set of returns
-        if isunit(diag):
-            return None, self.dependent_unit * diag, self.dependent_shape
+        if isunit(diagonal):
+            return None, self.dependent_unit * diagonal, self.dependent_shape
         # Otherwise, setup to mutipply by this diagonal
-        if isinstance(diag, units.Quantity):
-            dependent_unit = diag.unit * self.dependent_unit
-            diag_ = diag.value
-        elif isinstance(diag, pint.Quantity):
-            dependent_unit = diag.units * self.dependent_unit
-            diag_ = diag.magnitude
+        if isinstance(diagonal, units.Quantity):
+            dependent_unit = diagonal.unit * self.dependent_unit
+            diag_ = diagonal.value
+        elif isinstance(diagonal, pint.Quantity):
+            dependent_unit = diagonal.units * self.dependent_unit
+            diag_ = diagonal.magnitude
         else:
             dependent_unit = self.dependent_unit
-            diag_ = diag
+            diag_ = diagonal
         # OK, we've worked out the units, now attend to shape
         try:
             dependent_shape = broadcasted_shape(self.dependent_shape, diag_.shape)
@@ -216,56 +326,182 @@ class BaseJacobian(object):
             dependent_shape = self.dependent_shape
         return diag_, dependent_unit, dependent_shape
 
-    def flatten(self, order, parent_flags):
-        """flatten a jacobian"""
+    @abstractmethod
+    def reshape(
+        self,
+        new_dependent_shape: tuple,
+        order: str,
+        parent_flags,
+    ) -> "BaseJacobian":
+        """Stub for reshaping a Jacobian (dependent shape only)
+
+        Parameters
+        ----------
+        new_shape : tuple
+            The new shape
+        order : str
+            "F", "C", "A", see documentation for numpy
+        parent_flags : numpy.ndarray.flags
+            The flags for the parent quantity for which these are jacobians
+
+        Returns
+        -------
+        BaseJacobian
+            Result
+        """
+
+    def flatten(
+        self,
+        order: str,
+        parent_flags,
+    ) -> "BaseJacobian":
+        """Flatten the Jacobian
+
+        Parameters
+        ----------
+        order : str
+            "F", "C", "A", see documentation for numpy
+        parent_flags : numpy.ndarray.flags
+            The flags for the parent quantity for which these are jacobians
+
+        Returns
+        -------
+        BaseJacobian
+            Result
+        """
         return self.reshape(
-            (self.dependent_size,), order=order, parent_flags=parent_flags
+            new_dependent_shape=(self.dependent_size,),
+            order=order,
+            parent_flags=parent_flags,
         )
 
-    def nan_to_num(self, copy=True, nan=0.0, posinf=None, neginf=None):
-        return self.__class__(
+    def ravel(
+        self,
+        order: str,
+        parent_flags,
+    ) -> "BaseJacobian":
+        """Dependent variable has been ravelled, make Jacobians match
+
+        Parameters
+        ----------
+        order : str
+            "F", "C", "A", see documentation for numpy
+        parent_flags : numpy.ndarray.flags
+            The flags for the parent quantity for which these are jacobians
+
+        Returns
+        -------
+        BaseJacobian
+            Result
+        """
+        if order == "K":
+            order = "A"
+        reverse = (order == "C" and not parent_flags.c_contiguous) or (
+            order == "F" and not parent_flags.f_contiguous
+        )
+        if reverse:
+            raise NotImplementedError("F-contiguous dlarrays have not been tested")
+            # input_jacobian = self.transpose(None, self.dependent_shape[::-1])
+        else:
+            input_jacobian = self
+        # We'll retain C ordering for the independent variable
+        return input_jacobian.reshape(
+            new_dependent_shape=(input_jacobian.dependent_size,),
+            order="C",
+            parent_flags=parent_flags,
+        )
+
+    def nan_to_num(
+        self,
+        copy: bool = True,  # pylint: disable=redefined-outer-name
+        nan: int | float = 0.0,
+        posinf: int | float = None,
+        neginf=int | float,
+    ) -> "BaseJacobian":
+        """Implements nan_to_num for Jacobians
+
+        Parameters
+        ----------
+        copy : bool, optional
+            Whether to create a copy of `x` (True) or to replace values in-place
+            (False). The in-place operation only occurs if casting to an array does not
+            require a copy. Default is True.
+
+        nan : int, float, optional
+            Value to be used to fill NaN values. If no value is passed then NaN values
+            will be replaced with 0.0.
+
+        posinf : int, float, optional
+           Value to be used to fill positive infinity values. If no value is passed
+            then positive infinity values will be replaced with a very large number.
+
+        neginf : int, float, optional
+            Value to be used to fill negative infinity values. If no value is passed
+            then negative infinity values will be replaced with a very small (or
+            negative) number.
+
+        Returns
+        -------
+        result : BaseJacobian
+        """
+        return type(self)(
             template=self,
-            data=np.nan_to_num(
-                self.data, copy=copy, nan=nan, posinf=posinf, neginf=neginf
+            source=np.nan_to_num(
+                self.data,
+                copy=copy,
+                nan=nan,
+                posinf=posinf,
+                neginf=neginf,
             ),
         )
 
-    def to(self, unit):
-        """Change the dependent_unit for a Jacobian"""
+    def to(self, unit: GenericUnit) -> "BaseJacobian":
+        """Change the dependent_unit for a Jacobian
+
+        Parameters
+        ----------
+        unit : GenericUnit
+            Unit to set the dependent unit to
+
+        Returns
+        -------
+        result : BaseJacobian
+            Jacobian with new dependent_unit
+        """
         if unit == self.dependent_unit:
             return self
         scale = get_unit_conversion_scale(self.dependent_unit, unit)
         return self.scalar_multiply(scale)
 
-    def to_dense(self):
+    def to_dense(self) -> "BaseJacobian":
         """Return a dense version of self"""
         from .dense_jacobians import DenseJacobian
 
-        return DenseJacobian(self)
+        return DenseJacobian(source=self)
 
-    def to_sparse(self):
+    def to_sparse(self) -> "BaseJacobian":
         """Retrun a sparse version of self"""
         from .sparse_jacobians import SparseJacobian
 
-        return SparseJacobian(self)
+        return SparseJacobian(source=self)
 
-    def decompose(self):
-        """Decompose the dependent_unit for a Jacobian"""
-        raise NotImplementedError("Should not be needed")
-        unit = self.dependent_unit.decompose()
-        result = self.to(unit)
-        return result
+    # def decompose(self) -> "BaseJacobian":
+    #     """Decompose the dependent_unit for a Jacobian"""
+    #     raise NotImplementedError("Should not be needed")
+    #     # unit = self.dependent_unit.decompose()
+    #     # result = self.to(unit)
+    #     # return result
 
-    def scalar_multiply(self, scale):
+    def scalar_multiply(self, scale: float | int) -> "BaseJacobian":
         """Multiply Jacobian by a scalar"""
         magnitude, units = get_magnitude_and_unit(scale)
-        return self.__class__(
+        return type(self)(
             template=self,
-            data=self.data * magnitude,
+            source=self.data * magnitude,
             dependent_unit=self.dependent_unit * units,
         )
 
-    def independents_compatible(self, other):
+    def independents_compatible(self, other: "BaseJacobian") -> bool:
         """Return true if the independent variables for two jacobians are compatible"""
         if self.independent_shape != other.independent_shape:
             return False
@@ -273,8 +509,24 @@ class BaseJacobian(object):
             return False
         return True
 
-    def _preprocess_getsetitem_key(self, key):
-        """Get it into the right shape for the dependent variable"""
+    def _preprocess_getsetitem_key(self, key: tuple | int) -> tuple:
+        """Get key into the right shape for the dependent variable.
+
+        Parameters
+        ----------
+        key : tuple or int
+            The argument to getitem
+
+        Returns
+        -------
+        result : tuple
+            The key in the correct shape for the dependent variable
+
+        Raises
+        ------
+        ValueError
+            If there is some unepxected argument in key
+        """
         # Most likely key is a tuple
         if isinstance(key, tuple):
             # If it's too short, then add a ..., unless we already have one, in which
@@ -300,7 +552,7 @@ class BaseJacobian(object):
                 key = (key,)
         return key
 
-    def matrix_multiply(self, other):
+    def matrix_multiply(self, other: "BaseJacobian"):
         """Matrix multiply Jacobian with another (other on the right)"""
         from .dense_jacobians import DenseJacobian
         from .sparse_jacobians import SparseJacobian
@@ -312,23 +564,26 @@ class BaseJacobian(object):
         if self.independent_unit != other.dependent_unit:
             raise ValueError("Units mismatch for dense Jacobian matrix multiply")
         # Recast any diagonal Jacobians into sparse
+        final_self = self
         if isinstance(self, DiagonalJacobian):
-            self = SparseJacobian(self)
+            final_self = SparseJacobian(self)
         if isinstance(other, DiagonalJacobian):
             other = SparseJacobian(other)
         # Decide what our result type will be
-        if isinstance(self, SparseJacobian) and isinstance(other, SparseJacobian):
+        if isinstance(final_self, SparseJacobian) and isinstance(other, SparseJacobian):
             result_type = SparseJacobian
         else:
             result_type = DenseJacobian
         # OK, do the matrix multiplication
-        result_data2d = self.data2d @ other.data2d
+        #
+        # pylint: disable-next=protected-access
+        result_data_2d = final_self._get_data_2d() @ other._get_data_2d()
         # Work out its true shape
         result_shape = self.dependent_shape + other.independent_shape
         if result_type is DenseJacobian:
-            result_data = result_data2d.reshape(result_shape)
+            result_data = result_data_2d.reshape(result_shape)
         elif result_type is SparseJacobian:
-            result_data = result_data2d
+            result_data = result_data_2d
         else:
             assert False, f"Should not have gotten here (result_type={result_type})"
         return result_type(
@@ -339,32 +594,19 @@ class BaseJacobian(object):
             independent_unit=other.independent_unit,
         )
 
-    def ravel(self, order, parent_flags):
-        """Dependent variable has been ravelled, make Jacobians match"""
-        if order == "K":
-            order = "A"
-        reverse = (order == "C" and not parent_flags.c_contiguous) or (
-            order == "F" and not parent_flags.f_contiguous
-        )
-        if reverse:
-            raise NotImplementedError("F-contiguous dlarrays have not been tested")
-            input_jacobian = self.transpose(None, self.dependent_shape[::-1])
-        else:
-            input_jacobian = self
-        # We'll retain C ordering for the independent variable
-        return input_jacobian.reshape(
-            [input_jacobian.dependent_size],
-            order="C",
-            parent_flags=parent_flags,
-        )
-
     # Potentially temporary guard to get round some issues with pint.
     @property
-    def dependent_unit(self):
+    def dependent_unit(self) -> GenericUnit:
+        """Wrap access to dependent_unit as a poperty"""
         return self._dependent_unit
 
     @dependent_unit.setter
-    def dependent_unit(self, value):
+    def dependent_unit(self, value: GenericUnit):
+        """Setter for dependent_unit
+
+        Needed because there are times when pint seems to try to set a unit to a
+        (hopefully unit) scalar times a unit.  Fix those.
+        """
         import pint
 
         if isinstance(value, pint.Quantity):

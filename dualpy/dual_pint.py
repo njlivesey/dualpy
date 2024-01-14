@@ -1,10 +1,11 @@
 """Subclasses dualpy for pint variables"""
 
-import numpy as np
-import pint
 import copy
 import warnings
 from typing import Union
+
+import numpy as np
+import pint
 
 from .duals import dlarray
 from .unitless import Unitless
@@ -120,9 +121,10 @@ class dlarray_pint(dlarray):
 # Make sure pint defers to us when appropriate.  Do this by adding dlarray and
 # dlarray_pint to the pint.compat.upcast ecosystem.  This varies by pint version
 
+
 def add_upcast_types(types_to_add: Union[list[Union[type, str]], str]):
     """Add a type to the upcast mechanism in a pint-version agnostic way
-    
+
     Parameters:
     -----------
     name : list[str] or str
