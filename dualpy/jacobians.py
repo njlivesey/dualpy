@@ -5,9 +5,11 @@ import scipy.sparse as sparse
 
 from .base_jacobian import BaseJacobian
 from .dense_jacobians import DenseJacobian
+
+# pylint: disable=unused-import
 from .diagonal_jacobians import DiagonalJacobian, SeedJacobian
-from .sparse_jacobians import SparseJacobian
 from .dual_helpers import get_unit
+from .sparse_jacobians import SparseJacobian
 
 
 def setitem_jacobians(key, target, target_jacobians, source_jacobians):
@@ -138,16 +140,16 @@ def concatenate_jacobians(values, axis, result_dependent_shape):
             for j_in in prepped_jacobians[name]:
                 # Use the coo form of sparse matrices to move the values up to the right
                 # place in the stacked axis
-                j_in_coo = sparse.coo_matrix(j_in.data2d)
+                j_in_coo = sparse.coo_matrix(j_in.data)
                 row_indices = list(
                     np.unravel_index(j_in_coo.row, shape=j_in.dependent_shape)
                 )
                 row_indices[jaxis] += i
                 out_row = np.ravel_multi_index(row_indices, j_out.dependent_shape)
                 j_out_contribution = sparse.coo_matrix(
-                    (j_in_coo.data, (out_row, j_in_coo.col)), shape=j_out.shape2d
+                    (j_in_coo.data, (out_row, j_in_coo.col)), shape=j_out.shape_2d
                 )
-                j_out.data2d += sparse.csc_matrix(j_out_contribution)
+                j_out.data += sparse.csc_matrix(j_out_contribution)
                 # Increment the start index
                 i += j_in.dependent_shape[jaxis]
             result[name] = j_out
@@ -179,16 +181,16 @@ def stack_jacobians(arrays, axis, result_dependent_shape):
             for i, j_in in enumerate(prepped_jacobians[name]):
                 # Use the coo form of sparse matrices to move the values up to the right
                 # place in the stacked axis
-                j_in_coo = sparse.coo_matrix(j_in.data2d)
+                j_in_coo = sparse.coo_matrix(j_in.data)
                 row_indices = list(
                     np.unravel_index(j_in_coo.row, shape=j_in.dependent_shape)
                 )
                 row_indices.insert(jaxis, i)
                 out_row = np.ravel_multi_index(row_indices, j_out.dependent_shape)
                 j_out_contribution = sparse.coo_matrix(
-                    (j_in_coo.data, (out_row, j_in_coo.col)), shape=j_out.shape2d
+                    (j_in_coo.data, (out_row, j_in_coo.col)), shape=j_out.shape_2d
                 )
-                j_out.data2d += sparse.csc_matrix(j_out_contribution)
+                j_out.data += sparse.csc_matrix(j_out_contribution)
             result[name] = j_out
         else:
             raise TypeError(f"Unexpcted Jacobian type in result {result_type}")
@@ -218,7 +220,7 @@ def matrix_multiply_jacobians(a, b):
         result_type = DenseJacobian
     else:
         result_type = SparseJacobian
-    result_values = a.data2d @ b.data2d
+    result_values = a.data @ b.data
     result_template = BaseJacobian(
         dependent_shape=a.dependent_shape,
         dependent_unit=a.dependent_unit,
