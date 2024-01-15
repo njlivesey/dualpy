@@ -5,7 +5,7 @@ import scipy.sparse as sparse
 
 from .base_jacobian import BaseJacobian
 from .dense_jacobians import DenseJacobian
-from .diagonal_jacobians import DiagonalJacobian, SeedJacobian
+from .diagonal_jacobians import DiagonalJacobian
 from .sparse_jacobians import SparseJacobian
 from .dual_helpers import get_unit
 
@@ -34,11 +34,14 @@ def setitem_jacobians(key, target, target_jacobians, source_jacobians):
                 dtype=source_jacobian.dtype,
             )
         # Now insert the values
+        #
+        # pylint: disable=protected-access
         target_jacobians[name]._setjitem(key, source_jacobian)
 
 
 def prep_jacobians_for_join(*args, result_dependent_shape):
     """Used by insert, append, concatenate, others(?) to prepare Jacobians"""
+    # pylint: disable=import-outside-toplevel
     from .user import has_jacobians
 
     # Get a list of all the Jacobian names
@@ -101,33 +104,35 @@ def prep_jacobians_for_join(*args, result_dependent_shape):
 
 def join_jacobians(a, b, location, axis, result_dependent_shape):
     """Used by insert and append to do the work for Jocobians"""
-    prepped_jacobians, result_types, result_jacobians = _prep_jacobians_for_join(
+    # pylint: disable=unused-variable
+    prepped_jacobians, result_types, result_jacobians = prep_jacobians_for_join(
         a, b, result_dependent_shape=result_dependent_shape
     )
     for name, item in result_jacobians.items():
         aj, bj = prepped_jacobians[name]
+        # pylint: disable=protected-access
         result_jacobians[name] = aj._join(bj, location, axis, result_dependent_shape)
     return result_jacobians
 
 
 def concatenate_jacobians(values, axis, result_dependent_shape):
     """Concatenate the Jacobians, supports dual concatenation"""
-    prepped_jacobians, result_types, result_jacobians = _prep_jacobians_for_join(
+    prepped_jacobians, result_types, result_jacobians = prep_jacobians_for_join(
         *values, result_dependent_shape=result_dependent_shape
     )
     # Loop over the Jacobians in the result.
     result = {}
-    for name in result_jacobians.keys():
+    for name, result_type in result_types.items():
         # Identify the correspondign axis in the jacobian
-        result_type = result_types[name]
+        # pylint: disable-next=protected-access
         jaxis = result_jacobians[name]._get_jaxis(axis)
         # This is cumbersome, but the best way to do this is separately for dense and
         # sparse
-        if result_types[name] is DenseJacobian:
+        if result_type is DenseJacobian:
             j_ins_ = [j_in.data for j_in in prepped_jacobians[name]]
             j_out_ = np.concatenate(j_ins_, axis=jaxis)
             result[name] = result_type(template=result_jacobians[name], data=j_out_)
-        elif result_types[name] is SparseJacobian:
+        elif result_type is SparseJacobian:
             i = 0
             j_out = result_type(template=result_jacobians[name])
             for j_in in prepped_jacobians[name]:
@@ -147,28 +152,29 @@ def concatenate_jacobians(values, axis, result_dependent_shape):
                 i += j_in.dependent_shape[jaxis]
             result[name] = j_out
         else:
-            raise TypeError(f"Unexpcted Jacobian type in result {result_types[name]}")
+            raise TypeError(f"Unexpcted Jacobian type in result {result_type}")
     return result
 
 
 def stack_jacobians(arrays, axis, result_dependent_shape):
     """Support the numpy.stack operationf for Jacobians"""
-    prepped_jacobians, result_types, result_jacobians = _prep_jacobians_for_join(
+    prepped_jacobians, result_types, result_jacobians = prep_jacobians_for_join(
         *arrays, result_dependent_shape=result_dependent_shape
     )
     # Loop over the jacobians in the result
     result = {}
-    for name in result_jacobians.keys():
+    for name, result_type in result_types.items():
         # Identify teh corresponding axis in the jacobian
-        result_type = result_types[name]
+        #
+        # pylint: disable=protected-access
         jaxis = result_jacobians[name]._get_jaxis(axis)
         # This is cumbersome, but the best way to do this is separately for dense and
         # sparse
-        if result_types[name] is DenseJacobian:
+        if result_type is DenseJacobian:
             j_ins_ = [j_in.data for j_in in prepped_jacobians[name]]
             j_out_ = np.stack(j_ins_, axis=jaxis)
             result[name] = result_type(template=result_jacobians[name], data=j_out_)
-        elif result_types[name] is SparseJacobian:
+        elif result_type is SparseJacobian:
             j_out = result_type(template=result_jacobians[name])
             for i, j_in in enumerate(prepped_jacobians[name]):
                 # Use the coo form of sparse matrices to move the values up to the right
@@ -185,7 +191,7 @@ def stack_jacobians(arrays, axis, result_dependent_shape):
                 j_out.data2d += sparse.csc_matrix(j_out_contribution)
             result[name] = j_out
         else:
-            raise TypeError(f"Unexpcted Jacobian type in result {result_types[name]}")
+            raise TypeError(f"Unexpcted Jacobian type in result {result_type}")
     return result
 
 
