@@ -77,34 +77,30 @@ def prepare_jacobians_for_binary_op(a, b):
         # If they are both the same type, then things are pretty
         # straight forward.  If they are the same type, then their
         # data attributes are in the same form.
-        if type_a is SparseJacobian:
-            a_ = a.data2d
-            b_ = b.data2d
-        else:
-            a_ = a.data
-            b_ = b.data
+        a_ = a.data
+        b_ = b.data
         result_type = type_a
     elif type_a is DiagonalJacobian:
         # If a is diagonal (and by implication b is not, otherwise the
         # above code would have handled things), then promote a to
         # sparse and use the 2d view of b
         a_ = array_to_sparse_diagonal(a.data)
-        b_ = b.data2d
+        b_ = b.data
         result_type = type_b
     elif type_b is DiagonalJacobian:
         # This is the converse case
-        a_ = a.data2d
+        a_ = a.data
         b_ = array_to_sparse_diagonal(b.data)
         result_type = type_a
     elif type_a is SparseJacobian:
         # OK, so, here a must be sparse, b dense
-        a_ = a.data2d
-        b_ = b.data2d
+        a_ = a.data
+        b_ = b.data
         result_type = type_b
     elif type_b is SparseJacobian:
         # Finally, so it must be that a is dense, b sparse
-        a_ = a.data2d
-        b_ = b.data2d
+        a_ = a.data
+        b_ = b.data
         result_type = type_a
     else:
         raise AssertionError("Failed to understand binary Jacobian operation")
