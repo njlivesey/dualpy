@@ -1,4 +1,5 @@
 """Module defining the BaseJacobian class from which other types of Jacobian are descended"""
+from __future__ import annotations
 
 import copy
 import warnings
@@ -332,7 +333,7 @@ class BaseJacobian(object):
         new_dependent_shape: tuple,
         order: str,
         parent_flags,
-    ) -> "BaseJacobian":
+    ) -> BaseJacobian:
         """Stub for reshaping a Jacobian (dependent shape only)
 
         Parameters
@@ -354,7 +355,7 @@ class BaseJacobian(object):
         self,
         order: str,
         parent_flags,
-    ) -> "BaseJacobian":
+    ) -> BaseJacobian:
         """Flatten the Jacobian
 
         Parameters
@@ -379,7 +380,7 @@ class BaseJacobian(object):
         self,
         order: str,
         parent_flags,
-    ) -> "BaseJacobian":
+    ) -> BaseJacobian:
         """Dependent variable has been ravelled, make Jacobians match
 
         Parameters
@@ -417,7 +418,7 @@ class BaseJacobian(object):
         nan: int | float = 0.0,
         posinf: int | float = None,
         neginf=int | float,
-    ) -> "BaseJacobian":
+    ) -> BaseJacobian:
         """Implements nan_to_num for Jacobians
 
         Parameters
@@ -455,7 +456,7 @@ class BaseJacobian(object):
             ),
         )
 
-    def to(self, unit: GenericUnit) -> "BaseJacobian":
+    def to(self, unit: GenericUnit) -> BaseJacobian:
         """Change the dependent_unit for a Jacobian
 
         Parameters
@@ -473,26 +474,26 @@ class BaseJacobian(object):
         scale = get_unit_conversion_scale(self.dependent_unit, unit)
         return self.scalar_multiply(scale)
 
-    def to_dense(self) -> "BaseJacobian":
+    def to_dense(self) -> BaseJacobian:
         """Return a dense version of self"""
         from .dense_jacobians import DenseJacobian
 
         return DenseJacobian(source=self)
 
-    def to_sparse(self) -> "BaseJacobian":
+    def to_sparse(self) -> BaseJacobian:
         """Retrun a sparse version of self"""
         from .sparse_jacobians import SparseJacobian
 
         return SparseJacobian(source=self)
 
-    # def decompose(self) -> "BaseJacobian":
+    # def decompose(self) -> BaseJacobian:
     #     """Decompose the dependent_unit for a Jacobian"""
     #     raise NotImplementedError("Should not be needed")
     #     # unit = self.dependent_unit.decompose()
     #     # result = self.to(unit)
     #     # return result
 
-    def scalar_multiply(self, scale: float | int) -> "BaseJacobian":
+    def scalar_multiply(self, scale: float | int) -> BaseJacobian:
         """Multiply Jacobian by a scalar"""
         magnitude, units = get_magnitude_and_unit(scale)
         return type(self)(

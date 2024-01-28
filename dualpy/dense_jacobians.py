@@ -1,4 +1,5 @@
 """Class for dense jacobians"""
+from __future__ import annotations
 
 from collections.abc import Sequence
 
@@ -15,7 +16,11 @@ from .jacobian_helpers import (  # array_to_sparse_diagonal,
     GenericUnit,
 )
 
-__all__ = ["DenseJacobian"]
+__all__ = [
+    "DenseJacobian",
+    "DenseJacobianLinearInterpolator",
+    "DenseJacobianSplineInterpolator",
+]
 
 
 class DenseJacobian(BaseJacobian):
@@ -138,7 +143,7 @@ class DenseJacobian(BaseJacobian):
         self,
         new_dependent_shape: tuple,
         key: tuple | ArrayLike,
-    ) -> "DenseJacobian":
+    ) -> DenseJacobian:
         """Enacts getitem for dense Jacobians
 
         Invoked by dlarray.__getitem__
@@ -205,7 +210,7 @@ class DenseJacobian(BaseJacobian):
         # Do the value insetion
         self.data[key] = value_data
 
-    def broadcast_to(self, new_dependent_shape: tuple) -> "DenseJacobian":
+    def broadcast_to(self, new_dependent_shape: tuple) -> DenseJacobian:
         """Broadcast dense Jacobian to new dependent_shape"""
         # Don't bother doing anything if the shape is already good
         if new_dependent_shape == self.dependent_shape:
@@ -223,7 +228,7 @@ class DenseJacobian(BaseJacobian):
         new_dependent_shape: tuple,
         order: str,
         parent_flags,
-    ) -> "DenseJacobian":
+    ) -> DenseJacobian:
         """Reshape a DenseJacobian
 
         Parameters
@@ -265,7 +270,7 @@ class DenseJacobian(BaseJacobian):
             source=data, template=input_jacobian, dependent_shape=new_dependent_shape
         )
 
-    def premultiply_diagonal(self, diagonal: ArrayLike) -> "DenseJacobian":
+    def premultiply_diagonal(self, diagonal: ArrayLike) -> DenseJacobian:
         """Diagonal premulitply for dense Jacobian
 
         This is a key routine as the vast majority of dual operations involve a
@@ -312,7 +317,7 @@ class DenseJacobian(BaseJacobian):
         values: ArrayLike,
         axis: int,
         dependent_shape: tuple,
-    ) -> "DenseJacobian":
+    ) -> DenseJacobian:
         """Performms numpy.insert-like actions on DenseJacobian
 
         Parameters
@@ -353,7 +358,7 @@ class DenseJacobian(BaseJacobian):
         new_dependent_shape: tuple,
         axis: int = None,
         **kwargs,
-    ) -> "DenseJacobian":
+    ) -> DenseJacobian:
         """A generic reduction operation for DenseJacobians
 
         Parameters
@@ -369,19 +374,19 @@ class DenseJacobian(BaseJacobian):
             dependent_shape=new_dependent_shape,
         )
 
-    def sum(self, new_dependent_shape: tuple, **kwargs) -> "DenseJacobian":
+    def sum(self, new_dependent_shape: tuple, **kwargs) -> DenseJacobian:
         """Performs sum for the dense Jacobians.  See numpy help for details"""
         return self._reduce(
             function=np.sum, new_dependent_shape=new_dependent_shape, **kwargs
         )
 
-    def mean(self, new_dependent_shape: tuple, **kwargs) -> "DenseJacobian":
+    def mean(self, new_dependent_shape: tuple, **kwargs) -> DenseJacobian:
         """Performs mean for the dense Jacobians.  See numpy help for details"""
         return self._reduce(
             function=np.mean, new_dependent_shape=new_dependent_shape, **kwargs
         )
 
-    def cumsum(self, new_dependent_shape: tuple, **kwargs) -> "DenseJacobian":
+    def cumsum(self, new_dependent_shape: tuple, **kwargs) -> DenseJacobian:
         """Performs cumsum for the dense Jacobians.  See numpy help for details"""
         return self._reduce(
             function=np.cumsum, new_dependent_shape=new_dependent_shape, **kwargs
@@ -390,7 +395,7 @@ class DenseJacobian(BaseJacobian):
     # pylint: disable=protected-access
     def diff(
         self, dependent_shape, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue
-    ) -> "DenseJacobian":
+    ) -> DenseJacobian:
         """diff method for dense jacobian"""
         jaxis = self._get_jaxis(axis)
         if prepend is not np._NoValue:
@@ -408,7 +413,7 @@ class DenseJacobian(BaseJacobian):
             source=result_, template=self, dependent_shape=dependent_shape
         )
 
-    def transpose(self, axes, result_dependent_shape) -> "DenseJacobian":
+    def transpose(self, axes, result_dependent_shape) -> DenseJacobian:
         """Transpose DenseJacobian in response to transpose of parent dual"""
         jaxes = self._get_jaxis(axes, none="transpose")
         jaxes = tuple(jaxes) + tuple(range(self.dependent_ndim, self.ndim))
@@ -420,7 +425,7 @@ class DenseJacobian(BaseJacobian):
 
     def tensordot(
         self, other: BaseJacobian, axes: tuple, dependent_unit: GenericUnit
-    ) -> "DenseJacobian":
+    ) -> DenseJacobian:
         """Compute self(.)other"""
         import sparse as st  # pylint: disable=import-outside-toplevel
 
@@ -463,7 +468,7 @@ class DenseJacobian(BaseJacobian):
 
     def rtensordot(
         self, other: BaseJacobian, axes: tuple, dependent_unit: GenericUnit
-    ) -> "DenseJacobian":
+    ) -> DenseJacobian:
         """Compute other(.)self"""
         # This one is actually easier than regular tensordot, because the axes end up in
         # the right order

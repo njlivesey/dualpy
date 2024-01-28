@@ -1,4 +1,6 @@
 """Class for sparse jacobians"""
+from __future__ import annotations
+
 import copy
 from collections.abc import Sequence
 
@@ -249,7 +251,7 @@ class SparseJacobian(BaseJacobian):
 
     def _getjitem(
         self, new_dependent_shape: tuple, key: tuple | ArrayLike
-    ) -> "SparseJacobian":
+    ) -> SparseJacobian:
         """Enacts getitem for sparse Jacobians
 
         Invoked by dlarray.__getitem__
@@ -369,7 +371,7 @@ class SparseJacobian(BaseJacobian):
         new_dependent_shape: tuple,
         order: str,
         parent_flags,
-    ) -> "SparseJacobian":
+    ) -> SparseJacobian:
         """Reshape a SparseJacobian
 
         Parameters
@@ -407,7 +409,7 @@ class SparseJacobian(BaseJacobian):
             dependent_shape=new_dependent_shape,
         )
 
-    def premultiply_diagonal(self, diagonal: ArrayLike) -> "SparseJacobian":
+    def premultiply_diagonal(self, diagonal: ArrayLike) -> SparseJacobian:
         """Diagonal premulitply for dense Jacobian
 
         This is a key routine as the vast majority of dual operations involve a
@@ -477,7 +479,7 @@ class SparseJacobian(BaseJacobian):
         values: ArrayLike,
         axis: int,
         dependent_shape: tuple,
-    ) -> "SparseJacobian":
+    ) -> SparseJacobian:
         """Performms numpy.insert-like actions on DenseJacobian
 
         Parameters

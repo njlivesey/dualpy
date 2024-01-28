@@ -1,4 +1,5 @@
 """The class for diagonal jacobians"""
+from __future__ import annotations
 
 from collections.abc import Sequence
 
@@ -16,7 +17,7 @@ __all__ = ["DiagonalJacobian", "SeedJacobian"]
 
 
 def to_non_diagonal(
-    jacobian: "DiagonalJacobian",
+    jacobian: DiagonalJacobian,
 ) -> DenseJacobian | SparseJacobian:
     """This function takes a DiagonalJacobian that is about to become non-diagonal and
     changes it to another type.  Typically this is a SparseJacobian, but if the
@@ -249,7 +250,7 @@ class DiagonalJacobian(BaseJacobian):
             parent_flags,
         )
 
-    def premultiply_diagonal(self, diagonal: ArrayLike) -> "DiagonalJacobian":
+    def premultiply_diagonal(self, diagonal: ArrayLike) -> DiagonalJacobian:
         """Diagonal premulitply for dense Jacobian
 
         This is a key routine as the vast majority of dual operations involve a
@@ -298,7 +299,7 @@ class DiagonalJacobian(BaseJacobian):
         values: ArrayLike,
         axis: int,
         dependent_shape: tuple,
-    ) -> "DiagonalJacobian":
+    ) -> DiagonalJacobian:
         """Performms numpy.insert-like actions on DiagonalJacobian
 
         Parameters
