@@ -1,13 +1,12 @@
 """Some low level routines to help with handling duals"""
 
+import operator
+
 import astropy.units as units
 import pint
-import numpy as np
-import operator
+from mls_scf_tools.mls_pint import mp_broadcast_arrays, ureg
 from numpy.core import umath
-import scipy.sparse as sparse
 
-from mls_scf_tools.mls_pint import ureg
 from .unitless import Unitless
 
 __all__ = [
@@ -25,44 +24,14 @@ __all__ = [
     "apply_units",
 ]
 
-from mls_scf_tools.mls_pint import mp_broadcast_arrays
-
-
-def dedual(x, units_ok=False):
-    """Return duck-array form of x that's not a dual
-
-    Thus, it will return x.variable if x a dlarray or just x (at least for now,
-    perhaps we should check x over in the latter case, but we'll only do so if it
-    becomes clear we need to.
-
-    """
-    from .duals import dlarray
-
-    if hasattr(x, "_dedual"):
-        return x._dedual()
-    if isinstance(x, dlarray):
-        return x.variable
-    elif isinstance(x, np.ndarray) or hasattr(x, "__array__"):
-        return x
-    elif (
-        isinstance(x, int)
-        or isinstance(x, float)
-        or isinstance(x, complex)
-        or isinstance(x, sparse.spmatrix)
-    ):
-        return x
-    elif units_ok and (isinstance(x, units.core.UnitBase) or isinstance(x, pint.Unit)):
-        return x
-    else:
-        raise ValueError(f"Do not know how to dedual object of type {type(x)}")
-
 
 def isunit(x):
+    """Return True if argument is a valid unit type"""
     return isinstance(x, units.core.UnitBase) or isinstance(x, pint.Unit)
 
 
 def broadcast_jacobians(js, new):
-    # Loop over jacobians and broadcast each of them to new shape
+    """Loop over jacobians and broadcast each of them to new shape"""
     out = {}
     for name, jacobian in js.items():
         out[name] = jacobian.broadcast_to(new)
@@ -71,14 +40,36 @@ def broadcast_jacobians(js, new):
 
 def force_unit(quantity, *, unit=None, source=None):
     """Apply a unit to a quantity"""
-    return quantity
+    raise NotImplementedError("Not sure why this is here but empty")
+    # return quantity
+
+
+def dedual(x):
+    """Return x without any dual nature to it
+
+    Thus, it will return x.variable if x a dlarray or just x (at least for now,
+    perhaps we should check x over in the latter case, but we'll only do so if it
+    becomes clear we need to.
+
+    """
+    # pylint: disable-next=import-outside-toplevel
+    from .duals import dlarray
+
+    if hasattr(x, "__dual_dedual__"):
+        return x.__dual_dedual__()
+    if isinstance(x, dlarray):
+        return x.variable
+    return x
 
 
 def to_dimensionless(x):
+    """Convert astropy/pint quantity to dimensionless and return as ndarray/dlarray"""
+    # pylint: disable=import-outside-toplevel
     from .dual_astropy import dlarray_astropy
     from .dual_pint import dlarray_pint
 
-    """Convert astropy/pint quantity to dimensionless and return as ndarray/dlarray"""
+    # pylint: enable=import-outside-toplevel
+
     if isinstance(x, dlarray_pint) or isinstance(x, pint.Quantity):
         return x.to(ureg.dimensionless)
     elif isinstance(x, dlarray_astropy) or isinstance(x, units.Quantity):
@@ -88,9 +79,12 @@ def to_dimensionless(x):
 
 
 def setup_dual_operation(*args, out=None, broadcast=True):
-    # Get the variables for all the arguments, be they duals or a non-dual
-    # duck-array, strip the units off for now.
-    arrays_ = [dedual(x, units_ok=True) for x in args]
+    """Prepare duals/others for operations
+
+    Get the variables for all the arguments, be they duals or a non-dual
+    duck-array, strip the units off for now.
+    """
+    arrays_ = [dedual(x) for x in args]
     any_are_units = any(isunit(x) for x in arrays_)
     if broadcast and not any_are_units:
         # Down the road, pint will give us problems here.
@@ -147,36 +141,45 @@ def apply_units(values, unit):
 
 def get_magnitude_and_unit(x):
     """Split a pint/astropy into value and units"""
-    from .dual_pint import dlarray_pint
+    # pylint: disable=import-outside-toplevel
     from .dual_astropy import dlarray_astropy
+    from .dual_pint import dlarray_pint
 
-    if isinstance(x, pint.Quantity) or isinstance(x, dlarray_pint):
+    # pylint: enable=import-outside-toplevel
+
+    if isinstance(x, (pint.Quantity, dlarray_pint)):
         return x.magnitude, x.units
-    if isinstance(x, units.Quantity) or isinstance(x, dlarray_astropy):
+    if isinstance(x, (units.Quantity, dlarray_astropy)):
         return x.value, x.unit
     return x, Unitless()
 
 
 def get_magnitude(x):
     """Split a pint/astropy into value and units"""
-    from .dual_pint import dlarray_pint
+    # pylint: disable=import-outside-toplevel
     from .dual_astropy import dlarray_astropy
+    from .dual_pint import dlarray_pint
 
-    if isinstance(x, pint.Quantity) or isinstance(x, dlarray_pint):
+    # pylint: enable=import-outside-toplevel
+
+    if isinstance(x, (pint.Quantity, dlarray_pint)):
         return x.magnitude
-    if isinstance(x, units.Quantity) or isinstance(x, dlarray_astropy):
+    if isinstance(x, (units.Quantity, dlarray_astropy)):
         return x.value
     return x
 
 
 def get_unit(x):
     """Return the units for x"""
-    from .dual_pint import dlarray_pint
+    # pylint: disable=import-outside-toplevel
     from .dual_astropy import dlarray_astropy
+    from .dual_pint import dlarray_pint
 
-    if isinstance(x, pint.Quantity) or isinstance(x, dlarray_pint):
+    # pylint: enable=import-outside-toplevel
+
+    if isinstance(x, (pint.Quantity, dlarray_pint)):
         return x.units
-    if isinstance(x, units.Quantity) or isinstance(x, dlarray_astropy):
+    if isinstance(x, (units.Quantity, dlarray_astropy)):
         return x.unit
     return Unitless()
 
@@ -184,6 +187,7 @@ def get_unit(x):
 def get_unit_conversion_scale(old_unit, new_unit):
     """Get a scale factor for converting from old_unit to new_unit"""
     if isinstance(old_unit, units.UnitBase):
+        # pylint: disable-next=protected-access
         return old_unit._to(new_unit) * (new_unit / old_unit)
     elif isinstance(old_unit, pint.Unit) or isinstance(old_unit, pint.Quantity):
         return new_unit.from_(old_unit) / old_unit
@@ -196,14 +200,16 @@ def get_unit_conversion_scale(old_unit, new_unit):
 def has_jacobians(a):
     """Return true if a is a dual with Jacobians"""
     # If it has a _has_jacobians method, invoke that.
-    if hasattr(a, "_has_jacobians"):
-        return a._has_jacobians()
+    if hasattr(a, "__dual_has_jacobians__"):
+        return a.__dual_has_jacobians__()
     if not hasattr(a, "jacobians"):
         return False
     return bool(a.jacobians)
 
 
 class DualOperatorsMixin:
+    """A mixin class for providing all the numpy operators"""
+
     __slots__ = ()
 
     def _binary_op(self, other, f, reflexive=False):

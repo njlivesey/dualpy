@@ -486,7 +486,7 @@ class DenseJacobian(BaseJacobian):
         """Extract the diagonal from a dense Jacobian with units"""
         if self.dependent_shape != self.independent_shape:
             raise ValueError("Dense Jacobian is not square")
-        result = np.reshape(self.get_data_2d(), self.dependent_shape)
+        result = np.reshape(np.diag(self.get_data_2d()), self.dependent_shape)
         return apply_units(result, self.dependent_unit / self.independent_unit)
 
     def todensearray(self):

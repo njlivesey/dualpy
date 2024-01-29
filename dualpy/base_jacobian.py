@@ -310,7 +310,7 @@ class BaseJacobian(object):
         # If we're actually mulitplying by a unit we have a different set of returns
         if isunit(diagonal):
             return None, self.dependent_unit * diagonal, self.dependent_shape
-        # Otherwise, setup to mutipply by this diagonal
+        # Otherwise, setup to mutiply by this diagonal
         if isinstance(diagonal, units.Quantity):
             dependent_unit = diagonal.unit * self.dependent_unit
             diag_ = diagonal.value
