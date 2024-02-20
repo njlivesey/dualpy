@@ -217,7 +217,6 @@ class LocatedObjectIterator:
         return branches
 
     def _iterate_worker(self, branch, *sources: Any):
-
         """Iterate over tree describing numerical Jacobian inputs/outputs
 
         Iterates over thee tree within self, and uses that tree to walk through as many
