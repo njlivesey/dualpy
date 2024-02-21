@@ -1,4 +1,5 @@
 """Module defining the BaseJacobian class from which other types of Jacobian are descended"""
+
 from __future__ import annotations
 
 import copy
@@ -120,7 +121,13 @@ class BaseJacobian(object):
             result += "\ndata is None"
         return result
 
-    def _check(self, name: str = None):
+    def _check(
+        self,
+        name: str = None,
+        jname: str = None,
+        dependent_shape: tuple[int] = None,
+        dependent_unit=None,
+    ):
         """Perform fundamental checkes on a BaseJacobian
 
         Parameters
@@ -128,27 +135,36 @@ class BaseJacobian(object):
         name : str, optional
             An optional name to attach to error messages
         """
+        # Check that the array sizes and shapes are consistent
         if name is None:
-            name = "<unknown>"
+            name = "<unnamed-variable>"
+        if jname is None:
+            jname = "<unnamed-jacobian>"
         assert self.dependent_shape + self.independent_shape == self.shape, (
-            f"Shape mismatch for Jacobian {name}, "
+            f"Shape mismatch for {name} Jacobian {jname}, "
             f"{self.dependent_shape} + {self.independent_shape} != {self.shape}"
         )
         assert np.prod(self.dependent_shape) == self.dependent_size, (
-            f"Dependent size mismatch for {name}, "
+            f"Dependent size mismatch for {name} Jacobian {jname}, "
             f"product({self.dependent_shape}) != {self.dependent_size}"
         )
         assert np.prod(self.independent_shape) == self.independent_size, (
-            f"Independent size mismatch for {name}, "
+            f"Independent size mismatch for {name} Jaobian {jname}, "
             f"product({self.independent_shape}) != {self.independent_size}"
         )
         assert (
             np.prod(self.shape) == self.size
-        ), f"Overall size mismatch for {name}, product({self.shape}) != {self.size}"
-        # Check about the data fields
-        assert not hasattr(self.data, "unit") and not hasattr(
-            self.data, "units"
-        ), f"Jacobian {name} has units in the data field"
+        ), f"Overall size mismatch for {name} Jacobian {jname}, product({self.shape}) != {self.size}"
+        # Check that the dependent_shape is correct
+        if dependent_shape is not None:
+            assert (
+                self.dependent_shape == dependent_shape
+            ), f"dependent_shape mismatch for {name} Jacobian {jname}: {self.dependent_shape} vs. {dependent_shape} expected"
+        # Check that the dependent unit is correct
+        if dependent_unit is not None:
+            assert (
+                self.dependent_unit == dependent_unit
+            ), f"dependent_unit mismatch for {name} Jacobian {jname}: {self.dependent_unit} vs. {dependent_unit} expected"
 
     def __repr__(self):
         """Return a representation of the Jacobians"""
@@ -588,7 +604,7 @@ class BaseJacobian(object):
         else:
             assert False, f"Should not have gotten here (result_type={result_type})"
         return result_type(
-            data=result_data,
+            source=result_data,
             dependent_shape=self.dependent_shape,
             independent_shape=other.independent_shape,
             dependent_unit=self.dependent_unit,

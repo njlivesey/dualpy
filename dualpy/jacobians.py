@@ -133,7 +133,7 @@ def concatenate_jacobians(values, axis, result_dependent_shape):
         if result_type is DenseJacobian:
             j_ins_ = [j_in.data for j_in in prepped_jacobians[name]]
             j_out_ = np.concatenate(j_ins_, axis=jaxis)
-            result[name] = result_type(template=result_jacobians[name], data=j_out_)
+            result[name] = result_type(template=result_jacobians[name], source=j_out_)
         elif result_type is SparseJacobian:
             i = 0
             j_out = result_type(template=result_jacobians[name])
@@ -175,7 +175,7 @@ def stack_jacobians(arrays, axis, result_dependent_shape):
         if result_type is DenseJacobian:
             j_ins_ = [j_in.data for j_in in prepped_jacobians[name]]
             j_out_ = np.stack(j_ins_, axis=jaxis)
-            result[name] = result_type(template=result_jacobians[name], data=j_out_)
+            result[name] = result_type(template=result_jacobians[name], source=j_out_)
         elif result_type is SparseJacobian:
             j_out = result_type(template=result_jacobians[name])
             for i, j_in in enumerate(prepped_jacobians[name]):

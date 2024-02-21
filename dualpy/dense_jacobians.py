@@ -1,4 +1,5 @@
 """Class for dense jacobians"""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -73,23 +74,24 @@ class DenseJacobian(BaseJacobian):
         )
         # Now try to get the data for this Jacobian, an n-dimensional array
         data = None
-        if isinstance(source, BaseJacobian):
-            # If source is a Jacobian, then get it from that
-            data = source.get_data_nd()
-        else:
-            # Otherwise, try to get it from source.  First densify it if it's some kind of
-            # sparse representation.
-            try:
-                data = data.todense()
-            except AttributeError:
-                pass
-            # Now try to reshape it.
-            try:
-                data = np.reshape(source, self.shape)
-            except AttributeError:
-                # If that fails then it's probably not any kind of array, perhaps it's a
-                # scalar or something, turn it into an ndarray.
-                data = np.reshape(np.array(source), self.shape)
+        if source is not None:
+            if isinstance(source, BaseJacobian):
+                # If source is a Jacobian, then get it from that
+                data = source.get_data_nd(form="dense")
+            else:
+                # Otherwise, try to get it from source.  First densify it if it's some kind of
+                # sparse representation.
+                try:
+                    data = np.array(source.todense())
+                except AttributeError:
+                    data = source
+                # Now try to reshape it.
+                try:
+                    data = np.reshape(data, self.shape)
+                except AttributeError:
+                    # If that fails then it's probably not any kind of array, perhaps it's a
+                    # scalar or something, turn it into an ndarray.
+                    data = np.reshape(np.array(source), self.shape)
         # If we weren't able to get anywhere with data, make it an array of zeros.
         if data is None:
             data = get_config().default_zero_array_type(shape=self.shape, dtype=dtype)
@@ -120,7 +122,13 @@ class DenseJacobian(BaseJacobian):
         """Return the diagonal form of the array in self"""
         raise TypeError("Unable to return diagonal from DenseJacobian")
 
-    def _check(self, name: str = None):
+    def _check(
+        self,
+        name: str = None,
+        jname: str = None,
+        dependent_shape: tuple[int] = None,
+        dependent_unit=None,
+    ):
         """Integrity checks on dense Jacobian
 
         Parameters
@@ -131,7 +139,15 @@ class DenseJacobian(BaseJacobian):
         if name is None:
             name = "<unknown dense Jacobian>"
         # Get the base class to do the main checking
-        super()._check(name)
+        super()._check(
+            name=name,
+            jname=jname,
+            dependent_shape=dependent_shape,
+            dependent_unit=dependent_unit,
+        )
+        assert isinstance(
+            self.data, (np.ndarray, np.float64)
+        ), f"Incorrect type for data array in {name}, {type(self.data)}"
         assert (
             self.data.shape == self.shape
         ), f"Array shape mismatch for {name}, {self.data.shape} != {self.shape}"

@@ -1,4 +1,5 @@
 """Class for sparse jacobians"""
+
 from __future__ import annotations
 
 import copy
@@ -214,7 +215,7 @@ class SparseJacobian(BaseJacobian):
         if form is None or form == "sparse":
             return self.as_sparse_tensor()
         elif form == "dense":
-            return np.reshape(self.data.todense(), self.shape)
+            return np.reshape(np.array(self.data.todense()), self.shape)
         else:
             raise ValueError(f"Invalid value for form argument: {form}")
 
@@ -231,7 +232,13 @@ class SparseJacobian(BaseJacobian):
         """Return the diagonal form of the array in self"""
         raise TypeError("Not possible to get digonal from SparseJacobian")
 
-    def _check(self, name: str = None):
+    def _check(
+        self,
+        name: str = None,
+        jname: str = None,
+        dependent_shape: tuple[int] = None,
+        dependent_unit=None,
+    ):
         """Integrity checks for sparse Jacobians
 
         Parameters
@@ -242,7 +249,15 @@ class SparseJacobian(BaseJacobian):
         if name is None:
             name = "<unknown sparse Jacobian>"
         # Get the base class to do the main checking
-        super()._check(name)
+        super()._check(
+            name=name,
+            jname=jname,
+            dependent_shape=dependent_shape,
+            dependent_unit=dependent_unit,
+        )
+        assert isinstance(
+            self.data, sparse.csc_matrix
+        ), f"Incorrect type for data array in {name}, {type(self.data)}"
         correct_2dshape = (self.dependent_size, self.independent_size)
         assert self.data.shape == correct_2dshape, (
             f"array2d shape mismatch for {name}, "
@@ -1046,7 +1061,7 @@ class SparseJacobianLinearInterpolator(object):
         self.extrapolate = extrapolate
         # Transpose the jacobian to put the interpolating axis in front
         self.rearranged, self.rearranged_shapes, self.undo_reordering = _rearrange_2d(
-            jacobian.data2d,
+            jacobian.data,
             [jacobian.dependent_shape, jacobian.independent_shape],
             promote=self.jaxis,
         )

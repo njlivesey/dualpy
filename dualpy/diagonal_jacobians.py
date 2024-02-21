@@ -1,4 +1,5 @@
 """The class for diagonal jacobians"""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -84,28 +85,29 @@ class DiagonalJacobian(BaseJacobian):
             raise ValueError("Attempt to create a diagonal Jacobian that is not square")
         # Now try to get the data for this Jacobian into the right shape of array
         data = None
-        if isinstance(source, BaseJacobian):
-            if isinstance(source, DiagonalJacobian):
-                # If source is another DiagonalJacobian, get the data directly from that
-                data = source.data
+        if source is not None:
+            if isinstance(source, BaseJacobian):
+                if isinstance(source, DiagonalJacobian):
+                    # If source is another DiagonalJacobian, get the data directly from that
+                    data = source.data
+                else:
+                    raise ValueError(
+                        "Cannot source a DiagonalJacobian from another subclass of BaseJacobian"
+                    )
             else:
-                raise ValueError(
-                    "Cannot source a DiagonalJacobian from another subclass of BaseJacobian"
-                )
-        else:
-            # Otherwise, try to get it from source.  First densify it if it's some kind of
-            # sparse representation.
-            try:
-                data = data.todense()
-            except AttributeError:
-                pass
-            # Now try to reshape it.
-            try:
-                data = np.reshape(source, self.dependent_shape)
-            except AttributeError:
-                # If that fails then it's probably not any kind of array, perhaps it's a
-                # scalar or something, turn it into an ndarray.
-                data = np.reshape(np.array(source), self.dependent_shape)
+                # Otherwise, try to get it from source.  First densify it if it's some kind of
+                # sparse representation.
+                try:
+                    data = source.todense()
+                except AttributeError:
+                    data = source
+                # Now try to reshape it.
+                try:
+                    data = np.reshape(data, self.dependent_shape)
+                except AttributeError:
+                    # If that fails then it's probably not any kind of array, perhaps it's a
+                    # scalar or something, turn it into an ndarray.
+                    data = np.reshape(np.array(data), self.dependent_shape)
         # If we weren't able to get anywhere with data, make it an array of zeros.
         if data is None:
             data = get_config().default_zero_array_type(shape=self.dependent_shape)
@@ -150,11 +152,25 @@ class DiagonalJacobian(BaseJacobian):
         """Return array of data along the diagonal"""
         return self.data
 
-    def _check(self, name=None):
+    def _check(
+        self,
+        name: str = None,
+        jname: str = None,
+        dependent_shape: tuple[int] = None,
+        dependent_unit=None,
+    ):
         """Integrity chescks on diagonal Jacobian"""
         if name is None:
             name = "<unknown diagonal Jacobian>"
-        super()._check(name)
+        super()._check(
+            name=name,
+            jname=jname,
+            dependent_shape=dependent_shape,
+            dependent_unit=dependent_unit,
+        )
+        assert isinstance(
+            self.data, (np.ndarray, np.float64)
+        ), f"Incorrect type for data array in {name}, {type(self.data)}"
         assert self.dependent_shape == self.independent_shape, (
             f"Non-diagonal shape for diagonal Jacobian {name}"
             f"{self.dependent_shape} != {self.independent_shape}"

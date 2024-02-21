@@ -85,21 +85,21 @@ def prepare_jacobians_for_binary_op(a, b):
         # above code would have handled things), then promote a to
         # sparse and use the 2d view of b
         a_ = array_to_sparse_diagonal(a.data)
-        b_ = b.data
+        b_ = b.get_data_2d()
         result_type = type_b
     elif type_b is DiagonalJacobian:
         # This is the converse case
-        a_ = a.data
+        a_ = a.get_data_2d()
         b_ = array_to_sparse_diagonal(b.data)
         result_type = type_a
     elif type_a is SparseJacobian:
         # OK, so, here a must be sparse, b dense
         a_ = a.data
-        b_ = b.data
+        b_ = b.get_data_2d()
         result_type = type_b
     elif type_b is SparseJacobian:
         # Finally, so it must be that a is dense, b sparse
-        a_ = a.data
+        a_ = a.get_data_2d()
         b_ = b.data
         result_type = type_a
     else:
@@ -142,7 +142,7 @@ def jacobian_2d_matrix_multiply(a, b):
     else:
         result_data = result_data2d
     return result_type(
-        data=result_data,
+        source=result_data,
         dependent_shape=a.dependent_shape,
         independent_shape=b.independent_shape,
         dependent_unit=a.dependent_unit,

@@ -183,7 +183,7 @@ class dlarray(DualOperatorsMixin):
             )
             return NotImplemented
         result = dlufunc(*args, **kwargs)
-        # result._check()
+        result._check()
         return result
 
     # __array_ufunc__ = None
@@ -268,16 +268,11 @@ class dlarray(DualOperatorsMixin):
     def _check(self, name="<unknown>"):
         """Check consistency of a dual"""
         for jname, jacobian in self.jacobians.items():
-            jacobian._check(jname)
-            assert self.unit == jacobian.dependent_unit, (
-                f"The {jname} Jacobian for {name} has the wrong dependent "
-                f"units ({jacobian.dependent_unit} rather "
-                f"than {self.unit})"
-            )
-            assert self.shape == jacobian.dependent_shape, (
-                f"The {jname} Jacobian for {name} has the wrong dependent "
-                f"size ({jacobian.dependent_shape} rather "
-                f"than {self.shape})"
+            jacobian._check(
+                jname=jname,
+                name=name,
+                dependent_shape=self.shape,
+                dependent_unit=get_unit(self),
             )
 
     def hasJ(self):

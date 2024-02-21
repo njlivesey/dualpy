@@ -529,7 +529,7 @@ def interp1d(
                 j_original = y.jacobians[name]
                 new_data = j_interpolator(x_new_magnitude_dedualed)
                 y_new.jacobians[name] = DenseJacobian(
-                    data=new_data,
+                    source=new_data,
                     template=j_original,
                     dependent_shape=y_new.shape,
                 )
