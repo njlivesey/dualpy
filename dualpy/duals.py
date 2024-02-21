@@ -50,20 +50,25 @@ class dlarray(DualOperatorsMixin):
         Uses type of variable argument to work out what flavor of dlarray to create.
 
         """
+        # pylint: disable=import-outside-toplevel
         import astropy.units as units
         import pint
-
-        # import pint
         from .dual_astropy import dlarray_astropy
         from .dual_pint import dlarray_pint
 
+        # pylint: enable=import-outside-toplevel
+
         if isinstance(input_variable, units.Quantity):
-            cls = dlarray_astropy
+            result_class = dlarray_astropy
         elif isinstance(input_variable, pint.Quantity):
-            cls = dlarray_pint
+            result_class = dlarray_pint
+        elif isinstance(input_variable, (np.ndarray, float)):
+            result_class = dlarray
         else:
-            cls = dlarray
-        obj = object.__new__(cls)
+            raise TypeError(
+                f"Variables of type {type(input_variable)} cannot be wrapped in duals."
+            )
+        obj = object.__new__(result_class)
         return obj
 
     def __init__(self, input_variable):
