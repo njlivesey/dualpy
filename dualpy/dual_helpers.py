@@ -186,6 +186,8 @@ def get_unit(x):
 
 def get_unit_conversion_scale(old_unit, new_unit):
     """Get a scale factor for converting from old_unit to new_unit"""
+    if isinstance(new_unit, Unitless):
+        return 1
     if isinstance(old_unit, units.UnitBase):
         # pylint: disable-next=protected-access
         return old_unit._to(new_unit) * (new_unit / old_unit)
