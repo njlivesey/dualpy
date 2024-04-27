@@ -24,7 +24,7 @@
 <!-- [INSERT SCREENSHOT OF YOUR SOFTWARE, IF APPLICABLE] -->
 <!-- ☝️ Screenshot of your software (if applicable) via ![](https://uri-to-your-screenshot) ☝️ -->
 
-Provides a near drop-in capability for performing forward mode automatic differentiation for numpy-based numerical software.  For more details on dual-algebra based forward mode automatic differentiation see, for example, https://en.wikipedia.org/wiki/Automatic_differentiation#Automatic_differentiation_using_dual_numbers
+Provides a near drop-in capability for performing forward mode automatic differentiation for numpy-based numerical software.  For more details on dual-algebra based forward mode automatic differentiation see, for example, this [Wikipedia article](https://en.wikipedia.org/wiki/Automatic_differentiation#Automatic_differentiation_using_dual_numbers)
 
 <!-- ☝️ Replace with a more detailed description of your repository, including why it was made and whom its intended for.  ☝️ -->
 
