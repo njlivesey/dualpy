@@ -12,7 +12,7 @@
 
 </div>
 
-<pre align="center">Forward mode automatic differentiation using "dual algebra" for numpy arrays (includes support for arrays with unit metadata, specifically with Pint and Astropy)</pre>
+<div align="center">Forward mode automatic differentiation using "dual algebra" for numpy arrays (includes support for arrays with unit metadata, specifically with Pint and Astropy)</div>
 <!-- ☝️ Replace with a single sentence describing the purpose of your repo / proj ☝️ -->
 
 <!-- Header block for project -->
