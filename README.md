@@ -12,18 +12,20 @@
 
 </div>
 
-<div align="center">Forward mode automatic differentiation using "dual algebra" for numpy arrays (includes support for arrays with unit metadata, specifically with Pint and Astropy)</div>
+<div align="center">Forward mode automatic differentiation using dual algebra for numpy arrays (and Pint/Astropy quantities)</div>
 <!-- ☝️ Replace with a single sentence describing the purpose of your repo / proj ☝️ -->
 
 <!-- Header block for project -->
 
-[INSERT YOUR BADGES HERE (SEE: https://shields.io)] [![SLIM](https://img.shields.io/badge/Best%20Practices%20from-SLIM-blue)](https://nasa-ammos.github.io/slim/)
+<!-- [INSERT YOUR BADGES HERE (SEE: https://shields.io)] -->
+[![SLIM](https://img.shields.io/badge/Best%20Practices%20from-SLIM-blue)](https://nasa-ammos.github.io/slim/)
 <!-- ☝️ Add badges via: https://shields.io e.g. ![](https://img.shields.io/github/your_chosen_action/your_org/your_repo) ☝️ -->
 
-[INSERT SCREENSHOT OF YOUR SOFTWARE, IF APPLICABLE]
+<!-- [INSERT SCREENSHOT OF YOUR SOFTWARE, IF APPLICABLE] -->
 <!-- ☝️ Screenshot of your software (if applicable) via ![](https://uri-to-your-screenshot) ☝️ -->
 
-[INSERT MORE DETAILED DESCRIPTION OF YOUR REPOSITORY HERE]
+Provides a near drop-in capability for performing forward mode automatic differentiation for numpy-based numerical software.  For more details on dual-algebra based forward mode automatic differentiation see, for example, https://en.wikipedia.org/wiki/Automatic_differentiation#Automatic_differentiation_using_dual_numbers
+
 <!-- ☝️ Replace with a more detailed description of your repository, including why it was made and whom its intended for.  ☝️ -->
 
 [INSERT LIST OF IMPORTANT PROJECT / REPO LINKS HERE]
