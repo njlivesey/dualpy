@@ -33,7 +33,7 @@ def _rearrange_2d(matrix, original_shapes, axes=None, promote=None, demote=None)
         matrix.
 
     original_shapes: list of two lists of int
-        A list of two lists giving the shapes that ravel to make the rows and columns of
+        A list of    two lists giving the shapes that ravel to make the rows and columns of
         input matrix.
 
     axes: list of two lists of int (optional)

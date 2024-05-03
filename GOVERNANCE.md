@@ -1,4 +1,4 @@
-# [INSERT PROJECT NAME] Project Governance
+# DualPy Project Governance
 
 This governance model aims to create an open source community that encourages transparency, contributions, and collaboration, but maintains sound technical and quality standards. Our goal is to build a community comprised of members across the [INSERT PROJECT DOMAIN] community and beyond, including from private organizations, universities, government organizations, and international organizations. 
 
@@ -18,7 +18,7 @@ The project follows a fairly liberal contribution model where people and/or orga
 
 ### User
 
-Anyone who has downloaded, deployed, or operated [INSERT PROJECT NAME] to meet a specific objective. This project was primarily designed for [INSERT DESCRIPTION OF PROJECT PURPOSE], but let us know if you've found other uses for it.  
+Anyone who has downloaded, deployed, or operated DualPy to meet a specific objective. This project was initially designed for application to "Forward Model" (i.e., radiative transfer) calculations that underpin "Retrieval Algorithms" for spaceborne remote sounding of atmospheric composition, but let us know if you've found other uses for it.  
 
 ### Contributor
 

@@ -111,7 +111,7 @@ class DiagonalJacobian(BaseJacobian):
         # If we weren't able to get anywhere with data, make it an array of zeros.
         if data is None:
             data = get_config().default_zero_array_type(shape=self.dependent_shape)
-        # OK, lodge data in selt
+        # OK, lodge data in self
         self.data = data
         # Check out the Jacobian to make sure everything is as it should be
         self._check()
