@@ -87,8 +87,8 @@ def seed(
     """
     # First see if the quantity has a _seed method, and, if so, invoke that to do the
     # work.
-    if hasattr(value, "__dual_seed__"):
-        return value.__dual_seed__(
+    if hasattr(value, "_dual_seed_"):
+        return value._dual_seed_(
             name,
             force=force,
             overwrite=overwrite,
@@ -152,7 +152,7 @@ def delete_jacobians(a, *names, wildcard=None, remain_dual=False, **kwargs):
     ----------
     a : array_like (notably dual)
         Quantity from which Jacobians are to be removed.  If it has a
-        __dual_delete_jacobians__ method, then that is invoked to do this work instead.
+        _dual_delete_jacobians_ method, then that is invoked to do this work instead.
     names : sequence[str]
         Sequence of named Jacobians to delete.  If absent (and no wildcard is suppled)
         then all the Jacobians are deleted.
@@ -162,7 +162,7 @@ def delete_jacobians(a, *names, wildcard=None, remain_dual=False, **kwargs):
         If, after deleting Jacobians, none are left, then this method will demote the
         dual back to a non-dual array, unless this argument is set to True
     **kwargs : dict, optional
-        Other arguments that may be passed to any __dual_delete_jacobians__ method
+        Other arguments that may be passed to any _dual_delete_jacobians_ method
 
     Returns:
     --------
@@ -171,8 +171,8 @@ def delete_jacobians(a, *names, wildcard=None, remain_dual=False, **kwargs):
         Input with named Jacobians deleted.
     """
     # First see if this quantity has a __delete_jacobians__ method.  If so, use it.
-    if hasattr(a, "__dual_delete_jacobians__"):
-        return a.__dual_delete_jacobians__(
+    if hasattr(a, "_dual_delete_jacobians_"):
+        return a._dual_delete_jacobians_(
             *names, wildcard=wildcard, remain_dual=remain_dual, **kwargs
         )
     # Otherwise, this is a dlarray (or quacks like one), delete the jacobians ourselves.

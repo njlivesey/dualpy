@@ -55,8 +55,8 @@ def dedual(x):
     # pylint: disable-next=import-outside-toplevel
     from .duals import dlarray
 
-    if hasattr(x, "__dual_dedual__"):
-        return x.__dual_dedual__()
+    if hasattr(x, "_dual_dedual_"):
+        return x._dual_dedual_()
     if isinstance(x, dlarray):
         return x.variable
     return x
@@ -202,8 +202,8 @@ def get_unit_conversion_scale(old_unit, new_unit):
 def has_jacobians(a):
     """Return true if a is a dual with Jacobians"""
     # If it has a _has_jacobians method, invoke that.
-    if hasattr(a, "__dual_has_jacobians__"):
-        return a.__dual_has_jacobians__()
+    if hasattr(a, "_dual_has_jacobians_"):
+        return a._dual_has_jacobians_()
     if not hasattr(a, "jacobians"):
         return False
     return bool(a.jacobians)
