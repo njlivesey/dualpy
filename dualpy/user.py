@@ -5,11 +5,14 @@ import astropy.units as units
 import mls_scf_tools.njlutil as njlutil
 import numpy as np
 import pint
+
+# pylint: disable-next=no-name-in-module
 import scipy.fft as fft
 import scipy.integrate as integrate
 import scipy.interpolate as interpolate
 import scipy.special as special
 from mls_scf_tools.mls_pint import ureg
+from numpy.typing import NDArray
 
 from .dual_helpers import (
     dedual,
@@ -39,7 +42,7 @@ __all__ = [
     "wofz",
 ]
 
-PossibleDual = Union[units.Quantity, pint.Quantity, np.ndarray, dlarray]
+PossibleDual = Union[units.Quantity, pint.Quantity, NDArray, dlarray]
 
 
 class DroppedJacobianWarning(Warning):
