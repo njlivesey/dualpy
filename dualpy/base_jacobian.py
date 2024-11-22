@@ -107,10 +107,10 @@ class BaseJacobian(object):
         self._check()
         result = (
             f"Jacobian of type {type(self)}\n"
-            f"Dependent shape is {self.dependent_shape} <{self.dependent_size}>\n"
+            f"Dependent shape is {self.dependent_shape} <{self.dependent_size:,}>\n"
             f"Independent shape is {self.independent_shape}"
-            f" <{self.independent_size}>\n"
-            f"Combined they are {self.shape} <{self.size}>\n"
+            f" <{self.independent_size:,}>\n"
+            f"Combined they are {self.shape} <{self.size:,}>\n"
             f"Dummies are {self._dummy_dependent} and {self._dummy_independent}\n"
             f"Units are d<{self.dependent_unit}>/d<{self.independent_unit}> = "
             f"<{(self.dependent_unit/self.independent_unit)}>"

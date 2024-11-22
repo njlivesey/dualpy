@@ -26,25 +26,30 @@ def _rearrange_2d(matrix, original_shapes, axes=None, promote=None, demote=None)
 
     Parameters
     ----------
-
     matrix: (sparse) matrix-like
         A 2D sparse matrix (typically csc format) that is really storing a sparse tensor
         with the axes raveled into to two collections of axis to fake a 2D sparse
         matrix.
-
     original_shapes: list of two lists of int
-        A list of    two lists giving the shapes that ravel to make the rows and columns of
+        A list of two lists giving the shapes that ravel to make the rows and columns of
         input matrix.
-
     axes: list of two lists of int (optional)
         The recipe for the result - which axes from the original form the two sets of
         axes raveled to get the two axes of the fake 2D matrix
-
     promote: A single axis to move to the front (optional)
         A shortcut to simply move one axis to the front
-
     demote: A single axis to move to the back (optional)
         A shortcut to simply move one axis to the back
+
+    Returns
+    -------
+    result: (sparse) matrix-like
+        A 2D sparse matrix that's been transposed as requested
+    new_shape: list of two lists of int
+        The new shape of the result
+    undo: list of two lists of ints
+        When passed (along with the result) to this same routine, as the new "axes"
+        argument provides an "undo" operation.
 
     """
     # Work out what we've been asked to do
@@ -207,7 +212,7 @@ class SparseJacobian(BaseJacobian):
     def __str__(self):
         """Provide a string summary of a sparse Jacobian"""
         percent = 100.0 * self.data.nnz / (self.dependent_size * self.independent_size)
-        suffix = f" with {self.data.nnz} numbers stored ({percent:.2g}%)"
+        suffix = f" with {self.data.nnz:,} numbers stored ({percent:.2g}%)"
         return super().__str__() + suffix
 
     def get_data_nd(self, form: str = None) -> ArrayLike:

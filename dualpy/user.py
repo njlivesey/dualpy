@@ -91,6 +91,7 @@ def seed(
     # First see if the quantity has a _seed method, and, if so, invoke that to do the
     # work.
     if hasattr(value, "_dual_seed_"):
+        # pylint: disable-next=protected-access
         return value._dual_seed_(
             name,
             force=force,
@@ -203,16 +204,18 @@ def solve_quadratic(a, b, c, sign=1):
     a_, b_, c_, aj, bj, cj, out = setup_dual_operation(a, b, c)
     d_ = np.sqrt(b_**2 - 4 * a_ * c_)
     x_ = -2 * c_ / (b_ + sign * d_)
-    anyJ = aj or bj or cj
-    if anyJ:
+    any_j = aj or bj or cj
+    if any_j:
         x = dlarray(x_)
     else:
         x = x_
-    if anyJ:
+    if any_j:
         # Precompute some terms
         scale = -1.0 / (2 * a_ * x_ + b_)
         if aj:
             x_2 = x_**2
+        else:
+            x_2 = None
         for name, jacobian in aj.items():
             x.jacobians[name] = jacobian.premultiply_diagonal(x_2 * scale)
         for name, jacobian in bj.items():
@@ -234,6 +237,7 @@ def solve_quadratic(a, b, c, sign=1):
 def wofz(z):
     z = to_dimensionless(z)
     z_ = dedual(z)
+    # pylint: disable-next=no-member
     out_ = special.wofz(get_magnitude(z_))
     if not has_jacobians(z):
         return out_
@@ -567,10 +571,12 @@ def rfft(x, axis=-1, workers=None):
         if any_non_dense:
             # Compute the matrix that is d<rfft>/dx
             n_in = x.shape[axis]
-            n_out = n_in / 2 + 1 if n_in % 2 == 0 else (n_in + 1) / 2
+            n_out = n_in // 2 + 1
             p, q = np.mgrid[0:n_out, 0:n_in]
             c = -2j * np.pi / n_in
             D = np.exp(c * p * q)
+        else:
+            D = None
         # Now loop over the Jacobians and deal with them.
         for name, jacobian in x.jacobians.items():
             if isinstance(jacobian, DenseJacobian):
@@ -748,6 +754,8 @@ class CubicSplineWithJacobians:
             dydx = self.dydx_interpolator(x_out_magnitude_dedualed) * (
                 self.y_unit / self.x_unit
             )
+        else:
+            dydx = None
         # Now deal with any jacobians with regard to the output x, first identify a
         # padded out shape for x_new that includes dummys for the other dimensions in y.
         if has_jacobians(x_out) or self.jx_interpolators:
