@@ -1,26 +1,23 @@
 """The dual type for dualpy"""
 
-import numpy as np
 import fnmatch
-import dask
 
-from .unitless import Unitless
+import numpy as np
+
 from .dual_helpers import (
     DualOperatorsMixin,
     broadcast_jacobians,
     dedual,
-    has_jacobians,
     get_magnitude_and_unit,
     get_unit,
+    has_jacobians,
     setup_dual_operation,
 )
-from .jacobians import (
-    setitem_jacobians as _setitem_jacobians,
-    join_jacobians as _join_jacobians,
-    concatenate_jacobians as _concatenate_jacobians,
-    stack_jacobians as _stack_jacobians,
-)
-
+from .jacobians import concatenate_jacobians as _concatenate_jacobians
+from .jacobians import join_jacobians as _join_jacobians
+from .jacobians import setitem_jacobians as _setitem_jacobians
+from .jacobians import stack_jacobians as _stack_jacobians
+from .unitless import Unitless
 
 __all__ = [
     "dlarray",
@@ -53,6 +50,7 @@ class dlarray(DualOperatorsMixin):
         # pylint: disable=import-outside-toplevel
         import astropy.units as units
         import pint
+
         from .dual_astropy import dlarray_astropy
         from .dual_pint import dlarray_pint
 
