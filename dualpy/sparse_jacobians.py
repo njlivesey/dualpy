@@ -10,6 +10,7 @@ import scipy.sparse as sparse
 from numpy.typing import ArrayLike, DTypeLike
 
 from .base_jacobian import BaseJacobian
+from .config import get_config
 from .dual_helpers import apply_units, get_magnitude_and_unit, has_jacobians
 from .jacobian_helpers import (
     GenericUnit,
@@ -89,7 +90,7 @@ class SparseJacobian(BaseJacobian):
         elif isinstance(source, sparse.csc_matrix):
             data = source
         elif source is None:
-            data = sparse.csc_matrix(self.shape_2d, dtype=self.dtype)
+            data = sparse.csc_matrix(self.shape_2d, dtype=self.data.dtype)
         else:
             raise TypeError(
                 f"Unable to initialize SparseJacobian with source of type {type(source)}"
@@ -100,7 +101,8 @@ class SparseJacobian(BaseJacobian):
         # OK, lodge data in self
         self.data = data
         # Check out the Jacobian to make sure everying is as it should be
-        self._check()
+        if get_config("check_jacobians"):
+            self._check()
 
     def __str__(self):
         """Provide a string summary of a sparse Jacobian"""

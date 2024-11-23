@@ -98,7 +98,7 @@ class DenseJacobian(BaseJacobian):
         # If we weren't able to get anywhere with data, make it an array of zeros.
         if data is None:
             data = get_config("default_zero_array_type")(
-                shape=self.shape, dtype=self.dtype
+                shape=self.shape, dtype=self.data.dtype
             )
         # OK, lodge data in self
         self.data = data
@@ -156,7 +156,7 @@ class DenseJacobian(BaseJacobian):
             dependent_unit=dependent_unit,
         )
         assert isinstance(
-            self.data, (np.ndarray, np.float64)
+            self.data, (np.ndarray, np.generic)
         ), f"Incorrect type for data array in {name}, {type(self.data)}"
         assert (
             self.data.shape == self.shape

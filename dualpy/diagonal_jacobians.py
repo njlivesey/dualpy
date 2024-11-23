@@ -114,7 +114,7 @@ class DiagonalJacobian(BaseJacobian):
         # If we weren't able to get anywhere with data, make it an array of zeros.
         if data is None:
             data = get_config("default_zero_array_type")(
-                shape=self.dependent_shape, dtype=self.dtype
+                shape=self.dependent_shape, dtype=self.data.dtype
             )
         # OK, lodge data in self
         self.data = data

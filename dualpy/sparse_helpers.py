@@ -312,7 +312,6 @@ class SparselyRearrangedSparseJacobian(BaseRearrangedSparseJacobian):
             original_shapes=rearranged_shape,
             axes=self.undo_axes,
         )
-        print(f"In sparse_helpers, {result.dtype=}, {array.dtype=}")
         return SparseJacobian(
             result,
             dependent_shape=dependent_shape,

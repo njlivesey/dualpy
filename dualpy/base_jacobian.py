@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import copy
 import warnings
 from collections.abc import Sequence
@@ -20,6 +21,17 @@ from .jacobian_helpers import (
     prepare_jacobians_for_binary_op,
     GenericUnit,
 )
+
+
+@dataclass
+class DTypeVessel:
+    """Purely contains a dtype for the data field in BaseJacobian
+
+    I did it this way to avoid having jacobian.dtype and jacobian.data.dtype that I need
+    to try to keep in lockstep.
+    """
+
+    dtype: DTypeLike
 
 
 class BaseJacobian(object):
@@ -77,17 +89,19 @@ class BaseJacobian(object):
             self.independent_unit = pick(independent_unit, template.independent_unit)
             self.dependent_shape = pick(dependent_shape, template.dependent_shape)
             self.independent_shape = pick(independent_shape, template.independent_shape)
-            self.dtype = pick(dtype, template.dtype, source_dtype)
+            dtype = pick(dtype, template.dtype, source_dtype)
         else:
             # Otherwise, just get it from the arguments
             self.dependent_unit = dependent_unit
             self.independent_unit = independent_unit
             self.dependent_shape = dependent_shape
             self.independent_shape = independent_shape
-            self.dtype = pick(dtype, source_dtype)
+            dtype = pick(dtype, source_dtype)
         # Do a quick piece of housekeepting
         self.dependent_shape = tuple(self.dependent_shape)
         self.independent_shape = tuple(self.independent_shape)
+        # Store the dtype in data, see documentation for DTypeVessel above
+        self.data = DTypeVessel(dtype=dtype)
         # Now derive a bunch of metadata from the other parameters
         self.shape = tuple(self.dependent_shape + self.independent_shape)
         self.dependent_size = int(np.prod(self.dependent_shape))
@@ -100,8 +114,6 @@ class BaseJacobian(object):
         self.shape_2d = (self.dependent_size, self.independent_size)
         self._dummy_dependent = (1,) * self.dependent_ndim
         self._dummy_independent = (1,) * self.independent_ndim
-        # Create an empty data value
-        self.data: ArrayLike = None
 
     def __str__(self):
         """Return a string describing the Jacobians
@@ -170,12 +182,10 @@ class BaseJacobian(object):
             assert (
                 self.dependent_unit == dependent_unit
             ), f"dependent_unit mismatch for {name} Jacobian {jname}: {self.dependent_unit} vs. {dependent_unit} expected"
-        # Check that the dtype is not None
-        assert self.dtype is not None, f"Jacobian dtype is None for {jname}"
-        # Check it agrees with the dtype of the data
-        assert (
-            self.dtype == self.data.dtype
-        ), f"dtype mismatch for {name} Jacobian {jname} ({self.dtype=}, {self.data.dtype=})"
+        # Check that data is not from the base class
+        assert not isinstance(
+            self.data, DTypeVessel
+        ), "This seems to be a base Jacobian (data is type DTypeVessel)"
 
     def __repr__(self):
         """Return a representation of the Jacobians"""
@@ -194,6 +204,11 @@ class BaseJacobian(object):
         """Get diagonal version of Jacobian's data
 
         This should only work for DiagonalJacobians"""
+
+    @property
+    def dtype(self):
+        """Returns the dtype for a Jacobian"""
+        return self.data.dtype
 
     def __neg__(self):
         """Unary negative for Jacobian"""

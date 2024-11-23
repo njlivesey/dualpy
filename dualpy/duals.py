@@ -61,7 +61,7 @@ class dlarray(DualOperatorsMixin):
             result_class = dlarray_astropy
         elif isinstance(input_variable, pint.Quantity):
             result_class = dlarray_pint
-        elif isinstance(input_variable, (np.ndarray, float)):
+        elif isinstance(input_variable, (np.ndarray, np.generic, float, complex)):
             result_class = dlarray
         else:
             raise TypeError(
