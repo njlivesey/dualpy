@@ -372,7 +372,4 @@ class DenselyRearrangedSparseJacobian(SparselyRearrangedSparseJacobian):
         )
         # Now call our parent class to rearrange the sparse matrix into the correct
         # form.  Its result is our result
-        print(
-            f"{sparse_intermediate.shape=}, {self.source_dependent_shape=}, {self.source_independent_shape=}"
-        )
         return super().undo(sparse_intermediate, dependent_unit=dependent_unit)
