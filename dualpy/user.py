@@ -623,7 +623,7 @@ def rfft(x, axis=-1, workers=None):
                     )
                 elif this_config == "gather":
                     rearranged_jacobian = DenselyRearrangedSparseJacobian(
-                        jacobian, promoted_axis=axis
+                        jacobian, promoted_axis=jaxis
                     )
                     fft_result = fft.rfft(
                         rearranged_jacobian.matrix, axis=0, workers=workers
@@ -693,7 +693,7 @@ def irfft(x, axis=-1, workers=None):
                     )
                 elif this_config == "gather":
                     rearranged_jacobian = DenselyRearrangedSparseJacobian(
-                        jacobian, promoted_axis=axis
+                        jacobian, promoted_axis=jaxis
                     )
                     fft_result = fft.irfft(
                         rearranged_jacobian.matrix, axis=0, workers=workers

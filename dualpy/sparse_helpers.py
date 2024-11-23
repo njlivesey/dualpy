@@ -10,6 +10,13 @@ from scipy import sparse
 if TYPE_CHECKING:
     from .sparse_jacobians import SparseJacobian
 
+# --------------------------------------------------------------------- Routines
+#
+# First we have some low-level helper routines that manipulate sparse matrices,
+# rearranging axes etc. While these can indeed be run by any user, if you're using them
+# to specifically handle Jacobians, you would probably be better off using the classes
+# that wrap these in Jacobian-aware framework, below.
+
 
 def rearrange_2d(
     matrix: sparse.spmatrix,
@@ -154,10 +161,10 @@ def gather_sparse_rows_to_dense(
     scatter_structure : NDArray
         Indices of columns in the original sparse matrix
     """
-    # Convert the sparse matrix to csr_matrix form, needed for the indexing below.  Note
-    # that it needs to be a sparse matrix, not a sparse array, as scipy.sparse doesn't
-    # support the indexing we need for the latter
-    sparse_matrix = sparse.csr_matrix(sparse_matrix)
+    # Convert the sparse matrix to csc_matrix form, needed for efficient indexing below.
+    # Note that it needs to be a sparse matrix, not a sparse array, as scipy.sparse
+    # doesn't support the indexing we need for the latter
+    sparse_matrix = sparse.csc_matrix(sparse_matrix)
     # Find all unique column indices with non-zero entries
     nonzero_cols = sparse_matrix.nonzero()[1]
     unique_cols = np.unique(nonzero_cols)
@@ -198,7 +205,13 @@ def scatter_dense_to_sparse(
     return scattered_matrix.tocsc()
 
 
-# First a generic class for a rearranger
+# -------------------------------------------------------------------- Classes
+#
+# OK, now we have some classes the handle specfic tasks. Fundamentallyl, we pull one
+# axis of the Jacobian (from within the dependent quantity) to the front and either
+# store that as a still-sparse matrix, or store a dense one.  The dense one is optimal
+# for cases where each "row" (i.e., along the promoted axix) has a fairly similar set of
+# columns populated.
 class BaseRearrangedSparseJacobian:
     """An base class for a sparse Jacobian rearranger"""
 
@@ -320,7 +333,7 @@ class DenselyRearrangedSparseJacobian(SparselyRearrangedSparseJacobian):
     ----------
     jacobian : SparseJacobian
         The Jacobian to develop a rearranging process for
-    promoted_axis  : int
+    promoted_axis : int
         A single axis (in the dependent quantity) to move to the front.
     """
 
@@ -358,5 +371,8 @@ class DenselyRearrangedSparseJacobian(SparselyRearrangedSparseJacobian):
             original_shape=uncompressed_shape,
         )
         # Now call our parent class to rearrange the sparse matrix into the correct
-        # form.  Its result is our resulr
+        # form.  Its result is our result
+        print(
+            f"{sparse_intermediate.shape=}, {self.source_dependent_shape=}, {self.source_independent_shape=}"
+        )
         return super().undo(sparse_intermediate, dependent_unit=dependent_unit)

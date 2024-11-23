@@ -1,6 +1,7 @@
 """The class for diagonal jacobians"""
 
 from __future__ import annotations
+from typing import Optional
 
 from collections.abc import Sequence
 
@@ -366,7 +367,7 @@ class DiagonalJacobian(BaseJacobian):
         new_dependent_shape: tuple,
         **kwargs,
     ) -> "DenseJacobian":
-        """A generic reduction operation for DenseJacobians
+        """A generic reduction operation for DiagonalJacobians
 
         Parameters
         ----------
@@ -397,7 +398,13 @@ class DiagonalJacobian(BaseJacobian):
             function=np.mean, new_dependent_shape=new_dependent_shape, **kwargs
         )
 
-    def cumsum(self, new_dependent_shape: tuple, **kwargs) -> BaseJacobian:
+    def cumsum(
+        self,
+        new_dependent_shape: tuple,
+        # pylint: disable-next=unused-argument
+        strategy: Optional[str] = None,
+        **kwargs,
+    ) -> BaseJacobian:
         """Performs cumsum for the diagonal Jacobians.  See numpy help for details"""
         return self._reduce(
             function=np.cumsum, new_dependent_shape=new_dependent_shape, **kwargs

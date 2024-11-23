@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import copy
 from collections.abc import Sequence
+from typing import Optional
 
 import numpy as np
 import scipy.sparse as sparse
@@ -12,12 +12,15 @@ from numpy.typing import ArrayLike, DTypeLike
 from .base_jacobian import BaseJacobian
 from .dual_helpers import apply_units, get_magnitude_and_unit, has_jacobians
 from .jacobian_helpers import (
+    GenericUnit,
     array_to_sparse_diagonal,
     linear_interpolation_indices_and_weights,
     shapes_broadcastable,
-    GenericUnit,
 )
-from .sparse_helpers import rearrange_2d
+from .sparse_helpers import (
+    DenselyRearrangedSparseJacobian,
+    SparselyRearrangedSparseJacobian,
+)
 
 __all__ = ["SparseJacobian"]
 
@@ -540,24 +543,21 @@ class SparseJacobian(BaseJacobian):
             return DenseJacobian(
                 template=self, source=data, dependent_shape=new_dependent_shape
             )
-        # Here we want to sum over selected indices.  Recall that
-        # there is no shame in thinking about things that have the
-        # same size as the dependent vector.  To that end, we will
-        # formulate this as a sparse-sparse matrix multiply.  In
-        # many ways, this operation is the complement of the
-        # broadcast operation, so is constructed in a similar
-        # manner.
+        # Here we want to sum over selected indices.  Recall that there is no shame in
+        # thinking about things that have the same size as the dependent vector.  To
+        # that end, we will formulate this as a sparse-sparse matrix multiply.  In many
+        # ways, this operation is the complement of the broadcast operation, so is
+        # constructed in a similar manner.
         try:
             iter(axis)
         except TypeError:
             axis = (axis,)
-        # Take the orginal shape and replace the summed-over axes
-        # with one.  In the case where keepdims is set, that would
-        # be independent_shape of course, but we can't rely on
-        # that.
+        # Take the orginal shape and replace the summed-over axes with one.  In the case
+        # where keepdims is set, that would be independent_shape of course, but we can't
+        # rely on that.
         reduced_shape = list(self.dependent_shape)
-        # Note that the below code implicitly handles the case
-        # where an axis element is negative
+        # Note that the below code implicitly handles the case where an axis element is
+        # negative
         original_size = 1
         for a in axis:
             original_size *= reduced_shape[a]
@@ -588,66 +588,52 @@ class SparseJacobian(BaseJacobian):
             template=self, source=data, dependent_shape=new_dependent_shape
         )
 
-    def cumsum(self, axis, heroic=True):
+    def cumsum(
+        self,
+        # pylint: disable-next=unused-argument
+        new_dependent_shape: tuple,
+        axis: int,
+        strategy: Optional[str] = None,
+    ):
         """Perform cumsum for a sparse Jacobian"""
         # pylint: disable=import-outside-toplevel
         from .dense_jacobians import DenseJacobian
 
         jaxis = self.get_jaxis(axis, none="flatten")
-        # Cumulative sums by definitiona severly reduce sparsity.
-        # However, there may be cases where we're effectively doing
-        # lots of parallel sums here, so the "off-diagonal blocks" may
-        # well still be absent.  Depending on how things work out,
-        # ultimately the user may still prefer to just densify, indeed
-        # that's proven to be faster for non 3D retrievals.
-        if not heroic:
-            self_dense = DenseJacobian(self)
-            result = self_dense.cumsum(jaxis)
-        else:
-            # This is much simpler if jaxis is None or (thus and)
-            # dependent_ndim==1
-            easy = jaxis is None or self.dependent_ndim == 1
-            if easy:
-                new_csc = self.data
-                nrows = self.shape[0]
-            else:
-                # OK, we want to take the current 2D matrix and pull it
-                # about so that the summed-over jaxis is now the rows, and
-                # the columns are all the remaining dependent axes plus
-                # the independent ones.
-                new_csc, rearranged_shapes, undo_rearrange = rearrange_2d(
-                    self.data,
-                    [self.dependent_shape, self.independent_shape],
-                    promote=jaxis,
-                )
-                nrows = self.shape[jaxis]
-            # We have two choices here, we could do a python loop to build up and store
-            # cumulative sums, but I suspect that, while on paper more efficient
-            # (reducing the number of additions, it would be slow in reality. Instead,
-            # I'll create lower-triangle matrix with ones and zeros and multiply by
-            # that.
-            lower_triangle_matrix = sparse.csc_matrix(np.tri(nrows))
-            intermediate = lower_triangle_matrix @ new_csc
-            if easy:
-                result = SparseJacobian(template=self, source=intermediate)
-            else:
-                restored_order = list(range(1, self.ndim))
-                restored_order.insert(jaxis, 0)
-                result_csc, dummy_result_shapes, dummy_undo = rearrange_2d(
-                    intermediate,
-                    rearranged_shapes,
-                    undo_rearrange,
-                )
-                result = SparseJacobian(template=self, source=result_csc)
-        return result
+        # Cumulative sums by definitiona severly reduce sparsity. However, there may be
+        # cases where we're effectively doing lots of parallel sums here, so the
+        # "off-diagonal blocks" may well still be absent.  Depending on how things work
+        # out, ultimately the user may still prefer to just densify, indeed that's
+        # proven to be faster for non 3D retrievals.
+        if strategy == "dense":
+            return DenseJacobian(self).cumsum(jaxis)
+        if strategy == "gather":
+            # This gets us a matrix with the jaxis moved to the front, and with the
+            # other dimensions densified with only the non-zero columns (optimal in
+            # cases where the sparsity pattern is basically the same for all of the
+            # instances along axis
+            rearranged_jacobian = DenselyRearrangedSparseJacobian(self, jaxis)
+            result = np.cumsum(rearranged_jacobian.matrix, axis=0)
+            return rearranged_jacobian.undo(result)
+        if strategy == "matrix-multiply":
+            # Move the axis of interest the the front, and ravel together all the others
+            rearranged_jacobian = SparselyRearrangedSparseJacobian(self, jaxis)
+            # Create a lower-triangle matrix with ones and zeros and multiply by that.
+            lower_triangle_matrix = sparse.csc_matrix(
+                np.tri(rearranged_jacobian.matrix.shape[0])
+            )
+            result = lower_triangle_matrix @ rearranged_jacobian.matrix
+            return rearranged_jacobian.undo(result)
+        raise ValueError(f"Unrecognized sparse_jacobian_cumsum_strategy: {strategy}")
 
-    # pylint: disable=protected-access
     def diff(
         self,
         dependent_shape,
         n=1,
         axis=-1,
+        # pylint: disable-next=protected-access
         prepend=np._NoValue,
+        # pylint: disable-next=protected-access
         append=np._NoValue,
     ):
         """diff method for sparse jacobian"""
@@ -693,6 +679,7 @@ class SparseJacobian(BaseJacobian):
         """Compute self(.)other"""
         # pylint: disable=import-outside-toplevel
         import sparse as sparse_tensor
+
         from .dense_jacobians import DenseJacobian
 
         # Convert to sparse tensor form
@@ -762,6 +749,7 @@ class SparseJacobian(BaseJacobian):
         """Compute self(.)other"""
         # pylint: disable=import-outside-toplevel
         import sparse as st
+
         from .dense_jacobians import DenseJacobian
 
         # Convert to sparse tensor form
@@ -953,10 +941,9 @@ class SparseJacobianLinearInterpolator(object):
         self.x_in = x_in
         self.extrapolate = extrapolate
         # Transpose the jacobian to put the interpolating axis in front
-        self.rearranged, self.rearranged_shapes, self.undo_reordering = rearrange_2d(
-            jacobian.data,
-            [jacobian.dependent_shape, jacobian.independent_shape],
-            promote=self.jaxis,
+        self.rearranged_jacobian = SparselyRearrangedSparseJacobian(
+            jacobian,
+            promoted_axis=self.jaxis,
         )
 
     def __call__(self, x_out):
@@ -973,15 +960,5 @@ class SparseJacobianLinearInterpolator(object):
         weight_matrix = sparse.csc_matrix(
             (weight, (row, col)), shape=[x_out.size, self.x_in.size]
         )
-        result_rearranged = weight_matrix @ self.rearranged
-        rearranged_shapes = copy.deepcopy(self.rearranged_shapes)
-        rearranged_shapes[0][0] = x_out.size
-        result, result_shape, dummy_undo = rearrange_2d(
-            result_rearranged,
-            rearranged_shapes,
-            axes=self.undo_reordering,
-        )
-        new_dependent_shape = result_shape[0]
-        return SparseJacobian(
-            source=result, template=self.jacobian, dependent_shape=new_dependent_shape
-        )
+        result = weight_matrix @ self.rearranged_jacobian.matrix
+        return self.rearranged_jacobian.undo(result)

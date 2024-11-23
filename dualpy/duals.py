@@ -18,6 +18,7 @@ from .jacobians import join_jacobians as _join_jacobians
 from .jacobians import setitem_jacobians as _setitem_jacobians
 from .jacobians import stack_jacobians as _stack_jacobians
 from .unitless import Unitless
+from .config import get_jacobian_specific_config
 
 __all__ = [
     "dlarray",
@@ -875,7 +876,12 @@ def cumsum(a, axis=None, dtype=None, out=None):
     a_, aj, out = setup_dual_operation(a)
     out = dlarray(np.cumsum(a_, axis=axis, dtype=dtype))
     for name, jacobian in aj.items():
-        out.jacobians[name] = jacobian.cumsum(axis)
+        out.jacobians[name] = jacobian.cumsum(
+            axis,
+            strategy=get_jacobian_specific_config(
+                "sparse_jacobian_cumsum_strategy", name
+            ),
+        )
     return out
 
 
