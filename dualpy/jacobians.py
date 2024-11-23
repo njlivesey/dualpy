@@ -127,7 +127,7 @@ def concatenate_jacobians(values, axis, result_dependent_shape):
     for name, result_type in result_types.items():
         # Identify the correspondign axis in the jacobian
         # pylint: disable-next=protected-access
-        jaxis = result_jacobians[name]._get_jaxis(axis)
+        jaxis = result_jacobians[name].get_jaxis(axis)
         # This is cumbersome, but the best way to do this is separately for dense and
         # sparse
         if result_type is DenseJacobian:
@@ -169,7 +169,7 @@ def stack_jacobians(arrays, axis, result_dependent_shape):
         # Identify teh corresponding axis in the jacobian
         #
         # pylint: disable=protected-access
-        jaxis = result_jacobians[name]._get_jaxis(axis)
+        jaxis = result_jacobians[name].get_jaxis(axis)
         # This is cumbersome, but the best way to do this is separately for dense and
         # sparse
         if result_type is DenseJacobian:

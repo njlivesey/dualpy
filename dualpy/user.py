@@ -24,6 +24,9 @@ from .dual_helpers import (
 )
 from .duals import dlarray
 from .jacobians import DenseJacobian, DiagonalJacobian, SeedJacobian, SparseJacobian
+from .config import get_jacobian_specific_config
+
+from .sparse_helpers import DenselyRearrangedSparseJacobian
 
 __all__ = [
     "CubicSplineWithJacobians",
@@ -516,7 +519,7 @@ def interp1d(
                 x_magnitude_dedualed,
                 jacobian.data,
                 kind=kind,
-                axis=jacobian._get_jaxis(axis),
+                axis=jacobian.get_jaxis(axis),
                 copy=copy,
                 bounds_error=bounds_error,
                 fill_value=(0, 0),  # fill_value,
@@ -546,6 +549,25 @@ def interp1d(
     return result
 
 
+def construct_rfft_matrix(n_in: int):
+    """Constructs a dense rfft matrix of a given dimensionality"""
+    n_out = n_in // 2 + 1
+    p, q = np.mgrid[0:n_out, 0:n_in]
+    c = -2j * np.pi / n_in
+    return np.exp(c * p * q)
+
+
+def construct_irfft_matrix(n_in: int):
+    """Constructs a dense irfft matrix of a given dimensionality"""
+    n_out = 2 * (n_in - 1)
+    p, q = np.mgrid[0:n_out, 0:n_in]
+    c = 2 * np.pi / n_out
+    irfft_matrix = 2 * np.cos(c * p * q) / n_out
+    irfft_matrix[:, 0] *= 0.5
+    irfft_matrix[:, -1] *= 0.5
+    return irfft_matrix
+
+
 def rfft(x, axis=-1, workers=None):
     """Compute the 1-D discrete Fourier Transform for real input (includes duals)"""
     if workers is None:
@@ -556,47 +578,66 @@ def rfft(x, axis=-1, workers=None):
         # Preparet the result
         result = dlarray(result)
         # Dense Jacobian's are simply handled as their own fourier transform.  Sparse
-        # ones dictate a different (hopefully more efficient approach that recognizes
-        # that a Fourier transform is simply a matrix multiply (granted a multiplication
-        # by a matrix whose properties allow for the efficiencies implicit in the FFT
-        # algorithm, but may not be usefully exploited when chain ruling with a sparse
-        # Jacobians.  So first see if any of the subsequent matrices are sparse (or
-        # diagonal).
-        any_non_dense = any(
-            [
-                not isinstance(jacobian, DenseJacobian)
-                for jacobian in x.jacobians.values()
-            ]
-        )
-        if any_non_dense:
-            # Compute the matrix that is d<rfft>/dx
-            n_in = x.shape[axis]
-            n_out = n_in // 2 + 1
-            p, q = np.mgrid[0:n_out, 0:n_in]
-            c = -2j * np.pi / n_in
-            D = np.exp(c * p * q)
-        else:
-            D = None
+        # ones dictate different possible approaches.
+        #
+        # The first uses a matrix multiply (granted a multiplication by a matrix whose
+        # properties allow for the efficiencies implicit in the FFT algorithm, but may
+        # not be usefully exploited when chain ruling with a sparse Jacobians.
+        #
+        # The second gathers the non fft'd axes together, on the (user's) presumption
+        # that the structure will be the same for each row
+        rfft_matrix = None
         # Now loop over the Jacobians and deal with them.
         for name, jacobian in x.jacobians.items():
+            this_config = get_jacobian_specific_config(
+                "sparse_jacobian_fft_strategy", name
+            )
+            if isinstance(jacobian, DiagonalJacobian) or isinstance(
+                jacobian, SeedJacobian
+            ):
+                jacobian = SparseJacobian(jacobian)
+            # Possibly convert sparse Jacobians to dense if the config says we should
+            if isinstance(jacobian, SparseJacobian) and this_config == "dense":
+                jacobian = DenseJacobian(jacobian)
             if isinstance(jacobian, DenseJacobian):
-                jaxis = jacobian._get_jaxis(axis)
+                jaxis = jacobian.get_jaxis(axis)
                 jfft = fft.rfft(jacobian.data, axis=jaxis, workers=workers)
                 result.jacobians[name] = DenseJacobian(
                     jfft,
                     template=jacobian,
                     dependent_shape=result.shape,
+                    dependent_unit=x_unit,
                 )
+            elif isinstance(jacobian, SparseJacobian):
+                jaxis = jacobian.get_jaxis(axis)
+                if this_config == "matrix-multiply":
+                    # Compute the rfft matrix if we haven't already
+                    if rfft_matrix is None:
+                        rfft_matrix = construct_rfft_matrix(x.shape[axis])
+                    # Do it the matrix multiply way (note that the diagonal case invokes the
+                    # sparse case under the hood).
+                    result.jacobians[name] = jacobian.rtensordot(
+                        rfft_matrix,
+                        axes=[[1], [jaxis]],
+                        dependent_unit=x_unit,
+                    )
+                elif this_config == "gather":
+                    rearranged_jacobian = DenselyRearrangedSparseJacobian(
+                        jacobian, promoted_axis=axis
+                    )
+                    fft_result = fft.rfft(
+                        rearranged_jacobian.matrix, axis=0, workers=workers
+                    )
+                    result.jacobians[name] = rearranged_jacobian.undo(
+                        fft_result, dependent_unit=x_unit
+                    )
+                else:
+                    raise ValueError(
+                        f"Invalid sparse_jacobian_fft_strategy for {name}: {this_config}"
+                    )
             else:
-                if isinstance(jacobian, DiagonalJacobian):
-                    jacobian = SparseJacobian(jacobian)
-                jaxis = jacobian._get_jaxis(axis)
-                # Do it the matrix multiply way (note that the diagonal case invokes the
-                # sparse case under the hood).
-                result.jacobians[name] = jacobian.rtensordot(
-                    D,
-                    axes=[[1], [jaxis]],
-                    dependent_unit=result.units,
+                raise TypeError(
+                    f"Unable to handle FFT for Jacobian of type {type(jacobian)}"
                 )
     return result
 
@@ -610,48 +651,63 @@ def irfft(x, axis=-1, workers=None):
     if has_jacobians(x):
         # Preparet the result
         result = dlarray(result)
-        # Dense Jacobian's are simply handled as their own fourier transform.  Dense
-        # ones dictate a different (hopefully more efficient approach that recognizes
-        # that a Fourier transform is simply a matrix multiply (granted a multiplication
-        # by a matrix whose properties allow for the efficiencies implicit in the FFT
-        # algorithm, but may not be usefully exploited when chain ruling with a sparse
-        # Jacobians.  So first see if any of the subsequent matrices are sparse (or
-        # diagonal).
-        any_non_dense = any(
-            [
-                not isinstance(jacobian, DenseJacobian)
-                for jacobian in x.jacobians.values()
-            ]
-        )
-        if any_non_dense:
-            # Compute the matrix that is d<rfft>/dx
-            n_in = x.shape[axis]
-            n_out = 2 * (n_in - 1)
-            p, q = np.mgrid[0:n_out, 0:n_in]
-            c = 2 * np.pi / n_out
-            D = 2 * np.cos(c * p * q) / n_out
-            D[:, 0] *= 0.5
-            D[:, -1] *= 0.5
-        # Now loop over the Jacobians and deal with them.
+        # Dense Jacobian's are simply handled as their own fourier transform.  Sparse
+        # ones dictate different possible approaches.
+        #
+        # The first uses a matrix multiply (granted a multiplication by a matrix whose
+        # properties allow for the efficiencies implicit in the FFT algorithm, but may
+        # not be usefully exploited when chain ruling with a sparse Jacobians.
+        #
+        # The second gathers the non fft'd axes together, on the (user's) presumption
+        # that the structure will be the same for each row
+        irfft_matrix = None
         for name, jacobian in x.jacobians.items():
+            this_config = get_jacobian_specific_config(
+                "sparse_jacobian_fft_strategy", name
+            )
+            if isinstance(jacobian, DiagonalJacobian) or isinstance(
+                jacobian, SeedJacobian
+            ):
+                jacobian = SparseJacobian(jacobian)
+            # Possibly convert sparse Jacobians to dense if the config says we should
+            if isinstance(jacobian, SparseJacobian) and this_config == "dense":
+                jacobian = DenseJacobian(jacobian)
             if isinstance(jacobian, DenseJacobian):
-                jaxis = jacobian._get_jaxis(axis)
+                jaxis = jacobian.get_jaxis(axis)
                 jfft = fft.irfft(jacobian.data, axis=jaxis, workers=workers)
                 result.jacobians[name] = DenseJacobian(
                     jfft,
                     template=jacobian,
                     dependent_shape=result.shape,
+                    dependent_unit=x_unit,
                 )
+            elif isinstance(jacobian, SparseJacobian):
+                jaxis = jacobian.get_jaxis(axis)
+                if this_config == "matrix-multiply":
+                    # Construct the irfft_matrix if we haven't already
+                    irfft_matrix = construct_irfft_matrix(x.shape[axis])
+                    result.jacobians[name] = jacobian.tensordot(
+                        irfft_matrix,
+                        axes=[[jaxis], [1]],
+                        dependent_unit=x_unit,
+                    )
+                elif this_config == "gather":
+                    rearranged_jacobian = DenselyRearrangedSparseJacobian(
+                        jacobian, promoted_axis=axis
+                    )
+                    fft_result = fft.irfft(
+                        rearranged_jacobian.matrix, axis=0, workers=workers
+                    )
+                    result.jacobians[name] = rearranged_jacobian.undo(
+                        fft_result, dependent_unit=x_unit
+                    )
+                else:
+                    raise ValueError(
+                        f"Invalid sparse_jacobian_fft_strategy for {name}: {this_config}"
+                    )
             else:
-                if isinstance(jacobian, DiagonalJacobian):
-                    jacobian = SparseJacobian(jacobian)
-                jaxis = jacobian._get_jaxis(axis)
-                # Do it the matrix multiply way (note that the diagonal case invokes the
-                # sparse case under the hood).
-                result.jacobians[name] = jacobian.tensordot(
-                    D,
-                    axes=[[jaxis], [1]],
-                    dependent_unit=result.units,
+                raise TypeError(
+                    f"Unable to handle FFT for Jacobian of type {type(jacobian)}"
                 )
     return result
 
@@ -736,7 +792,7 @@ class CubicSplineWithJacobians:
         self.dydx_interpolator = None
 
     def __call__(self, x):
-        """Return a dual/unit aware spline interpolation (linear for Jacobains)"""
+        """Return a dual/unit aware spline interpolation"""
         # Make sure x is in the right units and bounded, then take units off
         x_out = np.clip(x.to(self.x_unit), self.x_min, self.x_max)
         x_out_magnitude_dedualed = get_magnitude(dedual(x_out))

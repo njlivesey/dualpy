@@ -364,7 +364,7 @@ class DenseJacobian(BaseJacobian):
             raise NotImplementedError(
                 "Not implemented the case where a a dual is being inserted"
             )
-        jaxis = self._get_jaxis(axis, none="flatten")
+        jaxis = self.get_jaxis(axis, none="flatten")
         data = np.insert(self.data, obj, 0.0, jaxis)
         return DenseJacobian(data, template=self, dependent_shape=dependent_shape)
 
@@ -383,7 +383,7 @@ class DenseJacobian(BaseJacobian):
             The operation to perform (e.g., np.sum)
         All other arguments as the various numpy reduce operations.
         """
-        jaxis = self._get_jaxis(axis, none="all")
+        jaxis = self.get_jaxis(axis, none="all")
         return DenseJacobian(
             source=function(self.data, axis=jaxis, **kwargs),
             template=self,
@@ -413,7 +413,7 @@ class DenseJacobian(BaseJacobian):
         self, dependent_shape, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue
     ) -> DenseJacobian:
         """diff method for dense jacobian"""
-        jaxis = self._get_jaxis(axis)
+        jaxis = self.get_jaxis(axis)
         if prepend is not np._NoValue:
             prepend = np.expand_dims(
                 prepend,
@@ -431,7 +431,7 @@ class DenseJacobian(BaseJacobian):
 
     def transpose(self, axes, result_dependent_shape) -> DenseJacobian:
         """Transpose DenseJacobian in response to transpose of parent dual"""
-        jaxes = self._get_jaxis(axes, none="transpose")
+        jaxes = self.get_jaxis(axes, none="transpose")
         jaxes = tuple(jaxes) + tuple(range(self.dependent_ndim, self.ndim))
         return DenseJacobian(
             source=self.data.transpose(jaxes),
@@ -563,7 +563,7 @@ class DenseJacobianLinearInterpolator(object):
     def __init__(self, jacobian, x_in, axis=-1, extrapolate=None):
         """Setup an interpolator for a given DenseJacobian"""
         self.jacobian = jacobian
-        self.jaxis = jacobian._get_jaxis(axis, none="first")
+        self.jaxis = jacobian.get_jaxis(axis, none="first")
         self.x_in = x_in
         if extrapolate == "periodic":
             raise NotImplementedError(
@@ -611,7 +611,7 @@ class DenseJacobianSplineInterpolator(object):
         """Setup an interpolator for a given DenseJacobian"""
 
         self.jacobian = jacobian
-        self.jaxis = jacobian._get_jaxis(axis, none="first")
+        self.jaxis = jacobian.get_jaxis(axis, none="first")
         self.interpolator = interpolate.CubicSpline(
             x_in,
             jacobian.data,

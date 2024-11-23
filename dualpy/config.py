@@ -18,6 +18,9 @@ _CONFIG_DEFAULTS = {
     # Note that, if needed, it can be a dict giving the strategy on a
     # Jacobian-by-Jacobian basis (with an empty string key for the default case).
     "sparse_jacobian_fft_strategy": "gather",
+    # This one defines the strategic for cumsum, again it can be on a jacobian by
+    # jacobian basis.  Options are "dense", "matrix-multiply", and "gather"
+    "sparse_jacobian_cumsum_strategy": "matrix-multiply",
 }
 
 
@@ -27,6 +30,7 @@ class DualpyConfig:
 
     default_zero_array_type: type
     sparse_jacobian_fft_strategy: str | dict[str]
+    sparse_jacobian_cumsum_strategy: str | dict[str]
 
 
 _config = DualpyConfig(**_CONFIG_DEFAULTS)
@@ -65,13 +69,31 @@ def set_full_config(config: DualpyConfig):
     """Set the configuration to the supplied values
 
     Also check that there are no extra keys and that all are supplied"""
-    for key in fields(config):
+    for field in fields(config):
         # This raises an error of an inappropriate key is supplied
-        set_config(key=getattr(config, key))
+        set_config(**{field.name: getattr(config, field.name)})
     # Check we got all our keys
-    for key in fields(DualpyConfig):
-        if not hasattr(config, key):
-            raise AttributeError(f"Supplied config is missing key {key}")
+    for field in fields(DualpyConfig):
+        if not hasattr(config, field.name):
+            raise AttributeError(f"Supplied config is missing field {field.name}")
+
+
+def get_jacobian_specific_config(config_key: str, jacobian_key: str):
+    """For a given term in the config return the value for a given Jacobian
+
+    If the config element is a str, we just return that. If it is a dict, then we return
+    the entry corresponding to jacobian_key.  If there isn't one, we return the entry
+    with the key "", if there is one.
+    """
+    config_info = get_config(config_key)
+    # It can be a string or a jacobian-dependent dict of strings (with "" as the
+    # default). If it's a string, just return that.
+    if isinstance(config_info, str):
+        return config_info
+    # Otherwise, it's a dict, try to get it, with "" as the default
+    if jacobian_key in config_info:
+        return config_info[jacobian_key]
+    return config_info[""]
 
 
 @contextlib.contextmanager
@@ -102,17 +124,18 @@ def reset_config(just_check: Optional[bool] = False):
         If set, don't copy, just do the checking described above (used on first
         initialization)
     """
+    field_names = [field.name for field in fields(DualpyConfig)]
     for key, item in _CONFIG_DEFAULTS.items():
-        if key not in fields(DualpyConfig):
+        if key not in field_names:
             raise KeyError(f"Unexpected DualpyConfig key: {key}")
         if not just_check:
             setattr(_config, key, item)
     # Check that every key in DualpyConfig got filled
-    for key in fields(DualpyConfig):
+    for key in field_names:
         if key not in _CONFIG_DEFAULTS:
             raise KeyError(f"Unfilled key in DualpyConfig: {key}")
 
 
 # Setup the configuration (it was already initialized above, just do the consistency
-# chekcs that DualpyConfig and _CONFIG_DEFAULTS match)
+# checks that DualpyConfig and _CONFIG_DEFAULTS match)
 reset_config(just_check=True)

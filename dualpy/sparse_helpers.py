@@ -1,12 +1,16 @@
 """Some classes and routines to help deal with sparse Jacobians"""
 
-from typing import Sequence, Optional
+import copy
+from abc import abstractmethod
+from typing import Sequence, Optional, TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
 
+if TYPE_CHECKING:
+    from .sparse_jacobians import SparseJacobian
 
-# First some helper routines
+
 def rearrange_2d(
     matrix: sparse.spmatrix,
     original_shapes: Sequence[int],
@@ -150,6 +154,10 @@ def gather_sparse_rows_to_dense(
     scatter_structure : NDArray
         Indices of columns in the original sparse matrix
     """
+    # Convert the sparse matrix to csr_matrix form, needed for the indexing below.  Note
+    # that it needs to be a sparse matrix, not a sparse array, as scipy.sparse doesn't
+    # support the indexing we need for the latter
+    sparse_matrix = sparse.csr_matrix(sparse_matrix)
     # Find all unique column indices with non-zero entries
     nonzero_cols = sparse_matrix.nonzero()[1]
     unique_cols = np.unique(nonzero_cols)
@@ -188,3 +196,167 @@ def scatter_dense_to_sparse(
     for i, col in enumerate(scatter_structure):
         scattered_matrix[:, col] = gathered_matrix[:, i].reshape(-1, 1)
     return scattered_matrix.tocsc()
+
+
+# First a generic class for a rearranger
+class BaseRearrangedSparseJacobian:
+    """An base class for a sparse Jacobian rearranger"""
+
+    @abstractmethod
+    def __init__(self, jacobian: "SparseJacobian"):
+        """Do some base-level initialization and checking for a rearranger"""
+        self.source_dependent_shape = jacobian.dependent_shape
+        self.source_dependent_size = jacobian.dependent_size
+        self.source_dependent_ndim = jacobian.dependent_ndim
+        self.source_independent_shape = jacobian.independent_shape
+        self.source_independent_size = jacobian.independent_size
+        self.source_independent_ndim = jacobian.independent_ndim
+        self.source_shape = jacobian.shape
+        self.source_size = jacobian.size
+        self.source_ndim = jacobian.ndim
+        #
+        self.source_dependent_unit = jacobian.dependent_unit
+        self.source_independent_unit = jacobian.independent_unit
+
+    @abstractmethod
+    def undo(self, array: NDArray | sparse.spmatrix):
+        """Apply the inverse of a rearranger to a supplied array"""
+
+
+class SparselyRearrangedSparseJacobian(BaseRearrangedSparseJacobian):
+    """Contains a rearranged form of a SparseJacobian
+
+    A requested axis is moved to the first (rows) axis, and all the others are ravelled
+    together as the columns.
+
+    Parameters
+    ----------
+    jacobian : SparseJacobian
+        The Jacobian to develop a rearranging process for
+    promoted_axis  : int
+        A single axis (in the dependent quantity) to move to the front.
+    """
+
+    def __init__(
+        self,
+        jacobian: "SparseJacobian",
+        promoted_axis: int,
+    ):
+        """Initiailizes the rearrangement"""
+        # Store the key information in self
+        super().__init__(jacobian)
+        # Work out what the recipe is for the result
+        self.promoted_axis = promoted_axis
+        remainder = list(range(self.source_ndim))
+        remainder.pop(promoted_axis)
+        axes = [[promoted_axis], remainder]
+        self.axes = axes
+        # Final setups
+        original_shapes = [self.source_dependent_shape, self.source_independent_shape]
+        # Invoke the helper routine to do the actual work
+        self.matrix, self.rearranged_shape, self.undo_axes = rearrange_2d(
+            jacobian.data,
+            original_shapes=original_shapes,
+            axes=axes,
+        )
+        self.rearranged_shape_2d = self.matrix.shape
+
+    def undo(
+        self,
+        array,
+        dependent_unit=None,
+    ) -> "SparseJacobian":
+        """Reverse the effect of our rearrangement on a supplied matrix
+
+        Typically this matrix is not the same as "ours" but is the result of doing some
+        manipulation on ours.  This might involve a change in one of the dependent
+        dimensions, being the one that was promoted to the front.  Here we apply some
+        intelligence to work out what that is.
+        """
+        # pylint: disable-next=import-outside-toplevel
+        from .sparse_jacobians import SparseJacobian
+
+        # Check the consistency
+        if array.shape[1] != self.rearranged_shape_2d[1]:
+            raise ValueError("Shape mismatch on demoted dimensions")
+        # Handle any changes to the number of rows
+        if self.rearranged_shape[0] != array.shape[0]:
+            rearranged_shape = copy.deepcopy(self.rearranged_shape)
+            rearranged_shape[0] = [array.shape[0]]
+            dependent_shape = list(copy.deepcopy(self.source_dependent_shape))
+            dependent_shape[self.promoted_axis] = array.shape[0]
+            dependent_shape = tuple(dependent_shape)
+        else:
+            rearranged_shape = self.rearranged_shape
+            dependent_shape = self.source_dependent_shape
+        # Handle any changes to units
+        if dependent_unit is None:
+            dependent_unit = self.source_dependent_unit
+        result, _, _ = rearrange_2d(
+            array,
+            original_shapes=rearranged_shape,
+            axes=self.undo_axes,
+        )
+        return SparseJacobian(
+            result,
+            dependent_shape=dependent_shape,
+            dependent_unit=dependent_unit,
+            independent_shape=self.source_independent_shape,
+            independent_unit=self.source_independent_unit,
+        )
+
+
+class DenselyRearrangedSparseJacobian(SparselyRearrangedSparseJacobian):
+    """Contains a rearranged form of a SparseJacobian
+
+    A requested axis is moved to the first (rows) axis, and all the others are ravelled
+    together as the columns. Thus far, this is as SparselyRearrangedSparseJacobian, as
+    above, and indeed, this class invokes that one.  However, in this case, we go a
+    further step and identify the subset of the columns that are needed (on the
+    assumption that it is the same for each row) and create a dense matrix that is just
+    those columns.
+
+    Parameters
+    ----------
+    jacobian : SparseJacobian
+        The Jacobian to develop a rearranging process for
+    promoted_axis  : int
+        A single axis (in the dependent quantity) to move to the front.
+    """
+
+    def __init__(
+        self,
+        jacobian: "SparseJacobian",
+        promoted_axis: int,
+    ):
+        """Initiailizes the rearrangement"""
+        # Call the parent __init__ to set up the sparse rearrangement
+        super().__init__(jacobian=jacobian, promoted_axis=promoted_axis)
+        # Now we identify the populated columns and generate a dense matrix that
+        # corresponds to those.
+        self.sparse_nnz = self.matrix.nnz
+        self.uncompressed_shape = self.matrix.shape
+        self.matrix, self.scatter_structure = gather_sparse_rows_to_dense(self.matrix)
+        self.bloat = 100.0 * (self.matrix.size - self.sparse_nnz) / self.sparse_nnz
+
+    def undo(self, array: NDArray, dependent_unit=None):
+        """Undoes the rearrangement"""
+        # Check the consistency
+        if array.shape[1] != self.matrix.shape[1]:
+            raise ValueError("Shape mismatch on demoted/compacted dimensions")
+        # Handle any changes to the number of rows
+        if self.uncompressed_shape[0] != array.shape[0]:
+            uncompressed_shape = list(copy.deepcopy(self.uncompressed_shape))
+            uncompressed_shape[0] = array.shape[0]
+            uncompressed_shape = tuple(uncompressed_shape)
+        else:
+            uncompressed_shape = self.uncompressed_shape
+        # Scatter this back into a sparse matrix
+        sparse_intermediate = scatter_dense_to_sparse(
+            array,
+            scatter_structure=self.scatter_structure,
+            original_shape=uncompressed_shape,
+        )
+        # Now call our parent class to rearrange the sparse matrix into the correct
+        # form.  Its result is our resulr
+        return super().undo(sparse_intermediate, dependent_unit=dependent_unit)

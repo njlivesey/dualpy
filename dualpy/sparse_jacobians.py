@@ -423,7 +423,7 @@ class SparseJacobian(BaseJacobian):
         self_coo = self.data.tocoo()
         # OK, unravel the multi index that makes up the rows
         all_indices = list(np.unravel_index(self_coo.row, self.dependent_shape))
-        axis = self._get_jaxis(axis, none="zero")
+        axis = self.get_jaxis(axis, none="zero")
         i = all_indices[axis]
         # Convert insertion requests to list
         try:
@@ -593,7 +593,7 @@ class SparseJacobian(BaseJacobian):
         # pylint: disable=import-outside-toplevel
         from .dense_jacobians import DenseJacobian
 
-        jaxis = self._get_jaxis(axis, none="flatten")
+        jaxis = self.get_jaxis(axis, none="flatten")
         # Cumulative sums by definitiona severly reduce sparsity.
         # However, there may be cases where we're effectively doing
         # lots of parallel sums here, so the "off-diagonal blocks" may
@@ -949,7 +949,7 @@ class SparseJacobianLinearInterpolator(object):
     ):
         """Setup an interpolator for a given DenseJacobian"""
         self.jacobian = jacobian
-        self.jaxis = jacobian._get_jaxis(axis, none="first")
+        self.jaxis = jacobian.get_jaxis(axis, none="first")
         self.x_in = x_in
         self.extrapolate = extrapolate
         # Transpose the jacobian to put the interpolating axis in front
