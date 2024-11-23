@@ -208,7 +208,7 @@ def compute_numeric_jacobians(
     # ----------------------------------------------- Perturb each argument in turn
     #
     with tqdm(total=n_elements) as bar:
-        for (arg, arg_deseeded, arg_iterator, seed_names) in zip(
+        for arg, arg_deseeded, arg_iterator, seed_names in zip(
             all_args,
             all_deseeded_args,
             all_arg_iterators,
@@ -258,7 +258,7 @@ def compute_numeric_jacobians(
                             dx_value = dx.to(j.independent_unit).magnitude
                             column = delta_output / dx_value
                             # Insert it
-                            j.data2d[:, i] = column
+                            j.get_2d_view()[:, i] = column
 
     # Now we're done, I think
     return result_a, result_n

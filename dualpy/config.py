@@ -21,6 +21,8 @@ _CONFIG_DEFAULTS = {
     # This one defines the strategic for cumsum, again it can be on a jacobian by
     # jacobian basis.  Options are "dense", "matrix-multiply", and "gather"
     "sparse_jacobian_cumsum_strategy": "matrix-multiply",
+    # This one turns on frequent checking of the jacobians
+    "check_jacobians": False,
 }
 
 
@@ -31,6 +33,7 @@ class DualpyConfig:
     default_zero_array_type: type
     sparse_jacobian_fft_strategy: str | dict[str]
     sparse_jacobian_cumsum_strategy: str | dict[str]
+    check_jacobians: bool
 
 
 _config = DualpyConfig(**_CONFIG_DEFAULTS)

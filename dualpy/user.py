@@ -127,8 +127,13 @@ def seed(
         out_shape = out.shape
     except AttributeError:
         out_shape = tuple()
+    # Work out the dtype
+    try:
+        dtype = value.dtype
+    except AttributeError:
+        dtype = None
     jacobian = SeedJacobian(
-        np.ones(out_shape),
+        source=np.ones(out_shape, dtype=dtype),
         dependent_unit=out._dependent_unit,
         independent_unit=out._dependent_unit,
         dependent_shape=out_shape,

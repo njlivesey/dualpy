@@ -76,10 +76,12 @@ class DiagonalJacobian(BaseJacobian):
         # any, and the keword arguments (depdendent_shape etc. etc.)
         super().__init__(
             template=template,
+            source=source,
             dependent_unit=dependent_unit,
             independent_unit=independent_unit,
             dependent_shape=dependent_shape,
             independent_shape=independent_shape,
+            dtype=dtype,
         )
         # Now check that the shapes are identical, the definition of a diagonal Jacobian
         if self.dependent_shape != self.independent_shape:
@@ -111,16 +113,19 @@ class DiagonalJacobian(BaseJacobian):
                     data = np.reshape(np.array(data), self.dependent_shape)
         # If we weren't able to get anywhere with data, make it an array of zeros.
         if data is None:
-            data = get_config().default_zero_array_type(shape=self.dependent_shape)
+            data = get_config("default_zero_array_type")(
+                shape=self.dependent_shape, dtype=self.dtype
+            )
         # OK, lodge data in self
         self.data = data
         # Check out the Jacobian to make sure everything is as it should be
-        self._check()
+        if get_config("check_jacobians"):
+            self._check()
 
     def get_data_nd(self, form: str = None) -> ArrayLike:
         """Return the n-dimensional array of data in self"""
         if form is None or form == "dense":
-            result = get_config().default_zero_array_type(shape=self.shape)
+            result = get_config("default_zero_array_type")(shape=self.shape)
             try:
                 i_diagonal = np.unravel_index(
                     np.arange(self.dependent_size), self.dependent_shape
@@ -139,7 +144,7 @@ class DiagonalJacobian(BaseJacobian):
         # Avoid invoking np.diagonal here, as we might want to create arrays of a
         # different type (e.g., dask, cupy etc.)
         if form is None or form == "dense":
-            result = get_config().default_zero_array_type(shape=self.shape_2d)
+            result = get_config(default_zero_array_type)(shape=self.shape_2d)
             i_diagonal = np.arange(self.dependent_size)
             result[i_diagonal, i_diagonal] = self.data
             return result

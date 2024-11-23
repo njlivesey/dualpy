@@ -73,6 +73,7 @@ class DenseJacobian(BaseJacobian):
             independent_unit=independent_unit,
             dependent_shape=dependent_shape,
             independent_shape=independent_shape,
+            dtype=dtype,
         )
         # Now try to get the data for this Jacobian, an n-dimensional array
         data = None
@@ -96,11 +97,14 @@ class DenseJacobian(BaseJacobian):
                     data = np.reshape(np.array(source), self.shape)
         # If we weren't able to get anywhere with data, make it an array of zeros.
         if data is None:
-            data = get_config().default_zero_array_type(shape=self.shape, dtype=dtype)
+            data = get_config("default_zero_array_type")(
+                shape=self.shape, dtype=self.dtype
+            )
         # OK, lodge data in self
         self.data = data
         # Check out the Jacobian to make sure everything is as it should be
-        self._check()
+        if get_config("check_jacobians"):
+            self._check()
 
     def get_data_nd(self, form: str = None) -> ArrayLike:
         """Return the n-dimensional array of data in self"""
@@ -123,6 +127,10 @@ class DenseJacobian(BaseJacobian):
     def get_data_diagonal(self) -> ArrayLike:
         """Return the diagonal form of the array in self"""
         raise TypeError("Unable to return diagonal from DenseJacobian")
+
+    def get_2d_view(self) -> ArrayLike:
+        """Returns a 2-dimensional view into the array of the data in self"""
+        return self.data.view().reshape(self.shape_2d)
 
     def _check(
         self,

@@ -6,6 +6,8 @@ __all__ = ["Unitless"]
 class Unitless:
     """Identifies, and handles algebra for, non-existent units"""
 
+    print("Defining Unitless")
+
     def __str__(self):
         return "Unitless"
 
@@ -34,3 +36,5 @@ class Unitless:
         return other ** (-1)
 
     # Will probably need more
+    def __eq__(self, other):
+        return isinstance(other, Unitless)

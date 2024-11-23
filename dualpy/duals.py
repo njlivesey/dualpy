@@ -18,7 +18,7 @@ from .jacobians import join_jacobians as _join_jacobians
 from .jacobians import setitem_jacobians as _setitem_jacobians
 from .jacobians import stack_jacobians as _stack_jacobians
 from .unitless import Unitless
-from .config import get_jacobian_specific_config
+from .config import get_jacobian_specific_config, get_config
 
 __all__ = [
     "dlarray",
@@ -187,7 +187,8 @@ class dlarray(DualOperatorsMixin):
             )
             return NotImplemented
         result = dlufunc(*args, **kwargs)
-        result._check()
+        if get_config("check_jacobians"):
+            result._check()
         return result
 
     # __array_ufunc__ = None

@@ -71,10 +71,12 @@ class SparseJacobian(BaseJacobian):
         # any, and the keword arguments (depdendent_shape etc. etc.)
         super().__init__(
             template=template,
+            source=source,
             dependent_unit=dependent_unit,
             independent_unit=independent_unit,
             dependent_shape=dependent_shape,
             independent_shape=independent_shape,
+            dtype=dtype,
         )
         # Now try to get the data for this Jacobian, into a sparse csc_matrix
         if isinstance(source, BaseJacobian):
@@ -87,7 +89,7 @@ class SparseJacobian(BaseJacobian):
         elif isinstance(source, sparse.csc_matrix):
             data = source
         elif source is None:
-            data = sparse.csc_matrix(self.shape_2d)
+            data = sparse.csc_matrix(self.shape_2d, dtype=self.dtype)
         else:
             raise TypeError(
                 f"Unable to initialize SparseJacobian with source of type {type(source)}"

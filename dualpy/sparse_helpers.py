@@ -199,7 +199,7 @@ def scatter_dense_to_sparse(
         Reconstructed sparse matrix.
     """
     # Initialize a sparse matrix with the original shape
-    scattered_matrix = sparse.lil_matrix(original_shape)
+    scattered_matrix = sparse.lil_matrix(original_shape, dtype=gathered_matrix.dtype)
     for i, col in enumerate(scatter_structure):
         scattered_matrix[:, col] = gathered_matrix[:, i].reshape(-1, 1)
     return scattered_matrix.tocsc()
@@ -212,6 +212,8 @@ def scatter_dense_to_sparse(
 # store that as a still-sparse matrix, or store a dense one.  The dense one is optimal
 # for cases where each "row" (i.e., along the promoted axix) has a fairly similar set of
 # columns populated.
+
+
 class BaseRearrangedSparseJacobian:
     """An base class for a sparse Jacobian rearranger"""
 
@@ -310,6 +312,7 @@ class SparselyRearrangedSparseJacobian(BaseRearrangedSparseJacobian):
             original_shapes=rearranged_shape,
             axes=self.undo_axes,
         )
+        print(f"In sparse_helpers, {result.dtype=}, {array.dtype=}")
         return SparseJacobian(
             result,
             dependent_shape=dependent_shape,

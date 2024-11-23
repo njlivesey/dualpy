@@ -47,7 +47,8 @@ class BaseJacobian(object):
         template : BaseJacobian or child thereof, optional
             If supplied, can be source of shape and units information
         source : ArrayLike or another Jacobian
-            Source for Jacobian data (ignored in base class)
+            Source for Jacobian data (mostly ignored in base class, just the dtype, if
+            any, is noted)
         dependent_unit : GenericUnit, optional
             Units for the dependent quantity
         independent_unit : GenericUnit, optional
@@ -67,17 +68,23 @@ class BaseJacobian(object):
 
         # Set up the core metadata.  First try to populate it from the template if
         # supplied (letting supplied arguments take precedence)
+        try:
+            source_dtype = source.dtype
+        except AttributeError:
+            source_dtype = None
         if template:
             self.dependent_unit = pick(dependent_unit, template.dependent_unit)
             self.independent_unit = pick(independent_unit, template.independent_unit)
             self.dependent_shape = pick(dependent_shape, template.dependent_shape)
             self.independent_shape = pick(independent_shape, template.independent_shape)
+            self.dtype = pick(dtype, template.dtype, source_dtype)
         else:
-            # Otherwise, just get it from the
+            # Otherwise, just get it from the arguments
             self.dependent_unit = dependent_unit
             self.independent_unit = independent_unit
             self.dependent_shape = dependent_shape
             self.independent_shape = independent_shape
+            self.dtype = pick(dtype, source_dtype)
         # Do a quick piece of housekeepting
         self.dependent_shape = tuple(self.dependent_shape)
         self.independent_shape = tuple(self.independent_shape)
@@ -93,7 +100,6 @@ class BaseJacobian(object):
         self.shape_2d = (self.dependent_size, self.independent_size)
         self._dummy_dependent = (1,) * self.dependent_ndim
         self._dummy_independent = (1,) * self.independent_ndim
-        self.dtype = dtype
         # Create an empty data value
         self.data: ArrayLike = None
 
@@ -104,7 +110,6 @@ class BaseJacobian(object):
         python, but perhaps forgivable.
         """
         # Run a check on the Jacobian while we're at it.
-        self._check()
         result = (
             f"Jacobian of type {type(self)}\n"
             f"Dependent shape is {self.dependent_shape} <{self.dependent_size:,}>\n"
@@ -165,6 +170,12 @@ class BaseJacobian(object):
             assert (
                 self.dependent_unit == dependent_unit
             ), f"dependent_unit mismatch for {name} Jacobian {jname}: {self.dependent_unit} vs. {dependent_unit} expected"
+        # Check that the dtype is not None
+        assert self.dtype is not None, f"Jacobian dtype is None for {jname}"
+        # Check it agrees with the dtype of the data
+        assert (
+            self.dtype == self.data.dtype
+        ), f"dtype mismatch for {name} Jacobian {jname} ({self.dtype=}, {self.data.dtype=})"
 
     def __repr__(self):
         """Return a representation of the Jacobians"""
