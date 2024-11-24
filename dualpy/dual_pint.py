@@ -102,6 +102,15 @@ class dlarray_pint(dlarray):
         except AttributeError:
             return quantity
 
+    @staticmethod
+    def _get_magnitude_if_dimensionless(units: pint.Unit):
+        # Turn it from a unit to a quantity
+        value = 1.0 * units
+        # Try to force it into dimensionless
+        value = value.to(value.units._REGISTRY.dimensionless)
+        # Return its magnitude
+        return value.magnitude
+
     # ------------------------------------------ Some dunders
     # def __mul__(self, other):
     #     # Needed for dual * unit case

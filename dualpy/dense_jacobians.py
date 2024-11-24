@@ -619,7 +619,14 @@ class DenseJacobianLinearInterpolator(object):
 class DenseJacobianSplineInterpolator(object):
     """Interpolates Jacobian along one dependent axis"""
 
-    def __init__(self, jacobian, x_in, axis=-1, bc_type="not-a-knot", extrapolate=None):
+    def __init__(
+        self,
+        jacobian,
+        x_in,
+        axis=-1,
+        bc_type="not-a-knot",
+        extrapolate=None,
+    ):
         """Setup an interpolator for a given DenseJacobian"""
 
         self.jacobian = jacobian

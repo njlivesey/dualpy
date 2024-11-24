@@ -1,4 +1,5 @@
 """Subclasses dualpy for astropy.Quantity variables"""
+
 import numpy as np
 import astropy.units as units
 
@@ -74,6 +75,15 @@ class dlarray_astropy(dlarray):
             return np.array(quantity) << unit
         except AttributeError:
             return quantity
+
+    @staticmethod
+    def _get_magnitude_if_dimensionless(unit):
+        # Turn it from a unit to a quantity
+        value = 1.0 * unit
+        # Try to force it into dimensionless
+        value = value.to(units.dimensionss_unscaled)
+        # Return its magnitude
+        return value.value
 
     # ------------------------------------------ Some dunders
     # def __mul__(self, other):

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import Optional
 
 import numpy as np
-import scipy.sparse as sparse
+from scipy import sparse, interpolate
 from numpy.typing import ArrayLike, DTypeLike
 
 from .base_jacobian import BaseJacobian
@@ -919,14 +919,17 @@ class SparseJacobian(BaseJacobian):
         self,
         x_in,
         axis=-1,
-        bc_type="not_a_knot",  # pylint: disable=unused-argument
-        extrapolate=None,  # pylint: disable=unused-argument
+        bc_type="not_a_knot",
+        extrapolate=None,
     ):
         """Return a spline interpolator for a given Jacobian axis"""
-        # pylint: disable=import-outside-toplevel
-        from .dense_jacobians import DenseJacobian
-
-        return DenseJacobian(self).spline_interpolator(x_in, axis)
+        return SparseJacobianSplineInterpolator(
+            self,
+            x_in=x_in,
+            axis=axis,
+            bc_type=bc_type,
+            extrapolate=extrapolate,
+        )
 
 
 class SparseJacobianLinearInterpolator(object):
@@ -966,3 +969,41 @@ class SparseJacobianLinearInterpolator(object):
         )
         result = weight_matrix @ self.rearranged_jacobian.matrix
         return self.rearranged_jacobian.undo(result)
+
+
+class SparseJacobianSplineInterpolator(object):
+    """Interpolates a SparseJacobian along one dependent axis"""
+
+    def __init__(
+        self,
+        jacobian,
+        x_in,
+        axis=-1,
+        bc_type="not-a-knot",
+        extrapolate=None,
+    ):
+        """Setup an interpolator for a given DenseJacobian"""
+        self.jacobian = jacobian
+        self.jaxis = jacobian.get_jaxis(axis, none="first")
+        # Transpose the jacobian to put the interpolating axis in front, and then ravel
+        # other axes together into a dense matrix.  This assumes that for each "row" the
+        # non-zero elements occupy similar columns.
+        self.rearranged_jacobian = DenselyRearrangedSparseJacobian(
+            jacobian,
+            promoted_axis=self.jaxis,
+        )
+        self.interpolator = interpolate.CubicSpline(
+            x_in,
+            self.rearranged_jacobian.matrix,
+            axis=0,
+            bc_type=bc_type,
+            extrapolate=extrapolate,
+        )
+
+    def __call__(self, x_out):
+        """Interpolate a SparseJacobian to a new value along an axis"""
+        # Call the interpolator to get an interpolated version of the rearranged dense
+        # matrix.
+        intermediate = self.interpolator(x_out)
+        # Undo the rearrangement and return the result
+        return self.rearranged_jacobian.undo(intermediate)

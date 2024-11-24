@@ -720,13 +720,9 @@ def irfft(x, axis=-1, workers=None):
 class CubicSplineWithJacobians:
     """This basically wraps scipy.interpolate.CubicSpline adding units/jacobians
 
-    Note that the Jacobians are computed using linear interpolation.  This retains
-    sparsity at the expense of being less acurate. See CubicSplineCubicSplineJacobians
-    for an alternative.
-
     See arguments/documentation for scipy.interpolate.CubicSpline.  However, note the
-    "true_spline" option, which ensure CubicSpline for both value and Jacobians.
-
+    spline_jacobians option, which employs splines for the Jacobians as well as the
+    values themselves.  The default is to use linear interpolation for the Jacobians.
     """
 
     def __init__(

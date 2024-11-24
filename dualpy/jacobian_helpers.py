@@ -117,7 +117,6 @@ def jacobian_2d_matrix_multiply(a, b):
     from .sparse_jacobians import SparseJacobian
     from .diagonal_jacobians import DiagonalJacobian
 
-    raise NotImplementedError("Pretty sure this has bugs, as doesn't deal with units")
     # Check that the dimensions and units are agreeable
     if a.independent_shape != b.dependent_shape:
         raise ValueError("Shape mismatch for dense Jacobian matrix multiply")
@@ -141,12 +140,20 @@ def jacobian_2d_matrix_multiply(a, b):
         result_data = result_data2d.reshape(result_shape)
     else:
         result_data = result_data2d
+    # Work out the units
+    raise NotImplementedError("This needs work on units")
+    # We want to get scale_factor below as a unitless scalar (with assertion that it is
+    # indeed dimensionless, though possibly non-unity).  However, down here in
+    # Jacobians, we don't know what kind of Jacobian we're a dual for.
+    scale_factor = a.independent_unit / b.dependent_unit
+    dependent_unit = a.dependent_unit
+    independent_unit = b.independent_unit
     return result_type(
-        source=result_data,
+        source=result_data * scale_factor,
         dependent_shape=a.dependent_shape,
         independent_shape=b.independent_shape,
-        dependent_unit=a.dependent_unit,
-        independent_unit=b.independent_unit,
+        dependent_unit=dependent_unit,
+        independent_unit=independent_unit,
     )
 
 
