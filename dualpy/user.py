@@ -128,12 +128,10 @@ def seed(
     except AttributeError:
         out_shape = tuple()
     # Work out the dtype
-    print(f"In seed {type(value)=}")
     try:
         dtype = value.dtype
     except AttributeError:
         dtype = None
-    print(f"In seed {dtype=}")
     jacobian = SeedJacobian(
         source=np.ones(out_shape, dtype=dtype),
         dependent_unit=out._dependent_unit,
@@ -141,7 +139,6 @@ def seed(
         dependent_shape=out_shape,
         independent_shape=out_shape,
     )
-    print(f"At this point in seed {dtype=}, {jacobian.dtype=}, {jacobian.data.dtype=}")
     # Possibly cast it to other forms
     if initial_type == "seed":
         pass

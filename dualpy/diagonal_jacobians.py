@@ -125,17 +125,27 @@ class DiagonalJacobian(BaseJacobian):
     def get_data_nd(self, form: str = None) -> ArrayLike:
         """Return the n-dimensional array of data in self"""
         if form is None or form == "dense":
-            result = get_config("default_zero_array_type")(shape=self.shape)
+            result = get_config("default_zero_array_type")(
+                shape=self.shape,
+                dtype=self.dtype,
+            )
             try:
+                # Get a tuple of all the indices that, together, walk through the
+                # Jacobian values.
                 i_diagonal = np.unravel_index(
                     np.arange(self.dependent_size), self.dependent_shape
                 )
+                # Yes, this should indeed be a plus, we're adding tuples, walking
+                # through the dependent and independent variables together.
+                print(f"Returning {type(result)=}")
                 result[i_diagonal + i_diagonal] = self.data.ravel()
             except ValueError:
                 result[...] = self.data.ravel()
             return result
         elif form == "sparse":
-            raise TypeError("Unable to return sparse form of DenseJacobian data")
+            raise TypeError(
+                "Unable to return sparse form of DiagonalJacobian data (could write this if we need to)"
+            )
         else:
             raise ValueError(f"Invalid value for form argument: {form}")
 
@@ -467,12 +477,12 @@ class DiagonalJacobian(BaseJacobian):
 
     def todensearray(self):
         """Get self's data as dense nd array"""
-        unit = self.dependent_unit / self.independent_ndim
+        unit = self.dependent_unit / self.independent_unit
         return apply_units(self.get_data_nd(), unit)
 
     def to2darray(self):
         """Get self's data as (dense) 2d array"""
-        unit = self.dependent_unit / self.independent_ndim
+        unit = self.dependent_unit / self.independent_unit
         return apply_units(self.get_data_2d(), unit)
 
     def to2ddensearray(self):

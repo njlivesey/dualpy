@@ -28,10 +28,11 @@ class DTypeVessel:
     """Purely contains a dtype for the data field in BaseJacobian
 
     I did it this way to avoid having jacobian.dtype and jacobian.data.dtype that I need
-    to try to keep in lockstep.
+    to try to keep in lockstep. Add shape to keep the error checking happy
     """
 
     dtype: DTypeLike
+    shape: tuple = tuple()
 
 
 class BaseJacobian(object):
