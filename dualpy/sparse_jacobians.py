@@ -968,7 +968,8 @@ class SparseJacobianLinearInterpolator(object):
             (weight, (row, col)), shape=[x_out.size, self.x_in.size]
         )
         result = weight_matrix @ self.rearranged_jacobian.matrix
-        return self.rearranged_jacobian.undo(result)
+        result = self.rearranged_jacobian.undo(result)
+        return result
 
 
 class SparseJacobianSplineInterpolator(object):

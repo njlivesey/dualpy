@@ -148,6 +148,10 @@ class dlarray(DualOperatorsMixin):
             out.jacobians[name] = jacobian._force_unit(other)
         return out
 
+    @staticmethod
+    def _get_magnitude_if_dimensionless(units):
+        return 1.0
+
     # ----------------------------------------------------- ufuncs
     # This is based off the comparable one from xarray.DataArray
     def _binary_op(

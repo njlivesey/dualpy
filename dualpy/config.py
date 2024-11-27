@@ -111,7 +111,7 @@ def dualpy_context(**kwargs):
     original_config = get_full_config()
     set_config(**kwargs)
     try:
-        yield
+        yield original_config
     finally:
         set_full_config(original_config)
 
