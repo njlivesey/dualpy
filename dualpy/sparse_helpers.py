@@ -138,7 +138,7 @@ def rearrange_2d(
 
 
 def gather_sparse_rows_to_dense(
-    sparse_matrix: sparse.spmatrix,
+    sparse_array: sparse.spmatrix,
 ) -> tuple[NDArray, NDArray]:
     """Gather all unique non-zero columns from a sparse matrix into a dense matrix.
 
@@ -151,33 +151,33 @@ def gather_sparse_rows_to_dense(
 
     Parameters
     ----------
-    sparse_matrix : sparse.spmatrix
+    sparse_array : sparse.spmatrix
         Sparse matrix
 
     Returns
     -------
-    gathered_matrix : NDArray
+    gathered_array : NDArray
         Dense matrix [<rows>, <unique columns>]
     scatter_structure : NDArray
         Indices of columns in the original sparse matrix
     """
-    # Convert the sparse matrix to csc_matrix form, needed for efficient indexing below.
+    # Convert the sparse matrix to csc_array form, needed for efficient indexing below.
     # Note that it needs to be a sparse matrix, not a sparse array, as scipy.sparse
     # doesn't support the indexing we need for the latter
-    sparse_matrix = sparse.csc_matrix(sparse_matrix)
+    sparse_array = sparse.csc_array(sparse_array)
     # Find all unique column indices with non-zero entries
-    nonzero_cols = sparse_matrix.nonzero()[1]
+    nonzero_cols = sparse_array.nonzero()[1]
     unique_cols = np.unique(nonzero_cols)
     # Create a dense matrix [frequency, num_unique_columns]
-    gathered_matrix = np.empty((sparse_matrix.shape[0], len(unique_cols)))
+    gathered_array = np.empty((sparse_array.shape[0], len(unique_cols)))
     # Fill the dense matrix
     for i, col in enumerate(unique_cols):
-        gathered_matrix[:, i] = sparse_matrix[:, col].toarray().flatten()
-    return gathered_matrix, unique_cols
+        gathered_array[:, i] = sparse_array[:, col].toarray().flatten()
+    return gathered_array, unique_cols
 
 
 def scatter_dense_to_sparse(
-    gathered_matrix: NDArray, scatter_structure: NDArray, original_shape: Sequence[int]
+    gathered_array: NDArray, scatter_structure: NDArray, original_shape: Sequence[int]
 ) -> sparse.csc_array:
     """Scatter a dense matrix back into a sparse matrix.
 
@@ -186,7 +186,7 @@ def scatter_dense_to_sparse(
 
     Parameters
     ----------
-    gathered_matrix : NDArray
+    gathered_array : NDArray
         Dense matrix to scatter
     scatter_structure : NDArray
         Indices of columns in the original sparse matrix
@@ -195,14 +195,14 @@ def scatter_dense_to_sparse(
 
     Returns
     -------
-    scattered_matrix : sparse.csc_matrix
+    scattered_array : sparse.csc_array
         Reconstructed sparse matrix.
     """
     # Initialize a sparse matrix with the original shape
-    scattered_matrix = sparse.lil_matrix(original_shape, dtype=gathered_matrix.dtype)
+    scattered_array = sparse.lil_array(original_shape, dtype=gathered_array.dtype)
     for i, col in enumerate(scatter_structure):
-        scattered_matrix[:, col] = gathered_matrix[:, i].reshape(-1, 1)
-    return scattered_matrix.tocsc()
+        scattered_array[:, col] = gathered_array[:, i].reshape(-1, 1)
+    return scattered_array.tocsc()
 
 
 # -------------------------------------------------------------------- Classes
