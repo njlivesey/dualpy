@@ -19,6 +19,7 @@ from .jacobians import setitem_jacobians as _setitem_jacobians
 from .jacobians import stack_jacobians as _stack_jacobians
 from .unitless import Unitless
 from .config import get_jacobian_specific_config, get_config
+from .base_jacobian import BaseJacobian
 
 __all__ = [
     "dlarray",
@@ -74,10 +75,10 @@ class dlarray(DualOperatorsMixin):
         """Setup a new dual wrapping around a suitable variable"""
         if isinstance(input_variable, dlarray):
             self.variable = input_variable.variable
-            self.jacobians = input_variable.jacobians
+            self.jacobians: dict[BaseJacobian] = input_variable.jacobians
         else:
             self.variable = input_variable
-            self.jacobians = {}
+            self.jacobians: dict[BaseJacobian] = {}
 
     def __getnewargs__(self):
         """Needed to correctly pickle/restore duals into right subclass"""
