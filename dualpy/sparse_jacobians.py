@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from typing import Optional
 
 import numpy as np
-from scipy import sparse, interpolate
 from numpy.typing import ArrayLike, DTypeLike
+from scipy import interpolate, sparse
 
 from .base_jacobian import BaseJacobian
 from .config import get_config
@@ -79,7 +80,7 @@ class SparseJacobian(BaseJacobian):
             independent_shape=independent_shape,
             dtype=dtype,
         )
-        # Now try to get the data for this Jacobian, into a sparse csc_matrix
+        # Now try to get the data for this Jacobian, into a sparse csc_array
         if isinstance(source, BaseJacobian):
             if isinstance(source, SparseJacobian):
                 data = source.data
@@ -87,10 +88,10 @@ class SparseJacobian(BaseJacobian):
                 data = array_to_sparse_diagonal(source.data)
             else:
                 raise TypeError("Cannot initialize SparseJacobian from {type(source)}")
-        elif isinstance(source, sparse.csc_matrix):
+        elif isinstance(source, sparse.csc_array):
             data = source
         elif source is None:
-            data = sparse.csc_matrix(self.shape_2d, dtype=self.data.dtype)
+            data = sparse.csc_array(self.shape_2d, dtype=self.data.dtype)
         else:
             raise TypeError(
                 f"Unable to initialize SparseJacobian with source of type {type(source)}"
@@ -155,8 +156,14 @@ class SparseJacobian(BaseJacobian):
             dependent_shape=dependent_shape,
             dependent_unit=dependent_unit,
         )
+        # Convert to csc_array if csc_matrix
+        if isinstance(self.data, sparse.csc_matrix):
+            warnings.warn(
+                "Found a csc_matrix, converting to csc_array", DeprecationWarning
+            )
+            self.data = sparse.csc_array(self.data)
         assert isinstance(
-            self.data, sparse.csc_matrix
+            self.data, sparse.csc_array
         ), f"Incorrect type for data array in {name}, {type(self.data)}"
         correct_2dshape = (self.dependent_size, self.independent_size)
         assert self.data.shape == correct_2dshape, (
@@ -273,12 +280,12 @@ class SparseJacobian(BaseJacobian):
         i_new = np.arange(i_old.size)
         # Now put a 1 at every [i_new,i_old] point in a sparse matrix
         one = np.ones((i_old.size,), dtype=np.int64)
-        broadcast_matrix = sparse.csc_matrix(
+        broadcast_array = sparse.csc_array(
             (one, (i_new, i_old)), shape=(i_new.size, self.dependent_size)
         )
         # Now do a matrix multiply to accomplish what broadcast tries
         # to do.
-        data = broadcast_matrix @ self.data
+        data = broadcast_array @ self.data
         return SparseJacobian(source=data, template=self, dependent_shape=shape)
 
     def reshape(
@@ -378,7 +385,7 @@ class SparseJacobian(BaseJacobian):
             out_data = self.data.data * diagonal_data
         else:
             out_data = self.data.data * np.take(diagonal_data, self.data.indices)
-        result = sparse.csc_matrix(
+        result = sparse.csc_array(
             (out_data, self.data.indices, self.data.indptr), shape=self.data.shape
         )
         return SparseJacobian(
@@ -447,7 +454,7 @@ class SparseJacobian(BaseJacobian):
         all_indices[axis] = i
         row = np.ravel_multi_index(all_indices, dependent_shape)
         dependent_size = int(np.prod(dependent_shape))
-        result_csc = sparse.csc_matrix(
+        result_csc = sparse.csc_array(
             (self_coo.data, (row, self_coo.col)),
             shape=(dependent_size, self.independent_size),
         )
@@ -510,11 +517,11 @@ class SparseJacobian(BaseJacobian):
         i_original = np.arange(self.dependent_size)
         # Now put a 1 at every [i_reduced, i_original] in a sparse matrix
         one = np.ones((i_original.size,), dtype=np.int64)
-        summing_matrix = sparse.csc_matrix(
+        summing_array = sparse.csc_array(
             (one, (i_reduced, i_original)),
             shape=(reduced_size, i_original.size),
         )
-        data = summing_matrix @ self.data
+        data = summing_array @ self.data
         # Note that by specifying dependent_shape here, supplied
         # by the calling code, we've implicitly taken the value of
         # the keepdims argument into account.
@@ -580,11 +587,11 @@ class SparseJacobian(BaseJacobian):
         i_original = np.arange(self.dependent_size)
         # Now put a 1 at every [i_reduced, i_original] in a sparse matrix
         one = np.ones((i_original.size,), dtype=np.int64)
-        summing_matrix = sparse.csc_matrix(
+        summing_array = sparse.csc_array(
             (one, (i_reduced, i_original)),
             shape=(reduced_size, i_original.size),
         )
-        data = summing_matrix @ self.data / original_size
+        data = summing_array @ self.data / original_size
         # Note that by specifying dependent_shape here, supplied
         # by the calling code, we've implicitly taken the value of
         # the keepdims argument into account.
@@ -623,10 +630,10 @@ class SparseJacobian(BaseJacobian):
             # Move the axis of interest the the front, and ravel together all the others
             rearranged_jacobian = SparselyRearrangedSparseJacobian(self, jaxis)
             # Create a lower-triangle matrix with ones and zeros and multiply by that.
-            lower_triangle_matrix = sparse.csc_matrix(
+            lower_triangle_array = sparse.csc_array(
                 np.tri(rearranged_jacobian.matrix.shape[0])
             )
-            result = lower_triangle_matrix @ rearranged_jacobian.matrix
+            result = lower_triangle_array @ rearranged_jacobian.matrix
             return rearranged_jacobian.undo(result)
         raise ValueError(f"Unrecognized sparse_jacobian_cumsum_strategy: {strategy}")
 
@@ -663,14 +670,14 @@ class SparseJacobian(BaseJacobian):
 
     def transpose(self, axes, result_dependent_shape):
         """Transpose a sparse jacobian"""
-        coo = sparse.coo_matrix(self.data)
+        coo = sparse.coo_array(self.data)
         if axes is None:
             axes = range(self.dependent_ndim)[::-1]
         row_indices = np.unravel_index(coo.row, self.dependent_shape)
         new_indices = [row_indices[i] for i in axes]
         new_row = np.ravel_multi_index(new_indices, result_dependent_shape)
         result_shape2d = (np.prod(result_dependent_shape), self.independent_size)
-        result_csc = sparse.csc_matrix(
+        result_csc = sparse.csc_array(
             (coo.data, (new_row, coo.col)), shape=result_shape2d
         )
         return SparseJacobian(
@@ -735,7 +742,7 @@ class SparseJacobian(BaseJacobian):
                 independent_coords, self.independent_shape
             )
             dependent_size = np.prod(result_dependent_shape)
-            result_csc = sparse.csc_matrix(
+            result_csc = sparse.csc_array(
                 (result_.data, (dependent_indices, independent_indices)),
                 shape=[dependent_size, self.independent_size],
             )
@@ -786,7 +793,7 @@ class SparseJacobian(BaseJacobian):
                 independent_coords, self.independent_shape
             )
             dependent_size = np.prod(result_dependent_shape)
-            result_csc = sparse.csc_matrix(
+            result_csc = sparse.csc_array(
                 (data.data, (dependent_indices, independent_indices)),
                 shape=[dependent_size, self.independent_size],
             )
@@ -872,8 +879,8 @@ class SparseJacobian(BaseJacobian):
         n_self = self_dependent_shape[axis]
         n_other = other_dependent_shape[axis]
         # Convert both to coo-based sparse matrices
-        self_coo = sparse.coo_matrix(self.data)
-        other_coo = sparse.coo_matrix(other.data)
+        self_coo = sparse.coo_array(self.data)
+        other_coo = sparse.coo_array(other.data)
         # Unravel the row indices
         self_row_indices = np.unravel_index(self_coo.row, shape=self_dependent_shape)
         other_row_indices = np.unravel_index(other_coo.row, shape=other_dependent_shape)
@@ -899,7 +906,7 @@ class SparseJacobian(BaseJacobian):
         # Create the result
         result_dependent_size = np.prod(result_dependent_shape)
         result_j_shape2d = (result_dependent_size, self.independent_size)
-        result_csc = sparse.csc_matrix(
+        result_csc = sparse.csc_array(
             (result_coo_data, (result_row, result_col)), result_j_shape2d
         )
         return SparseJacobian(
@@ -964,10 +971,10 @@ class SparseJacobianLinearInterpolator(object):
         row = np.concatenate([np.arange(x_out.size)] * 2)
         col = np.concatenate([i_lower, i_upper])
         weight = np.concatenate([w_lower, w_upper])
-        weight_matrix = sparse.csc_matrix(
+        weight_array = sparse.csc_array(
             (weight, (row, col)), shape=[x_out.size, self.x_in.size]
         )
-        result = weight_matrix @ self.rearranged_jacobian.matrix
+        result = weight_array @ self.rearranged_jacobian.matrix
         result = self.rearranged_jacobian.undo(result)
         return result
 
