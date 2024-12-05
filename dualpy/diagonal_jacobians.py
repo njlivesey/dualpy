@@ -18,18 +18,6 @@ from .sparse_jacobians import SparseJacobian
 __all__ = ["DiagonalJacobian", "SeedJacobian"]
 
 
-def to_non_diagonal(
-    jacobian: DiagonalJacobian,
-) -> DenseJacobian | SparseJacobian:
-    """This function takes a DiagonalJacobian that is about to become non-diagonal and
-    changes it to another type.  Typically this is a SparseJacobian, but if the
-    independent size is small, then DenseJacobian is used instead."""
-    if jacobian.independent_size <= 3:
-        return DenseJacobian(jacobian)
-    else:
-        return SparseJacobian(jacobian)
-
-
 class DiagonalJacobian(BaseJacobian):
     """A class for storing "diagonal" Jacobians
 
@@ -125,42 +113,18 @@ class DiagonalJacobian(BaseJacobian):
     def get_data_nd(self, form: str = None) -> ArrayLike:
         """Return the n-dimensional array of data in self"""
         if form is None or form == "dense":
-            result = get_config("default_zero_array_type")(
-                shape=self.shape,
-                dtype=self.dtype,
-            )
-            try:
-                # Get a tuple of all the indices that, together, walk through the
-                # Jacobian values.
-                i_diagonal = np.unravel_index(
-                    np.arange(self.dependent_size), self.dependent_shape
-                )
-                # Yes, this should indeed be a plus, we're adding tuples, walking
-                # through the dependent and independent variables together.
-                print(f"Returning {type(result)=}")
-                result[i_diagonal + i_diagonal] = self.data.ravel()
-            except ValueError:
-                result[...] = self.data.ravel()
-            return result
+            return self.to_dense().get_data_nd()
         elif form == "sparse":
-            raise TypeError(
-                "Unable to return sparse form of DiagonalJacobian data (could write this if we need to)"
-            )
+            return self.to_sparse().get_data_nd()
         else:
             raise ValueError(f"Invalid value for form argument: {form}")
 
     def get_data_2d(self, form: str = None) -> ArrayLike:
         """Return a 2-dimensional array of data in self"""
-        # Avoid invoking np.diagonal here, as we might want to create arrays of a
-        # different type (e.g., dask, cupy etc.)
         if form is None or form == "dense":
-            result = get_config(default_zero_array_type)(shape=self.shape_2d)
-            i_diagonal = np.arange(self.dependent_size)
-            result[i_diagonal, i_diagonal] = self.data
-            return result
+            return self.to_dense().get_data_2d()
         elif form == "sparse":
-            raise NotImplementedError("More work needed")
-            raise TypeError("Unable to return sparse form of DenseJacobian data")
+            return self.to_sparse().get_data_2d()
         else:
             raise ValueError(f"Invalid value for form argument: {form}")
 
@@ -200,6 +164,15 @@ class DiagonalJacobian(BaseJacobian):
             f"{self.data.shape} != {self.dependent_shape}"
         )
 
+    def to_non_diagonal(self) -> DenseJacobian | SparseJacobian:
+        """This function takes a DiagonalJacobian that is about to become non-diagonal and
+        changes it to another type.  Typically this is a SparseJacobian, but if the
+        independent size is small, then DenseJacobian is used instead."""
+        if self.independent_size <= 3:
+            return DenseJacobian(self)
+        else:
+            return SparseJacobian(self)
+
     def _getjitem(
         self,
         new_dependent_shape: tuple,
@@ -226,7 +199,7 @@ class DiagonalJacobian(BaseJacobian):
         # sparse/dense before doing the subset.
         #
         # pylint: disable=protected-access
-        return to_non_diagonal(self)._getjitem(new_dependent_shape, key)
+        return self.to_non_diagonal()._getjitem(new_dependent_shape, key)
 
     def _setjitem(
         self,
@@ -237,8 +210,11 @@ class DiagonalJacobian(BaseJacobian):
         # OK, once we insert items, this will no longer be diagonal, so we convert to
         # sparse/dense before doing the subset
         #
-        # pylint: disable=protected-access
-        to_non_diagonal(self)._setjitem(key, value)
+        raise TypeError("Cannot enact setitem on a DiagonalJacobian")
+
+    def get_2d_extractor(self):
+        """Provides a way to use getindex directly on the Jacobian returning 2D"""
+        return self.to_non_diagonal().get_2d_extractor()
 
     def broadcast_to(self, new_dependent_shape: tuple) -> BaseJacobian:
         """Broadcast diagonal jacobian to new dependent shape"""
@@ -247,7 +223,7 @@ class DiagonalJacobian(BaseJacobian):
         # bother doing anything if there is no actual broadcast going on.
         if new_dependent_shape == self.dependent_shape:
             return self
-        return to_non_diagonal(self).broadcast_to(new_dependent_shape)
+        return self.to_non_diagonal().broadcast_to(new_dependent_shape)
 
     def reshape(
         self,
@@ -276,7 +252,7 @@ class DiagonalJacobian(BaseJacobian):
         # doing anything if there is no actual reshape going on.
         if new_dependent_shape == self.dependent_shape:
             return self
-        return to_non_diagonal(self).reshape(
+        return self.to_non_diagonal().reshape(
             new_dependent_shape,
             order,
             parent_flags,
@@ -323,7 +299,7 @@ class DiagonalJacobian(BaseJacobian):
             raise NotImplementedError(
                 "Don't understand how cases can end up here, but retaining"
             )
-            # return to_non_diagonal(self).premultiply_diagonal(diagonal)
+            # return self.to_non_diagonal().premultiply_diagonal(diagonal)
 
     def insert(
         self,
@@ -369,7 +345,7 @@ class DiagonalJacobian(BaseJacobian):
             raise NotImplementedError(
                 "Not implemented the case where a a dual is being inserted"
             )
-        return to_non_diagonal(self).insert(
+        return self.to_non_diagonal().insert(
             obj=obj,
             values=values,
             axis=axis,
@@ -397,7 +373,7 @@ class DiagonalJacobian(BaseJacobian):
         # same dimensionality as the dependent and independent variables.
         #
         # pylint: disable=protected-access
-        return to_non_diagonal(self)._reduce(
+        return self.to_non_diagonal()._reduce(
             function=function, new_dependent_shape=new_dependent_shape, **kwargs
         )
 
@@ -437,7 +413,7 @@ class DiagonalJacobian(BaseJacobian):
         """diff method for diagonal jacobian"""
         # Again, the result will not be diagonal, so change to sparse/dense and do diff
         # in that space.
-        return to_non_diagonal(self).diff(
+        return self.to_non_diagonal().diff(
             dependent_shape=dependent_shape,
             n=n,
             axis=axis,
@@ -458,12 +434,12 @@ class DiagonalJacobian(BaseJacobian):
     def tensordot(self, other: BaseJacobian, axes: tuple, dependent_unit: GenericUnit):
         """Compute self(.)other"""
         # Once we do this, we will no longer be diagonal, so convert to sparse/dense
-        return to_non_diagonal(self).tensordot(other, axes, dependent_unit)
+        return self.to_non_diagonal().tensordot(other, axes, dependent_unit)
 
     def rtensordot(self, other: BaseJacobian, axes: tuple, dependent_unit: GenericUnit):
         """Compute self(.)other"""
         # Once we do this, we will no longer be diagonal, so convert to sparse/dense
-        return to_non_diagonal(self).rtensordot(other, axes, dependent_unit)
+        return self.to_non_diagonal().rtensordot(other, axes, dependent_unit)
 
     def diagonal(self):
         """Get diagonal elements (shape=dependent_shape)"""
@@ -491,7 +467,7 @@ class DiagonalJacobian(BaseJacobian):
 
     def linear_interpolator(self, x_in, axis=-1, extrapolate=None):
         """Return an interpolator for a given Jacobian axis"""
-        return to_non_diagonal(self).linear_interpolator(
+        return self.to_non_diagonal().linear_interpolator(
             x_in=x_in,
             axis=axis,
             extrapolate=extrapolate,
@@ -501,7 +477,7 @@ class DiagonalJacobian(BaseJacobian):
         self, x_in, axis=-1, bc_type="not_a_knot", extrapolate=None
     ):
         """Return an interpolator for a given Jacobian axis"""
-        return to_non_diagonal(self).spline_interpolator(
+        return self.to_non_diagonal().spline_interpolator(
             x_in=x_in,
             axis=axis,
             bc_type=bc_type,

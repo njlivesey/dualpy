@@ -1,6 +1,7 @@
 """Module defining the BaseJacobian class from which other types of Jacobian are descended"""
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 from dataclasses import dataclass
 import copy
@@ -21,6 +22,10 @@ from .jacobian_helpers import (
     prepare_jacobians_for_binary_op,
     GenericUnit,
 )
+
+if TYPE_CHECKING:
+    from sparse_jacobians import SparseJacobian
+    from dense_jacobians import DenseJacobian
 
 
 @dataclass
@@ -517,24 +522,17 @@ class BaseJacobian(object):
         scale = get_unit_conversion_scale(self.dependent_unit, unit)
         return self.scalar_multiply(scale)
 
-    def to_dense(self) -> BaseJacobian:
+    def to_dense(self) -> DenseJacobian:
         """Return a dense version of self"""
         from .dense_jacobians import DenseJacobian
 
         return DenseJacobian(source=self)
 
-    def to_sparse(self) -> BaseJacobian:
+    def to_sparse(self) -> SparseJacobian:
         """Retrun a sparse version of self"""
         from .sparse_jacobians import SparseJacobian
 
         return SparseJacobian(source=self)
-
-    # def decompose(self) -> BaseJacobian:
-    #     """Decompose the dependent_unit for a Jacobian"""
-    #     raise NotImplementedError("Should not be needed")
-    #     # unit = self.dependent_unit.decompose()
-    #     # result = self.to(unit)
-    #     # return result
 
     def scalar_multiply(self, scale: float | int) -> BaseJacobian:
         """Multiply Jacobian by a scalar"""
@@ -659,3 +657,44 @@ class BaseJacobian(object):
                 raise ValueError("Cannot handle non-one unit")
             value = value.units
         self._dependent_unit = value
+
+
+class Base2DExtractor:
+    """A base class for n-d to 2-d extractor"""
+
+    def __init__(self, jacobian: BaseJacobian):
+        # Store a set of dummy 1D arrays that are the length of each axis
+        self.jacobian = jacobian
+        self.dummy_arrays = [np.zeros(shape=[n], dtype=int) for n in jacobian.shape]
+
+    @abstractmethod
+    def __getitem__(self, key) -> ArrayLike:
+        pass
+
+    def preprocess_key(self, key):
+        """Preprocess and validate the key passed to a 2D extractor
+
+        The key can only contain slices, and ints (for now at least, no smart indexing
+        or Ellipsis.)
+        """
+        if len(key) != self.jacobian.ndim:
+            raise ValueError(f"Two-D extract has wrong key length")
+        result_dependent_size = 1
+        result_independent_size = 1
+        for axis in range(self.jacobian.ndim):
+            this_key = key[axis]
+            if isinstance(this_key, (int, np.integer)):
+                # So, we're just extracting a single index from this Jacobian (perhaps
+                # this is the block index for a gather/scatter in moepy)
+                pass
+            elif isinstance(this_key, slice):
+                # Slice the dummy result in the same way
+                dummy_result = self.dummy_arrays[axis][this_key]
+                # Augment either the dependent or independent size of the result by this
+                # length.
+                if axis < self.jacobian.dependent_ndim:
+                    result_dependent_size *= len(dummy_result)
+                else:
+                    result_independent_size *= len(dummy_result)
+        # Return shape for result
+        return [result_dependent_size, result_independent_size]

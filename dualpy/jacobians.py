@@ -149,7 +149,7 @@ def concatenate_jacobians(values, axis, result_dependent_shape):
                 j_out_contribution = sparse.coo_matrix(
                     (j_in_coo.data, (out_row, j_in_coo.col)), shape=j_out.shape_2d
                 )
-                j_out.data += sparse.csc_matrix(j_out_contribution)
+                j_out.data += sparse.csc_array(j_out_contribution)
                 # Increment the start index
                 i += j_in.dependent_shape[jaxis]
             result[name] = j_out
@@ -190,7 +190,7 @@ def stack_jacobians(arrays, axis, result_dependent_shape):
                 j_out_contribution = sparse.coo_matrix(
                     (j_in_coo.data, (out_row, j_in_coo.col)), shape=j_out.shape_2d
                 )
-                j_out.data += sparse.csc_matrix(j_out_contribution)
+                j_out.data += sparse.csc_array(j_out_contribution)
             result[name] = j_out
         else:
             raise TypeError(f"Unexpcted Jacobian type in result {result_type}")

@@ -6,6 +6,7 @@ from typing import Sequence, Optional, TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
+import sparse as sparse_tensor
 
 if TYPE_CHECKING:
     from .sparse_jacobians import SparseJacobian
@@ -203,6 +204,26 @@ def scatter_dense_to_sparse(
     for i, col in enumerate(scatter_structure):
         scattered_array[:, col] = gathered_array[:, i].reshape(-1, 1)
     return scattered_array.tocsc()
+
+
+def sparse_tensor_to_csc(
+    source: sparse_tensor.SparseArray, dependent_ndim: int
+) -> sparse.csc_array:
+    """Convert a sparse_tensor from the sparse package into a suitable csc_array"""
+    dependent_shape = source.shape[:dependent_ndim]
+    independent_shape = source.shape[dependent_ndim:]
+    source = source.tocoo()
+    coords = np.split(source.coords, source.ndim)
+    dependent_coords = [c[0] for c in coords[:dependent_ndim]]
+    independent_coords = [c[0] for c in coords[dependent_ndim:]]
+    dependent_indices = np.ravel_multi_index(dependent_coords, dependent_shape)
+    independent_indices = np.ravel_multi_index(independent_coords, independent_shape)
+    dependent_size = np.prod(dependent_shape)
+    independent_size = np.prod(independent_shape)
+    return sparse.csc_array(
+        (source.data, (dependent_indices, independent_indices)),
+        shape=[dependent_size, independent_size],
+    )
 
 
 # -------------------------------------------------------------------- Classes

@@ -19,7 +19,7 @@ __all__ = [
 
 def array_to_sparse_diagonal(x):
     """Turn an ndarray into a diagonal, stored as csc"""
-    result = sparse.diags(np.ravel(x), 0, format="csc")
+    result = sparse.diags_array(np.ravel(x), offsets=0, format="csc")
     return result
 
 

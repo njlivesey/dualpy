@@ -10,7 +10,7 @@ import numpy as np
 import scipy.interpolate as interpolate
 from numpy.typing import ArrayLike, DTypeLike
 
-from .base_jacobian import BaseJacobian
+from .base_jacobian import BaseJacobian, Base2DExtractor
 from .config import get_config
 from .dual_helpers import apply_units, has_jacobians
 from .jacobian_helpers import (  # array_to_sparse_diagonal,
@@ -235,6 +235,10 @@ class DenseJacobian(BaseJacobian):
         key = self._preprocess_getsetitem_key(key)
         # Do the value insetion
         self.data[key] = value_data
+
+    def get_2d_extractor(self):
+        """Provides a way to use getindex directly on the Jacobian returning 2D"""
+        return Dense2DExtractor(self)
 
     def broadcast_to(self, new_dependent_shape: tuple) -> DenseJacobian:
         """Broadcast dense Jacobian to new dependent_shape"""
@@ -648,3 +652,14 @@ class DenseJacobianSplineInterpolator(object):
             source=data,
             dependent_shape=new_dependent_shape,
         )
+
+
+class Dense2DExtractor(Base2DExtractor):
+    """A class to directly get a subset from the Jacobian"""
+
+    # The base classes __init__ is sufficient for our purposes.
+
+    def __getitem__(self, key):
+        """Get an extract of the Jacobian and return it as a 2D matrix"""
+        result_shape = self.preprocess_key(key)
+        return self.jacobian.data[key].reshape(result_shape)

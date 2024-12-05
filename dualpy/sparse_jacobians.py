@@ -10,7 +10,7 @@ import numpy as np
 from numpy.typing import ArrayLike, DTypeLike
 from scipy import interpolate, sparse
 
-from .base_jacobian import BaseJacobian
+from .base_jacobian import BaseJacobian, Base2DExtractor
 from .config import get_config
 from .dual_helpers import apply_units, get_magnitude_and_unit, has_jacobians
 from .jacobian_helpers import (
@@ -22,6 +22,7 @@ from .jacobian_helpers import (
 from .sparse_helpers import (
     DenselyRearrangedSparseJacobian,
     SparselyRearrangedSparseJacobian,
+    sparse_tensor_to_csc,
 )
 
 __all__ = ["SparseJacobian"]
@@ -59,8 +60,11 @@ class SparseJacobian(BaseJacobian):
         dtype : DTypeLike, optional
             dtype for the data values
         """
-        # pylint: disable-next=import-outside-toplevel
+        # pylint: disable=import-outside-toplevel
         from .diagonal_jacobians import DiagonalJacobian
+        import sparse as sparse_tensor
+
+        # pylint: enable=import-outside-toplevel
 
         # First, establish the shape, units, etc. of this Jacobian.  See if we can get
         # it from a template (or from source if it is itself a Jacobian.)
@@ -87,9 +91,11 @@ class SparseJacobian(BaseJacobian):
             elif isinstance(source, DiagonalJacobian):
                 data = array_to_sparse_diagonal(source.data)
             else:
-                raise TypeError("Cannot initialize SparseJacobian from {type(source)}")
+                raise TypeError(f"Cannot initialize SparseJacobian from {type(source)}")
         elif isinstance(source, sparse.csc_array):
             data = source
+        elif isinstance(source, sparse_tensor.SparseArray):
+            data = sparse_tensor_to_csc(source, dependent_ndim=self.dependent_ndim)
         elif source is None:
             data = sparse.csc_array(self.shape_2d, dtype=self.data.dtype)
         else:
@@ -255,6 +261,10 @@ class SparseJacobian(BaseJacobian):
             self_lil.rows[ii] = value_row
             self_lil.data[ii] = value_data
         self.data = self_lil.tocsc()
+
+    def get_2d_extractor(self):
+        """Provides a way to use getindex directly on the Jacobian returning 2D"""
+        return Sparse2DExtractor(self)
 
     def broadcast_to(self, shape):
         """Broadcast the dependent vector part of a sparse Jacobian to another shape"""
@@ -726,26 +736,9 @@ class SparseJacobian(BaseJacobian):
                 independent_shape=self.independent_shape,
                 independent_unit=self.independent_unit,
             )
-        elif isinstance(result, sparse_tensor.COO) or isinstance(
-            result, sparse_tensor.GCXS
-        ):
-            if isinstance(result, sparse_tensor.GCXS):
-                result_ = result.tocoo()
+        elif isinstance(result, sparse_tensor.SparseArray):
             dependent_ndim = len(result_dependent_shape)
-            coords = np.split(result.coords, result_.ndim)
-            dependent_coords = [c[0] for c in coords[:dependent_ndim]]
-            independent_coords = [c[0] for c in coords[dependent_ndim:]]
-            dependent_indices = np.ravel_multi_index(
-                dependent_coords, result_dependent_shape
-            )
-            independent_indices = np.ravel_multi_index(
-                independent_coords, self.independent_shape
-            )
-            dependent_size = np.prod(result_dependent_shape)
-            result_csc = sparse.csc_array(
-                (result_.data, (dependent_indices, independent_indices)),
-                shape=[dependent_size, self.independent_size],
-            )
+            result_csc = sparse_tensor_to_csc(result, dependent_ndim=dependent_ndim)
             return SparseJacobian(
                 source=result_csc,
                 dependent_shape=result_dependent_shape,
@@ -779,24 +772,9 @@ class SparseJacobian(BaseJacobian):
                 independent_shape=self.independent_shape,
                 independent_unit=self.independent_unit,
             )
-        elif isinstance(data, st.COO) or isinstance(data, st.GCXS):
-            if isinstance(data, st.GCXS):
-                data = data.tocoo()
+        elif isinstance(data, st.SparseArray):
             dependent_ndim = len(result_dependent_shape)
-            coords = np.split(data.coords, data.ndim)
-            dependent_coords = [c[0] for c in coords[:dependent_ndim]]
-            independent_coords = [c[0] for c in coords[dependent_ndim:]]
-            dependent_indices = np.ravel_multi_index(
-                dependent_coords, result_dependent_shape
-            )
-            independent_indices = np.ravel_multi_index(
-                independent_coords, self.independent_shape
-            )
-            dependent_size = np.prod(result_dependent_shape)
-            result_csc = sparse.csc_array(
-                (data.data, (dependent_indices, independent_indices)),
-                shape=[dependent_size, self.independent_size],
-            )
+            result_csc = sparse_tensor_to_csc(data, dependent_ndim=dependent_ndim)
             return SparseJacobian(
                 source=result_csc,
                 dependent_shape=result_dependent_shape,
@@ -1015,3 +993,18 @@ class SparseJacobianSplineInterpolator(object):
         intermediate = self.interpolator(x_out)
         # Undo the rearrangement and return the result
         return self.rearranged_jacobian.undo(intermediate)
+
+
+class Sparse2DExtractor(Base2DExtractor):
+    """A class to directly get a subset from the Jacobian"""
+
+    def __init__(self, jacobian: SparseJacobian):
+        super().__init__(jacobian)
+        # Get the Jacobian as a sparse tensor for later efficient use
+        self.jacobian_as_sparse_tensor = self.jacobian.as_sparse_tensor()
+
+    def __getitem__(self, key):
+        result_shape = self.preprocess_key(key)
+        return sparse.csc_array(
+            self.jacobian_as_sparse_tensor[key].reshape(result_shape).tocsc()
+        )
