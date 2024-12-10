@@ -676,9 +676,19 @@ class Base2DExtractor:
 
         The key can only contain slices, and ints (for now at least, no smart indexing
         or Ellipsis.)
+
+        Parameters
+        ----------
+        key : Argument to array-like getitem
+            The slice through the Jacobian being taken
+
+        Returns
+        -------
+        2d-shape : tuple[int]
+            The shape of the 2D Jacobian slice (dependent, indenendent) that results
         """
         if len(key) != self.jacobian.ndim:
-            raise ValueError(f"Two-D extract has wrong key length")
+            raise ValueError("Two-D extract has wrong key length")
         result_dependent_size = 1
         result_independent_size = 1
         for axis in range(self.jacobian.ndim):
@@ -697,4 +707,4 @@ class Base2DExtractor:
                 else:
                     result_independent_size *= len(dummy_result)
         # Return shape for result
-        return [result_dependent_size, result_independent_size]
+        return (result_dependent_size, result_independent_size)
