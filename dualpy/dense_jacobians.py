@@ -417,7 +417,11 @@ class DenseJacobian(BaseJacobian):
         )
 
     def cumsum(
-        self, new_dependent_shape: tuple, strategy: Optional[str] = None, **kwargs
+        self,
+        new_dependent_shape: tuple,
+        # pylint: disable-next=unused-argument
+        strategy: Optional[str] = None,
+        **kwargs,
     ) -> DenseJacobian:
         """Performs cumsum for the dense Jacobians.  See numpy help for details"""
         return self._reduce(

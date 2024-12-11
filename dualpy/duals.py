@@ -883,6 +883,7 @@ def cumsum(a, axis=None, dtype=None, out=None):
     out = dlarray(np.cumsum(a_, axis=axis, dtype=dtype))
     for name, jacobian in aj.items():
         out.jacobians[name] = jacobian.cumsum(
+            new_dependent_shape=out.shape,
             axis=axis,
             strategy=get_jacobian_specific_config(
                 "sparse_jacobian_cumsum_strategy", name

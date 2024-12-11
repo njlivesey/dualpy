@@ -615,6 +615,7 @@ class SparseJacobian(BaseJacobian):
         new_dependent_shape: tuple,
         axis: int,
         strategy: Optional[str] = None,
+        **kwargs,
     ):
         """Perform cumsum for a sparse Jacobian"""
         # pylint: disable=import-outside-toplevel
@@ -627,7 +628,14 @@ class SparseJacobian(BaseJacobian):
         # out, ultimately the user may still prefer to just densify, indeed that's
         # proven to be faster for non 3D retrievals.
         if strategy == "dense":
-            return DenseJacobian(self).cumsum(jaxis)
+            return DenseJacobian(self).cumsum(
+                axis=jaxis, new_dependent_shape=new_dependent_shape, **kwargs
+            )
+        # The rest don't handle fancy kwargs (as yet)
+        if kwargs:
+            raise NotImplementedError(
+                "Sparse Jacobian cumsum does not support these arguments."
+            )
         if strategy == "gather":
             # This gets us a matrix with the jaxis moved to the front, and with the
             # other dimensions densified with only the non-zero columns (optimal in
