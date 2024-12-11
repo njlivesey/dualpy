@@ -113,7 +113,7 @@ class DiagonalJacobian(BaseJacobian):
     def get_data_nd(self, form: str = None) -> ArrayLike:
         """Return the n-dimensional array of data in self"""
         if form is None or form == "dense":
-            return self.to_dense().get_data_nd()
+            return np.diag(self.data.ravel()).reshape(self.shape)
         elif form == "sparse":
             return self.to_sparse().get_data_nd()
         else:
