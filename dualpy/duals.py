@@ -1,9 +1,13 @@
 """The dual type for dualpy"""
 
+import copy
 import fnmatch
+from typing import Optional
 
 import numpy as np
 
+from .base_jacobian import BaseJacobian
+from .config import get_config, get_jacobian_specific_config
 from .dual_helpers import (
     DualOperatorsMixin,
     broadcast_jacobians,
@@ -18,8 +22,6 @@ from .jacobians import join_jacobians as _join_jacobians
 from .jacobians import setitem_jacobians as _setitem_jacobians
 from .jacobians import stack_jacobians as _stack_jacobians
 from .unitless import Unitless
-from .config import get_jacobian_specific_config, get_config
-from .base_jacobian import BaseJacobian
 
 __all__ = [
     "dlarray",
@@ -43,7 +45,9 @@ class dlarray(DualOperatorsMixin):
     """
 
     # ---------------------------------------------------------- Initialization
-    def __new__(cls, input_variable=None):
+    def __new__(
+        cls, input_variable=None, jacobians: Optional[dict[BaseJacobian]] = None
+    ):
         """Instance ecreator for dlarray
 
         Uses type of variable argument to work out what flavor of dlarray to create.
@@ -71,14 +75,20 @@ class dlarray(DualOperatorsMixin):
         obj = object.__new__(result_class)
         return obj
 
-    def __init__(self, input_variable):
+    def __init__(self, input_variable, jacobians: Optional[dict[BaseJacobian]] = None):
         """Setup a new dual wrapping around a suitable variable"""
         if isinstance(input_variable, dlarray):
             self.variable = input_variable.variable
-            self.jacobians: dict[BaseJacobian] = input_variable.jacobians
+            if jacobians is None:
+                self.jacobians: dict[BaseJacobian] = input_variable.jacobians
+            else:
+                self.jacobians: dict[BaseException] = jacobians
         else:
             self.variable = input_variable
-            self.jacobians: dict[BaseJacobian] = {}
+            if jacobians is None:
+                self.jacobians: dict[BaseJacobian] = {}
+            else:
+                self.jacobians: dict[BaseJacobian] = jacobians
 
     def __getnewargs__(self):
         """Needed to correctly pickle/restore duals into right subclass"""
@@ -228,10 +238,14 @@ class dlarray(DualOperatorsMixin):
         return out
 
     def __deepcopy__(self, memo):
-        # If we don't define this, ``copy.deepcopy(quantity)`` will
-        # return a bare Numpy array.
-        result = self.copy()
-        return result
+        # Create a deep copy of the array
+        new_variable = copy.deepcopy(self.variable, memo)
+        new_jacobians = copy.deepcopy(self.jacobians, memo)
+        # Create a new instance of MyCustomArray with the copied array
+        new_instance = dlarray(new_variable, jacobians=new_jacobians)
+        # Add the new instance to the memo dictionary to prevent duplicate copies
+        memo[id(self)] = new_instance
+        return new_instance
 
     def __array__(self, dtype=None):
         return np.array(self.variable, dtype)
