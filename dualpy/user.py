@@ -1,5 +1,6 @@
 import copy
-from typing import Union
+from typing import Union, Optional
+from abc import abstractmethod
 
 import astropy.units as units
 import mls_scf_tools.njlutil as njlutil
@@ -30,6 +31,7 @@ from .sparse_helpers import DenselyRearrangedSparseJacobian
 
 __all__ = [
     "CubicSplineWithJacobians",
+    "DualableMixin",
     "DroppedJacobianWarning",
     "PossibleDual",
     "delete_jacobians",
@@ -46,6 +48,40 @@ __all__ = [
 ]
 
 PossibleDual = Union[units.Quantity, pint.Quantity, NDArray, dlarray]
+
+
+class DualableMixin:
+    """This is a mixin that flags a class that has its own dual methods
+
+    The intent is to ensure that all the required methods are indeed provided
+    """
+
+    @abstractmethod
+    def _dual_seed_(
+        self,
+        name: str,
+        force: Optional[bool] = False,
+        overwrite: Optional[bool] = False,
+        reset: Optional[bool] = False,
+        initial_type: Optional[str] = None,
+    ):  # -> Self
+        pass
+
+    @abstractmethod
+    def _dual_has_jacobians_(self) -> bool:
+        pass
+
+    def _dual_dedual_(self):  # -> Self:
+        pass
+
+    def _dual_delete_jacobians_(
+        self,
+        *names: str,
+        wildcard: Optional[str] = None,
+        remain_dual: Optional[bool] = False,
+        **kwargs,
+    ):  # -> Self
+        pass
 
 
 class DroppedJacobianWarning(Warning):
