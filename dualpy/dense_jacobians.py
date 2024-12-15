@@ -525,6 +525,10 @@ class DenseJacobian(BaseJacobian):
         result = np.reshape(np.diag(self.get_data_2d()), self.dependent_shape)
         return apply_units(result, self.dependent_unit / self.independent_unit)
 
+    def toarray(self):
+        """Get Jacobian as n-dimensional array with units"""
+        return apply_units(self.data, self.dependent_unit / self.independent_unit)
+
     def todensearray(self):
         """Get Jacobian as n-dimensional dense array with units"""
         return apply_units(self.data, self.dependent_unit / self.independent_unit)

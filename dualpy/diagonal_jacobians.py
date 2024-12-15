@@ -451,8 +451,12 @@ class DiagonalJacobian(BaseJacobian):
         """Extract the diagonal from a diagonal Jacobian"""
         return self.diagonal()
 
+    def toarray(self):
+        """Get self's data as a non-dense ndarray"""
+        return self.to_sparse().toarray()
+
     def todensearray(self):
-        """Get self's data as dense nd array"""
+        """Get self's data as dense ndarray"""
         unit = self.dependent_unit / self.independent_unit
         return apply_units(self.get_data_nd(), unit)
 

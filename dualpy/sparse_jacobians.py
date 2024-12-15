@@ -803,6 +803,15 @@ class SparseJacobian(BaseJacobian):
         result = np.reshape(self.data.diagonal(), self.dependent_shape)
         return apply_units(result, self.dependent_unit / self.independent_unit)
 
+    def toarray(self):
+        """Return data from self as a non-dense tensor or sparse array"""
+        if self.independent_ndim != 1 or self.dependent_ndim != 1:
+            return apply_units(
+                self.as_sparse_tensor(), self.dependent_unit / self.independent_unit
+            )
+        else:
+            return apply_units(self.data, self.dependent_unit / self.independent_unit)
+
     def todensearray(self):
         """Return data from self as dense array"""
         return apply_units(
