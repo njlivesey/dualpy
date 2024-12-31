@@ -165,7 +165,7 @@ def gather_sparse_rows_to_dense(
     # Convert the sparse matrix to csc_array form, needed for efficient indexing below.
     # Note that it needs to be a sparse matrix, not a sparse array, as scipy.sparse
     # doesn't support the indexing we need for the latter
-    sparse_array = sparse.csc_array(sparse_array)
+    sparse_matrix = sparse.csc_matrix(sparse_array)
     # Find all unique column indices with non-zero entries
     nonzero_cols = sparse_array.nonzero()[1]
     unique_cols = np.unique(nonzero_cols)
@@ -173,7 +173,7 @@ def gather_sparse_rows_to_dense(
     gathered_array = np.empty((sparse_array.shape[0], len(unique_cols)))
     # Fill the dense matrix
     for i, col in enumerate(unique_cols):
-        gathered_array[:, i] = sparse_array[:, col].toarray().flatten()
+        gathered_array[:, i] = sparse_matrix[:, col].toarray().flatten()
     return gathered_array, unique_cols
 
 
