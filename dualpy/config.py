@@ -18,8 +18,8 @@ _CONFIG_DEFAULTS = {
     # Note that, if needed, it can be a dict giving the strategy on a
     # Jacobian-by-Jacobian basis (with an empty string key for the default case).
     "sparse_jacobian_fft_strategy": "gather",
-    # This one defines the strategic for cumsum, again it can be on a jacobian by
-    # jacobian basis.  Options are "dense", "matrix-multiply", and "gather"
+    # This one defines the strategy for cumsum, again it can be on a Jacobian-by-
+    # Jacobian basis.  Options are "dense", "matrix-multiply", and "gather"
     "sparse_jacobian_cumsum_strategy": "matrix-multiply",
     # This one turns on frequent checking of the jacobians
     "check_jacobians": False,
