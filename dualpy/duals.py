@@ -5,6 +5,7 @@ import fnmatch
 from typing import Optional
 
 import numpy as np
+from numpy.typing import DTypeLike
 
 from .base_jacobian import BaseJacobian
 from .config import get_config, get_jacobian_specific_config
@@ -247,8 +248,9 @@ class dlarray(DualOperatorsMixin):
         memo[id(self)] = new_instance
         return new_instance
 
-    def __array__(self, dtype=None):
-        return np.array(self.variable, dtype)
+    # pylint: disable-next=redefined-outer-name
+    def __array__(self, dtype: Optional[DTypeLike] = None, copy: Optional[bool] = None):
+        return np.array(self.variable, dtype=dtype, copy=copy)
 
     def __getitem__(self, key):
         out = dlarray(self.variable[key])

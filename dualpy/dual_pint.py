@@ -2,9 +2,10 @@
 
 import copy
 import warnings
-from typing import Union
+from typing import Union, Optional
 
 import numpy as np
+from numpy.typing import DTypeLike
 import pint
 
 from .duals import dlarray
@@ -32,7 +33,8 @@ class dlarray_pint(dlarray):
         return self.variable.units._REGISTRY.dimensionless
 
     # --------------------------------------------- Some customization
-    def __array__(self, dtype=None):
+    # pylint: disable-next=redefined-outer-name
+    def __array__(self, dtype: Optional[DTypeLike] = None, copy: Optional[bool] = None):
         # Not 100% sure that this filterwarning is warranted here, but
         # it raises warnings (e.g., in matplotlib) when regular pint
         # does not, so deciding to mimic that approach.
@@ -40,7 +42,7 @@ class dlarray_pint(dlarray):
             warnings.simplefilter("ignore", category=pint.UnitStrippedWarning)
             if dtype is None and hasattr(self, "dtype"):
                 dtype = self.dtype
-            return np.array(self.variable, dtype=dtype)
+            return np.array(self.variable, dtype=dtype, copy=copy)
 
     # --------------------------------------------- Extra properties
     @property
