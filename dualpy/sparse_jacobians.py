@@ -111,9 +111,14 @@ class SparseJacobian(BaseJacobian):
         if get_config("check_jacobians"):
             self._check()
 
+    @property
+    def percent_full(self):
+        """Returns the percentage of non-zero values"""
+        return 100.0 * self.data.nnz / (self.dependent_size * self.independent_size)
+
     def __str__(self):
         """Provide a string summary of a sparse Jacobian"""
-        percent = 100.0 * self.data.nnz / (self.dependent_size * self.independent_size)
+        percent = self.percent_full()
         suffix = f" with {self.data.nnz:,} numbers stored ({percent:.2g}%)"
         return super().__str__() + suffix
 

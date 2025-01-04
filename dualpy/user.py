@@ -30,6 +30,7 @@ from .config import get_jacobian_specific_config
 from .sparse_helpers import DenselyRearrangedSparseJacobian
 
 __all__ = [
+    "apply_sparse_threshold",
     "CubicSplineWithJacobians",
     "DualableMixin",
     "DroppedJacobianWarning",
@@ -41,7 +42,6 @@ __all__ = [
     "multi_newton_raphson",
     "rfft",
     "seed",
-    "simpson",
     "solve_quadratic",
     "voigt_profile",
     "wofz",
@@ -170,8 +170,10 @@ def seed(
         dtype = None
     jacobian = SeedJacobian(
         source=np.ones(out_shape, dtype=dtype),
+        # pylint: disable=protected-access
         dependent_unit=out._dependent_unit,
         independent_unit=out._dependent_unit,
+        # pylint: enable=protected-access
         dependent_shape=out_shape,
         independent_shape=out_shape,
     )
@@ -220,6 +222,7 @@ def delete_jacobians(a, *names, wildcard=None, remain_dual=False, **kwargs):
     """
     # First see if this quantity has a __delete_jacobians__ method.  If so, use it.
     if hasattr(a, "_dual_delete_jacobians_"):
+        # pylint: disable-next=protected-access
         return a._dual_delete_jacobians_(
             *names, wildcard=wildcard, remain_dual=remain_dual, **kwargs
         )
@@ -242,10 +245,26 @@ def delete_jacobians(a, *names, wildcard=None, remain_dual=False, **kwargs):
         return a
 
 
+def apply_sparse_threshold(x: PossibleDual, percent_threshold: Optional[float] = None):
+    """Densify jacobians that are denser than a given percent sparsity"""
+    # Do nothing if there are no Jacobians for the argument
+    if not has_jacobians(x):
+        return x
+    if percent_threshold is None:
+        percent_threshold = 10.0
+    # Make a copy
+    result: dlarray = copy.copy(x)
+    result.jacobians = copy.copy(result.jacobians)
+    for key, jacobian in result.jacobians.items():
+        if jacobian.percent_full > percent_threshold:
+            result.jacobians[key] = DenseJacobian(jacobian)
+    return result
+
+
 def solve_quadratic(a, b, c, sign=1):
     """Solve quadratic equation ax^2+bx+c=0 returning jacobians"""
     # Use Muller's equation for stability when a=0
-    a_, b_, c_, aj, bj, cj, out = setup_dual_operation(a, b, c)
+    a_, b_, c_, aj, bj, cj, _ = setup_dual_operation(a, b, c)
     d_ = np.sqrt(b_**2 - 4 * a_ * c_)
     x_ = -2 * c_ / (b_ + sign * d_)
     any_j = aj or bj or cj
@@ -289,6 +308,7 @@ def wofz(z):
     # The derivative actually comes out of the definition of the
     # Fadeeva function pretty easily
     c = 2j / np.sqrt(np.pi)
+    # pylint: disable-next=protected-access
     out._chain_rule(z, c - 2 * z_ * out_)
     return out
 
@@ -300,7 +320,7 @@ def voigt_profile(x, sigma, gamma):
 
 
 def get_jacobians_for_function_inverse(
-    y_target, y_solution, dx_key: str, ignored_jkeys: list[str] = []
+    y_target, y_solution, dx_key: str, ignored_jkeys: list[str] = None
 ) -> dict:
     """Compute Jacobians corresponding to the inverse of a function
 
@@ -340,7 +360,8 @@ def get_jacobians_for_function_inverse(
     dependence of x on anything else.
 
     """
-
+    if ignored_jkeys is None:
+        ignored_jkeys = []
     # This is acutally both more and less complicated than it seems.  We're after
     # dx_solution/dt where t is a quantity we're differentiating by, and ALL DERIVATIVES
     # IN THESE COMMENTS ARE PARTIAL.  The complexity arrives from the fact that there
@@ -387,8 +408,8 @@ def get_jacobians_for_function_inverse(
 def multi_newton_raphson(
     x0,
     func,
-    args=[],
-    kwargs={},
+    args=None,
+    kwargs=None,
     y=None,
     dy_tolerance=None,
     dx_tolerance=None,
@@ -440,6 +461,10 @@ def multi_newton_raphson(
     else:
         if max_iter < 0:
             raise ValueError("Bad value for max_iter: {max_iter}")
+    if args is None:
+        args = []
+    if kwargs is None:
+        kwargs = {}
     # Define some prefixes we'll use to track Jacobians
     j_name_x = "_mnr_x"
     # Take off any input jacobians.
@@ -532,6 +557,7 @@ def interp1d(
     y,
     kind="linear",
     axis=-1,
+    # pylint: disable-next=redefined-outer-name
     copy=True,
     bounds_error=None,
     fill_value=np.nan,
@@ -874,55 +900,3 @@ class CubicSplineWithJacobians:
         if not has_jacobians(y):
             y = dedual(y)
         return y
-
-
-def simpson(y, x=None, dx=1.0, axis=-1, even="avg"):
-    """Integrate y(x) using samples along the given axis and the composite
-    Simpson's rule. If x is None, spacing of dx is assumed.
-    If there are an even number of samples, N, then there are an odd
-    number of intervals (N-1), but Simpson's rule requires an even number
-    of intervals. The parameter 'even' controls how this is handled.
-
-    Note that this simply wraps scipy.integrate.simpson (handles duals and units)
-
-    Parameters
-    ----------
-    y : array_like
-        Array to be integrated.
-    x : array_like, optional
-        If given, the points at which `y` is sampled.
-    dx : float, optional
-        Spacing of integration points along axis of `x`. Only used when
-        `x` is None. Default is 1.
-    axis : int, optional
-        Axis along which to integrate. Default is the last axis.
-    even : str {'avg', 'first', 'last'}, optional
-        'avg' : Average two results:1) use the first N-2 intervals with
-                  a trapezoidal rule on the last interval and 2) use the last
-                  N-2 intervals with a trapezoidal rule on the first interval.
-        'first' : Use Simpson's rule for the first N-2 intervals with
-                a trapezoidal rule on the last interval.
-        'last' : Use Simpson's rule for the last N-2 intervals with a
-               trapezoidal rule on the first interval.
-
-    """
-    # Prepare all the operands
-    y_, x_, dx_, yj, xj, dxj, out = setup_dual_operation(y, x, dx)
-
-    if has_jacobians(x):
-        raise ValueError("Cannot (yet?) have Jacobians on the integration x term")
-    if has_jacobians(dx):
-        raise ValueError("Cannot (yet?) have Jacobians on the integration dx term")
-    if x is None:
-        x_unit = dx.unit
-    else:
-        x_unit = x.unit
-    # Do the raw integration calculation
-    result_ = integrate.simpson(y_, x_, dx_, axis=axis, even=even) * y_.unit * x_unit
-    if has_jacobians(y):
-        result = dlarray(result_)
-        for key, jacobian in y.jacobians.items():
-            result.jacobians[key] = jacobian.simpson(x_, dx_, axis=axis, even=even)
-    else:
-        result = result_
-    return result

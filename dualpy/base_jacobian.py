@@ -216,6 +216,10 @@ class BaseJacobian(object):
         """Returns the dtype for a Jacobian"""
         return self.data.dtype
 
+    @property
+    def percent_full(self):
+        return 100.0
+
     def __neg__(self):
         """Unary negative for Jacobian"""
         # pylint: disable-next=invalid-unary-operand-type
