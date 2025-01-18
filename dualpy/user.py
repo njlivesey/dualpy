@@ -71,9 +71,11 @@ class DualableMixin:
     def _dual_has_jacobians_(self) -> bool:
         pass
 
+    @abstractmethod
     def _dual_dedual_(self):  # -> Self:
         pass
 
+    @abstractmethod
     def _dual_delete_jacobians_(
         self,
         *names: str,
@@ -85,6 +87,7 @@ class DualableMixin:
 
 
 class DroppedJacobianWarning(Warning):
+    """Issued when an operation drops the Jacobians for a dual"""
     pass
 
 
@@ -97,11 +100,12 @@ def seed(
     initial_type="seed",
     **kwargs,
 ):
-    # In some senses, this is the most important routine in the package, as it's
-    # probably the only one most users will knowingly invoke on a regular basis.  It
-    # takes an array-like quantity unit jacobian for it.  From that point on, anything
-    # computed from the resulting dual will track Jacobians appropriately.
     """Return a dual for a quantity populated, with a unitary Jacobian matrix
+
+    In some senses, this is the most important routine in the dualpy package, as it's
+    probably the only one most users will knowingly invoke on a regular basis.  It takes
+    an array-like quantity unit jacobian for it.  From that point on, anything computed
+    from the resulting dual will track Jacobians appropriately.
 
     Parameters
     ----------
@@ -127,8 +131,8 @@ def seed(
     returns quantity as dual with named seed added
 
     """
-    # First see if the quantity has a _seed method, and, if so, invoke that to do the
-    # work.
+    # First see if the quantity has a _dual_seed_ method, and, if so, invoke that to do
+    # the work.
     if hasattr(value, "_dual_seed_"):
         # pylint: disable-next=protected-access
         return value._dual_seed_(
@@ -220,7 +224,7 @@ def delete_jacobians(a, *names, wildcard=None, remain_dual=False, **kwargs):
     result : various types possible
         Input with named Jacobians deleted.
     """
-    # First see if this quantity has a __delete_jacobians__ method.  If so, use it.
+    # First see if this quantity has a _delete_jacobians_ method.  If so, use it.
     if hasattr(a, "_dual_delete_jacobians_"):
         # pylint: disable-next=protected-access
         return a._dual_delete_jacobians_(
