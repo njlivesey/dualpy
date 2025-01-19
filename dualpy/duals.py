@@ -3,6 +3,7 @@
 import copy
 import fnmatch
 from typing import Optional
+import warnings
 
 import numpy as np
 from numpy.typing import DTypeLike
@@ -250,6 +251,12 @@ class dlarray(DualOperatorsMixin):
 
     # pylint: disable-next=redefined-outer-name
     def __array__(self, dtype: Optional[DTypeLike] = None, copy: Optional[bool] = None):
+        if np.__version__ != "1.26.4":
+            warnings.warn(
+                "The behavior of the copy argument in numpy.array may have improved, check this"
+            )
+        if copy is None:
+            copy = False
         return np.array(self.variable, dtype=dtype, copy=copy)
 
     def __getitem__(self, key):

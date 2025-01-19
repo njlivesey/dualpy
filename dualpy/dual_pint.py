@@ -38,6 +38,12 @@ class dlarray_pint(dlarray):
         # Not 100% sure that this filterwarning is warranted here, but it raises
         # warnings (e.g., in matplotlib) when regular pint does not, so deciding to
         # mimic that approach.
+        if np.__version__ != "1.26.4":
+            warnings.warn(
+                "The behavior of the copy argument in numpy.array may have improved, check this"
+            )
+        if copy is None:
+            copy = False
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=pint.UnitStrippedWarning)
             if dtype is None and hasattr(self, "dtype"):
