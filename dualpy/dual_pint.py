@@ -35,9 +35,9 @@ class dlarray_pint(dlarray):
     # --------------------------------------------- Some customization
     # pylint: disable-next=redefined-outer-name
     def __array__(self, dtype: Optional[DTypeLike] = None, copy: Optional[bool] = None):
-        # Not 100% sure that this filterwarning is warranted here, but
-        # it raises warnings (e.g., in matplotlib) when regular pint
-        # does not, so deciding to mimic that approach.
+        # Not 100% sure that this filterwarning is warranted here, but it raises
+        # warnings (e.g., in matplotlib) when regular pint does not, so deciding to
+        # mimic that approach.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=pint.UnitStrippedWarning)
             if dtype is None and hasattr(self, "dtype"):
