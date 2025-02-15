@@ -4,6 +4,8 @@ Typically wraps or replaces scipy/numpy type routines.  Typically with similar n
 and/or interfaces, though not always.
 """
 
+from typing import Optional
+
 import mls_scf_tools.njlutil as njlutil
 import numpy as np
 import scipy.fft as fft
@@ -15,7 +17,7 @@ from dualpy import DenseJacobian, DiagonalJacobian, SeedJacobian, SparseJacobian
 from dualpy.config import get_jacobian_specific_config
 from dualpy.duals import dlarray
 from dualpy.sparse_helpers import DenselyRearrangedSparseJacobian
-from dualpy.user import delete_jacobians, seed
+from dualpy.user import delete_jacobians, seed, PossibleDual
 
 from .dual_helpers import (
     dedual,
@@ -582,3 +584,67 @@ class CubicSplineWithJacobians:
         if not has_jacobians(y):
             y = dedual(y)
         return y
+
+
+def simpson_nonuniform(
+    x: PossibleDual, f: PossibleDual, axis: Optional[int] = 0
+) -> PossibleDual:
+    """Dual/unit friendly implementation of Simpson rule for irregularly spaced data.
+
+    This is adapted from the example given in Wikipedia
+
+    Arguments
+    ---------
+    x : PossibleDual
+        Independent variable
+    f : PossibleDual
+        Function values to integrate
+    axis : Optional[int]
+        The axis to integrate over, defaults to 0
+
+    Returns
+    -------
+    integral : PossibleDual
+        Result
+
+    """
+
+    # Define a function to make keys
+    def get_nd_key(key):
+        """Returns a key tuple with the input in the "axis" axis, all others full slices"""
+        result = [slice(None)] * f.ndim
+        result[axis] = key
+        return tuple(result)
+
+    # Set up stuff related to x
+    if x.ndim != 1:
+        raise ValueError("Wrong shape for x")
+    n = x.shape[0] - 1  # n is the number of panels, not the nuber of points
+    h = np.diff(x)
+    h0, h1 = h[0:-1:2], h[1::2]
+    hph, hdh, hmh = h1 + h0, h1 / h0, h1 * h0
+    # Construct the keys for accessing f along the axis
+    fi_key = get_nd_key(slice(1, -1, 2))
+    fi_p1_key = get_nd_key(slice(2, None, 2))
+    fi_m1_key = get_nd_key(slice(0, -2, 2))
+    # Construct the first part of the result (ony part needed if n is even)
+    result = np.sum(
+        (hph / 6)
+        * (
+            (2 - hdh) * f[fi_m1_key]
+            + (hph**2 / hmh) * f[fi_key]
+            + (2 - 1 / hdh) * f[fi_p1_key]
+        )
+    )
+    # Do corrections for the n is odd case.
+    if n % 2 == 1:
+        h0, h1 = h[n - 2], h[n - 1]
+        # Get keys for accessing the n, n-1, and n-2 values of f
+        fn_key = get_nd_key(n)
+        fn_m1_key = get_nd_key(n - 1)
+        fn_m2_key = get_nd_key(n - 2)
+        # Tweak the result
+        result += f[fn_key] * (2 * h1**2 + 3 * h0 * h1) / (6 * (h0 + h1))
+        result += f[fn_m1_key] * (h1**2 + 3 * h1 * h0) / (6 * h0)
+        result -= f[fn_m2_key] * h1**3 / (6 * h0 * (h0 + h1))
+    return result
