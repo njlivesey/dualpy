@@ -9,3 +9,4 @@ from .dense_jacobians import *
 from .sparse_jacobians import *
 from .diagonal_jacobians import *
 from .numeric_jacobians import *
+from .math import *
