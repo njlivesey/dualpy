@@ -634,7 +634,8 @@ def simpson_nonuniform(
             (2 - hdh) * f[fi_m1_key]
             + (hph**2 / hmh) * f[fi_key]
             + (2 - 1 / hdh) * f[fi_p1_key]
-        )
+        ),
+        axis=axis,
     )
     # Do corrections for the n is odd case.
     if n % 2 == 1:
