@@ -627,6 +627,13 @@ def simpson_nonuniform(
     fi_key = get_nd_key(slice(1, -1, 2))
     fi_p1_key = get_nd_key(slice(2, None, 2))
     fi_m1_key = get_nd_key(slice(0, -2, 2))
+    # Construct a key needed in the case where f is multi-dimensional to make things
+    # broadcastable
+    h_fix = [np.newaxis] * f.ndim
+    h_fix[axis] = slice(None)
+    h_fix = tuple(h_fix)
+    h0, h1 = h0[h_fix], h1[h_fix]
+    hph, hdh, hmh = hph[h_fix], hdh[h_fix], hmh[h_fix]
     # Construct the first part of the result (ony part needed if n is even)
     result = np.sum(
         (hph / 6)
