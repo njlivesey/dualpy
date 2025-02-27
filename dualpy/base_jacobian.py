@@ -50,8 +50,8 @@ class BaseJacobian(object):
     # pylint: disable=too-many-arguments
     def __init__(
         self,
-        source: ArrayLike | "BaseJacobian" = None,  # pylint: disable=unused-argument
-        template: "BaseJacobian" = None,
+        source: ArrayLike | BaseJacobian = None,  # pylint: disable=unused-argument
+        template: BaseJacobian = None,
         dependent_unit: GenericUnit = None,
         independent_unit: GenericUnit = None,
         dependent_shape: Sequence = None,
@@ -234,7 +234,7 @@ class BaseJacobian(object):
         return type(self)(source=np.real(self.data), template=self)
 
     # pylint: disable=import-outside-toplevel
-    def __add__(self, other: "BaseJacobian"):
+    def __add__(self, other: BaseJacobian):
         """Add two Jacobians"""
         from .dense_jacobians import DenseJacobian
 
@@ -247,7 +247,7 @@ class BaseJacobian(object):
         return result_type(source=result_data, template=self)
 
     # pylint: disable=import-outside-toplevel
-    def __sub__(self, other: "BaseJacobian"):
+    def __sub__(self, other: BaseJacobian):
         """Subtract two Jacobians"""
         from .dense_jacobians import DenseJacobian
 
@@ -547,7 +547,7 @@ class BaseJacobian(object):
             dependent_unit=self.dependent_unit * units,
         )
 
-    def independents_compatible(self, other: "BaseJacobian") -> bool:
+    def independents_compatible(self, other: BaseJacobian) -> bool:
         """Return true if the independent variables for two jacobians are compatible"""
         if self.independent_shape != other.independent_shape:
             return False
@@ -598,7 +598,7 @@ class BaseJacobian(object):
                 key = (key,)
         return key
 
-    def matrix_multiply(self, other: "BaseJacobian"):
+    def matrix_multiply(self, other: BaseJacobian):
         """Matrix multiply Jacobian with another (other on the right)"""
         from .dense_jacobians import DenseJacobian
         from .sparse_jacobians import SparseJacobian

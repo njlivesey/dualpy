@@ -357,7 +357,7 @@ class DiagonalJacobian(BaseJacobian):
         function: callable,
         new_dependent_shape: tuple,
         **kwargs,
-    ) -> "DenseJacobian":
+    ) -> DenseJacobian:
         """A generic reduction operation for DiagonalJacobians
 
         Parameters
