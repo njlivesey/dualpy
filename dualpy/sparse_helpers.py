@@ -1,12 +1,15 @@
 """Some classes and routines to help deal with sparse Jacobians"""
 
+from __future__ import annotations
+
 import copy
 from abc import abstractmethod
-from typing import Sequence, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Sequence
+
 import numpy as np
+import sparse as sparse_tensor
 from numpy.typing import NDArray
 from scipy import sparse
-import sparse as sparse_tensor
 
 if TYPE_CHECKING:
     from .sparse_jacobians import SparseJacobian
@@ -239,7 +242,7 @@ class BaseRearrangedSparseJacobian:
     """An base class for a sparse Jacobian rearranger"""
 
     @abstractmethod
-    def __init__(self, jacobian: "SparseJacobian"):
+    def __init__(self, jacobian: SparseJacobian):
         """Do some base-level initialization and checking for a rearranger"""
         self.source_dependent_shape = jacobian.dependent_shape
         self.source_dependent_size = jacobian.dependent_size
@@ -275,7 +278,7 @@ class SparselyRearrangedSparseJacobian(BaseRearrangedSparseJacobian):
 
     def __init__(
         self,
-        jacobian: "SparseJacobian",
+        jacobian: SparseJacobian,
         promoted_axis: int,
     ):
         """Initiailizes the rearrangement"""
@@ -301,7 +304,7 @@ class SparselyRearrangedSparseJacobian(BaseRearrangedSparseJacobian):
         self,
         array,
         dependent_unit=None,
-    ) -> "SparseJacobian":
+    ) -> SparseJacobian:
         """Reverse the effect of our rearrangement on a supplied matrix
 
         Typically this matrix is not the same as "ours" but is the result of doing some
@@ -362,7 +365,7 @@ class DenselyRearrangedSparseJacobian(SparselyRearrangedSparseJacobian):
 
     def __init__(
         self,
-        jacobian: "SparseJacobian",
+        jacobian: SparseJacobian,
         promoted_axis: int,
     ):
         """Initiailizes the rearrangement"""
