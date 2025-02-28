@@ -111,7 +111,6 @@ class SparseJacobian(BaseJacobian):
         if get_config("check_jacobians"):
             self._check()
 
-    @property
     def percent_full(self):
         """Returns the percentage of non-zero values"""
         return 100.0 * self.data.nnz / (self.dependent_size * self.independent_size)

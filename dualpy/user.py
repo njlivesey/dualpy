@@ -94,7 +94,7 @@ def seed(
     reset : bool
         If it's a dual already, then blow away any previous Jacobians
     initial_type : str, optional
-        "diagonal" (default), "dense", or "sparse"
+        "seed" (default), "diagonal" (synonymous with seed), "dense", or "sparse"
 
     Other options may be passed to the _seed method
 
