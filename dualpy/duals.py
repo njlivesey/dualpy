@@ -1,3 +1,4 @@
+# pylint: disable-next=too-many-lines
 """The dual type for dualpy"""
 
 import copy
@@ -34,6 +35,7 @@ __all__ = [
 ]
 
 
+# pylint: disable-next=invalid-name
 class dlarray(DualOperatorsMixin):
     """A duck-array providing automatic differentiation using dual algebra
 
@@ -107,25 +109,29 @@ class dlarray(DualOperatorsMixin):
     @shape.setter
     def shape(self, value):
         raise NotImplementedError("For now, in place reshaping is not supported")
-        self.variable.shape = value
-        for key, jacobian in self.jacobians.items():
-            # This will break, should be something other then None in 3rd argument
-            self.jacobians[key] = jacobian.reshape(value, "A", None)
+        # self.variable.shape = value
+        # for key, jacobian in self.jacobians.items():
+        #     # This will break, should be something other then None in 3rd argument
+        #     self.jacobians[key] = jacobian.reshape(value, "A", None)
 
     @property
     def ndim(self):
+        """Return the number of dimensions in the variable"""
         return self.variable.ndim
 
     @property
     def size(self):
+        """Return the size of the variable"""
         return self.variable.size
 
     @property
     def dtype(self):
+        """Return the dtype of the variable"""
         return self.variable.dtype
 
     @property
     def flags(self):
+        """Return the flags of the variable"""
         return self.variable.flags
 
     # This attribute is None for plain dlarrays but is a property aliasing to the
@@ -269,34 +275,36 @@ class dlarray(DualOperatorsMixin):
         s, v, sj, vj, out_ = setup_dual_operation(self, value, broadcast=False)
         try:
             self.variable[key] = v
-        except TypeError:
+        except TypeError as exception:
             if not key:
                 self.variable = v
             else:
-                raise TypeError("Dual variable does not support non-empty indexing")
+                raise TypeError(
+                    "Dual variable does not support non-empty indexing"
+                ) from exception
         # Doing a setitem on the Jacobians requires some more intimate knowledge so let
         # the jacobians module handle it.
         _setitem_jacobians(key, s, sj, vj)
 
-    def __eq__(a, b):
-        a_, b_, aj, bj, out = setup_dual_operation(a, b)
-        return a_ == b_
+    def __eq__(self, other):
+        self_, other_, _, _, _ = setup_dual_operation(self, other)
+        return self_ == other_
 
-    def __ne__(a, b):
-        a_, b_, aj, bj, out = setup_dual_operation(a, b)
-        return a_ != b_
+    def __ne__(self, other):
+        self_, other_, _, _, _ = setup_dual_operation(self, other)
+        return self_ != other_
 
-    def __gt__(a, b):
-        a_, b_, aj, bj, out = setup_dual_operation(a, b)
-        return a_ > b_
+    def __gt__(self, other):
+        self_, other_, _, _, _ = setup_dual_operation(self, other)
+        return self_ > other_
 
-    def __lt__(a, b):
-        a_, b_, aj, bj, out = setup_dual_operation(a, b)
-        return a_ < b_
+    def __lt__(self, other):
+        self_, other_, _, _, _ = setup_dual_operation(self, other)
+        return self_ < other_
 
-    def __le__(a, b):
-        a_, b_, aj, bj, out = setup_dual_operation(a, b)
-        return a_ <= b_
+    def __le__(self, other):
+        self_, other_, _, _, _ = setup_dual_operation(self, other)
+        return self_ <= other_
 
     def _check(self, name="<unknown>"):
         """Check consistency of a dual"""
