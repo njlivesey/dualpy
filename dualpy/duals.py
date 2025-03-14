@@ -998,6 +998,26 @@ def diff(array, n=1, axis=-1, prepend=np._NoValue, append=np._NoValue):
     return result
 
 
+@implements(np.sort)
+def sort(array, axis=-1, kind=None, order=None):
+    """Implements sort for duals"""
+    # Get the indices that sort the array
+    indices = np.argsort(array.variable, axis=axis, kind=kind, order=order)
+    # Now re-order to those indices
+    key = [slice(None)] * array.ndim
+    if axis is None:
+        axis = -1
+    key[axis] = indices
+    key = tuple(key)
+    return array[key]
+
+
+@implements(np.round)
+def round(array, decimals=0, out=None):
+    """Implements numpy round"""
+    return np.round(array.variable, decimals=decimals, out=out)
+
+
 @implements(np.where)
 def where(condition, a=None, b=None):
     if a is None or b is None:
