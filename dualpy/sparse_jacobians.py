@@ -674,6 +674,9 @@ class SparseJacobian(BaseJacobian):
         from .dense_jacobians import DenseJacobian
 
         # For now at least I'm going to have this go to dense.
+        raise NotImplementedError(
+            "Don't think this is working, certainly not optimal, surely better ways"
+        )
         self_dense = DenseJacobian(self)
         result_dense = self_dense.diff(dependent_shape, n, axis, prepend, append)
         return SparseJacobian(result_dense)
