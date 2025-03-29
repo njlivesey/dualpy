@@ -1191,6 +1191,13 @@ def ones_like(prototype, dtype=None, order="K", subok=True, shape=None):
     return dlarray(np.ones_like(prototype.variable, dtype, order, subok, shape))
 
 
+@implements(np.full_like)
+def full_like(prototype, fill_value, dtype=None, order="K", subok=True, shape=None):
+    return dlarray(
+        np.full_like(prototype.variable, fill_value, dtype, order, subok, shape)
+    )
+
+
 @implements(np.expand_dims)
 def expand_dims(a, axis):
     result = dlarray(np.expand_dims(a.variable, axis))
