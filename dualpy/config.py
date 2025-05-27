@@ -23,6 +23,9 @@ _CONFIG_DEFAULTS = {
     "sparse_jacobian_cumsum_strategy": "matrix-multiply",
     # This one turns on frequent checking of the jacobians
     "check_jacobians": False,
+    # This one is used when reading from HDF (or possible similar), when a "units"
+    # attribute is found, what library should be used, pint (default) or astropy.
+    "default_units_library": "pint",
 }
 
 
@@ -34,6 +37,7 @@ class DualpyConfig:
     sparse_jacobian_fft_strategy: str | dict[str]
     sparse_jacobian_cumsum_strategy: str | dict[str]
     check_jacobians: bool
+    default_units_library: str
 
 
 _config = DualpyConfig(**_CONFIG_DEFAULTS)
