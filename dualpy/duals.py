@@ -145,11 +145,13 @@ class dlarray(DualOperatorsMixin):
     # ----------------------------------------------- Helpers (staticmethods)
 
     @staticmethod
+    # pylint: disable-next=unused-argument
     def _force_unit(quantity, unit):
         """Apply a unit to a quantity"""
         return quantity
 
     @staticmethod
+    # pylint: disable-next=unused-argument
     def _force_unit_from(quantity, source):
         """Force a unit from source onto quantity"""
         return quantity
@@ -168,6 +170,7 @@ class dlarray(DualOperatorsMixin):
         return out
 
     @staticmethod
+    # pylint: disable-next=unused-argument
     def _get_magnitude_if_dimensionless(units):
         return 1.0
 
@@ -208,9 +211,10 @@ class dlarray(DualOperatorsMixin):
             raise NotImplementedError(
                 f"No implementation for ufunc {ufunc}, method {method}"
             )
-            return NotImplemented
+            # return NotImplemented
         result = dlufunc(*args, **kwargs)
         if get_config("check_jacobians"):
+            # pylint: disable-next=protected-access
             result._check()
         return result
 
@@ -886,6 +890,7 @@ def implements(numpy_function):
 
 @implements(np.sum)
 def sum(a, axis=None, dtype=None, keepdims=False):
+    """Provides numpy.sum for duals"""
     a_, aj, out = setup_dual_operation(a)
     out = dlarray(np.sum(a_, axis=axis, dtype=dtype, keepdims=keepdims))
     for name, jacobian in aj.items():
@@ -897,6 +902,7 @@ def sum(a, axis=None, dtype=None, keepdims=False):
 
 @implements(np.mean)
 def mean(a, axis=None, dtype=None, keepdims=False):
+    """Provides numpy.mean for duals"""
     a_, aj, out = setup_dual_operation(a)
     out = dlarray(np.mean(a_, axis=axis, dtype=dtype, keepdims=keepdims))
     for name, jacobian in aj.items():
@@ -908,6 +914,7 @@ def mean(a, axis=None, dtype=None, keepdims=False):
 
 @implements(np.cumsum)
 def cumsum(a, axis=None, dtype=None, out=None):
+    """Provides numpy.cumsum for duals"""
     if out is not None:
         raise NotImplementedError("out not supported for dual cumsum (yet?)")
     a_, aj, out = setup_dual_operation(a)
@@ -935,10 +942,10 @@ def broadcast_arrays(*args, subok=False):
     shape = result_[0].shape
     result = []
     for i, a in enumerate(args):
-        thisResult = dlarray(result_[i])
+        this_result = dlarray(result_[i])
         if hasattr(a, "jacobians"):
-            thisResult.jacobians = broadcast_jacobians(a.jacobians, shape)
-        result.append(thisResult)
+            this_result.jacobians = broadcast_jacobians(a.jacobians, shape)
+        result.append(this_result)
     return tuple(result)
 
 
