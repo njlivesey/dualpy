@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dualpy"
+version = "1.0.0"
+dependencies = [
+    "astropy",
+    "pint",
+    "numpy",
+    "scipy",
+    "sparse",
+]
+requires-python = ">=3.12"
