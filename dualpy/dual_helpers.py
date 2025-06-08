@@ -2,10 +2,11 @@
 
 import operator
 
-import astropy.units as units
+import numpy as np
+from astropy import units
 import pint
-from mls_scf_tools.mls_pint import mp_broadcast_arrays, ureg
 from numpy.core import umath
+from numpy.typing import ArrayLike
 
 from .unitless import Unitless
 
@@ -23,6 +24,31 @@ __all__ = [
     "has_jacobians",
     "apply_units",
 ]
+
+
+def pint_friendly_broadcast_arrays(
+    *args: ArrayLike, subok: bool = False
+) -> tuple[ArrayLike]:
+    """Quick and dirty implementation of np.broadcast_arrays for duals/pint"""
+    arg_magnitudes = []
+    arg_units = []
+    for arg in args:
+        try:
+            arg_magnitudes.append(arg.magnitude)
+        except AttributeError:
+            arg_magnitudes.append(arg)
+        try:
+            arg_units.append(arg.units)
+        except AttributeError:
+            arg_units.append(None)
+    result_magnitudes = np.broadcast_arrays(*arg_magnitudes, subok=subok)
+    results = []
+    for m, u in zip(result_magnitudes, arg_units):
+        if u is not None:
+            results.append(m * u)
+        else:
+            results.append(m)
+    return results
 
 
 def isunit(x):
@@ -56,6 +82,7 @@ def dedual(x):
     from .duals import dlarray
 
     if hasattr(x, "_dual_dedual_"):
+        # pylint: disable-next=protected-access
         return x._dual_dedual_()
     if isinstance(x, dlarray):
         return x.variable
@@ -71,6 +98,7 @@ def to_dimensionless(x):
     # pylint: enable=import-outside-toplevel
 
     if isinstance(x, dlarray_pint) or isinstance(x, pint.Quantity):
+        ureg = pint.get_application_registry()
         return x.to(ureg.dimensionless)
     elif isinstance(x, dlarray_astropy) or isinstance(x, units.Quantity):
         return x.to(units.dimensionless_unscaled)
@@ -88,7 +116,7 @@ def setup_dual_operation(*args, out=None, broadcast=True):
     any_are_units = any(isunit(x) for x in arrays_)
     if broadcast and not any_are_units:
         # Down the road, pint will give us problems here.
-        arrays_ = mp_broadcast_arrays(*arrays_, subok=True)
+        arrays_ = pint_friendly_broadcast_arrays(*arrays_, subok=True)
     # Now go through the jacobians
     jacobians = []
     for x, orig in zip(arrays_, args):
@@ -191,9 +219,9 @@ def get_unit_conversion_scale(old_unit, new_unit):
     if isinstance(old_unit, units.UnitBase):
         # pylint: disable-next=protected-access
         return old_unit._to(new_unit) * (new_unit / old_unit)
-    elif isinstance(old_unit, pint.Unit) or isinstance(old_unit, pint.Quantity):
+    if isinstance(old_unit, pint.Unit) or isinstance(old_unit, pint.Quantity):
         return new_unit.from_(old_unit) / old_unit
-    elif isinstance(old_unit, Unitless):
+    if isinstance(old_unit, Unitless):
         return 1
     else:
         raise TypeError(f"Unable to handle units of type {type(old_unit)}")
@@ -203,6 +231,7 @@ def has_jacobians(a):
     """Return true if a is a dual with Jacobians"""
     # If it has a _has_jacobians method, invoke that.
     if hasattr(a, "_dual_has_jacobians_"):
+        # pylint: disable-next=protected-access
         return a._dual_has_jacobians_()
     if not hasattr(a, "jacobians"):
         return False

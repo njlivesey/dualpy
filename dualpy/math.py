@@ -6,11 +6,8 @@ and/or interfaces, though not always.
 
 from typing import Optional
 
-import mls_scf_tools.njlutil as njlutil
 import numpy as np
-import scipy.fft as fft
-import scipy.interpolate as interpolate
-import scipy.special as special
+from scipy import fft, interpolate, special
 from mls_scf_tools.mls_pint import ureg
 
 from dualpy import DenseJacobian, DiagonalJacobian, SeedJacobian, SparseJacobian
@@ -321,8 +318,6 @@ def construct_irfft_matrix(n_in: int):
 
 def rfft(x, axis=-1, workers=None):
     """Compute the 1-D discrete Fourier Transform for real input (includes duals)"""
-    if workers is None:
-        workers = njlutil.get_n_workers()
     x_magnitude, x_unit = get_magnitude_and_unit(dedual(x))
     result = fft.rfft(x_magnitude, axis=axis, workers=workers) * x_unit
     if has_jacobians(x):
@@ -395,8 +390,6 @@ def rfft(x, axis=-1, workers=None):
 
 def irfft(x, axis=-1, workers=None):
     """Compute 1-D discrete inverse Fourier Transform giving real result (with duals)"""
-    if workers is None:
-        workers = njlutil.get_n_workers()
     x_magnitude, x_unit = get_magnitude_and_unit(x)
     result = fft.irfft(x_magnitude, axis=axis, workers=workers) * x_unit
     if has_jacobians(x):

@@ -934,11 +934,11 @@ def cumsum(a, axis=None, dtype=None, out=None):
 # broadcast_to really need the subok argument, given that it's ignored.
 @implements(np.broadcast_arrays)
 def broadcast_arrays(*args, subok=False):
-    from mls_scf_tools.mls_pint import mp_broadcast_arrays
+    from .dual_helpers import pint_friendly_broadcast_arrays
 
     variables = [dedual(a) for a in args]
     # This is going to give problems with pint, which does not implement it.
-    result_ = mp_broadcast_arrays(*variables, subok=subok)
+    result_ = pint_friendly_broadcast_arrays(*variables, subok=subok)
     shape = result_[0].shape
     result = []
     for i, a in enumerate(args):

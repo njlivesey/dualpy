@@ -1,7 +1,7 @@
 """The various Jacobians for duals"""
 
 import numpy as np
-import scipy.sparse as sparse
+from scipy import sparse
 
 from .base_jacobian import BaseJacobian
 from .dense_jacobians import DenseJacobian
