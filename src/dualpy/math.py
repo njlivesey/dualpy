@@ -7,14 +7,14 @@ and/or interfaces, though not always.
 from typing import Optional
 
 import numpy as np
+import pint
 from scipy import fft, interpolate, special
-from mls_scf_tools.mls_pint import ureg
 
 from dualpy import DenseJacobian, DiagonalJacobian, SeedJacobian, SparseJacobian
 from dualpy.config import get_jacobian_specific_config
 from dualpy.duals import dlarray
 from dualpy.sparse_helpers import DenselyRearrangedSparseJacobian
-from dualpy.user import delete_jacobians, seed, PossibleDual
+from dualpy.user import PossibleDual, delete_jacobians, seed
 
 from .dual_helpers import (
     dedual,
@@ -82,6 +82,7 @@ def wofz(z):
 def voigt_profile(x, sigma, gamma):
     """Dual and unit friendly version of the voight function"""
     z = (x + gamma * 1j) / (sigma * np.sqrt(2))
+    ureg = pint.get_application_registry()
     w = wofz(z) * ureg.dimensionless
     return (np.real(w.magnitude) * w.units) / (sigma * np.sqrt(2 * np.pi))
 
