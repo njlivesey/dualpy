@@ -3,7 +3,7 @@
 
 <div align="center">
 
-[INSERT YOUR LOGO IMAGE HERE (IF APPLICABLE)]
+<!-- [INSERT YOUR LOGO IMAGE HERE (IF APPLICABLE)] -->
 <!-- ☝️ Replace with your logo (if applicable) via ![](https://uri-to-your-logo-image) ☝️ -->
 <!-- ☝️ If you see logo rendering errors, make sure you're not using indentation, or try an HTML IMG tag -->
 
@@ -28,16 +28,18 @@ Provides a near drop-in capability for performing forward mode automatic differe
 
 <!-- ☝️ Replace with a more detailed description of your repository, including why it was made and whom its intended for.  ☝️ -->
 
-[INSERT LIST OF IMPORTANT PROJECT / REPO LINKS HERE]
+<!-- [INSERT LIST OF IMPORTANT PROJECT / REPO LINKS HERE] -->
 <!-- example links>
 [Website](INSERT WEBSITE LINK HERE) | [Docs/Wiki](INSERT DOCS/WIKI SITE LINK HERE) | [Discussion Board](INSERT DISCUSSION BOARD LINK HERE) | [Issue Tracker](INSERT ISSUE TRACKER LINK HERE)
 -->
 
 ## Features
 
-* [INSERT LIST OF FEATURES IMPORTANT TO YOUR USERS HERE]
+* Supports regular numpy arrays as well as arrays with units using Pint and astropy (the latter is less tested).
+* Can store multiple Jacobians for an array with respect to different variables
+* Jacobians can be stored as full, diagonal (starting point), or sparse matrices (the latter using `scipy.sparse` with occasional use of the (non-scipy) `sparse` package).
+* Supports most standard operations and functions, but always scope for more to be added
   
-<!-- ☝️ Replace with a bullet-point list of your features ☝️ -->
 
 ## Contents
 

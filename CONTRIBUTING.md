@@ -16,7 +16,7 @@ Our Code of Conduct helps facilitate a positive interaction environment for ever
 
 ### Developer Environment
 
-For patch contributions, see our [Developer Documentation]([INSERT YOUR DEVELOPMENT GUIDE LINK HERE]) for more details on how to set up your local environment, to best contribute to our project. 
+For patch contributions, please contact [Nathnaiel Livesey](mailto:Nathaniel.J.Livesey@jpl.nasa.gov) for more details on how to set up your local environment, to best contribute to our project. 
 
 At a minimum however to submit patches (if using Git), you'll want to ensure you have:
 1. An account on the Version Control System our project uses (i.e. GitHub).
@@ -28,47 +28,8 @@ At a minimum however to submit patches (if using Git), you'll want to ensure you
 Before contributing changes to our project, it's a great idea to be familiar with our communication channels and to socialize your potential contributions to get feedback early. This will help give you context for your contributions, no matter their form.
 
 Our communication channels are:
-- [Issue tracking system]([INSERT LINK TO ISSUE TRACKING SYSTEM]) - a regularly monitored area to report issues with our software or propose changes
-- [Discussion board]([INSERT LINK TO DISCUSSION BOARD OR MAILING LIST]) - an permanently archived place to hold conversations related to our project, and to propose as well as show+tell topics to the contributor team. This resource can be searched for old discussions.
-- [INSERT ADDITIONAL COMMUNICATION CHANNELS FOR YOUR PROJECT, EX: SLACK, TWITTER, YOUTUBE, ETC.]
-
-### Communication Channels
-
-Before contributing changes to our project, it's a great idea to be familiar with our communication channels and to socialize your potential contributions to get feedback early. This will help give you context for your contributions, no matter their form.
-
-Our communication channels are:
-- [Issue tracking system]([INSERT LINK TO ISSUE TRACKING SYSTEM]) - a regularly monitored area to report issues with our software or propose changes
-- [Discussion board](INSERT LINK TO DISCUSSION BOARD OR MAILING LIST) - an permanently archived place to hold conversations related to our project, and to propose as well as show+tell topics to the contributor team. This resource can be searched for old discussions.
-- [INSERT ADDITIONAL COMMUNICATION CHANNELS FOR YOUR PROJECT, EX: SLACK, TWITTER, YOUTUBE, ETC.]
-
-## Our Development Process
-
-Our project integrates contributions from many people, and so we'd like to outline a process you can use to visualize how your contributions may be integrated if you provide something. 
-
-```mermaid
-flowchart TD
-    repo_proj[(Our Repository)]-->|Fork|repo_fork[(Your Forked Repository)]
-    repo_fork-->|Make|patch(Your Changes)
-    patch-->|Submit|pr(Pull Request)
-    pr==>|Approved|repo_proj
-    pr-->|Changes Requested|repo_fork
-```
-
-### Fork our Repository
-
-Forking our repository, as opposed to directly committing to a branch is the preferred way to propose changes. 
-
-See [this GitHub guide](https://docs.github.com/en/get-started/quickstart/fork-a-repo) on forking for information specific to GitHub.com
-
-#### Find or File an Issue
-
-Make sure people are aware you're working on a patch! Check out our [issue tracking system]([INSERT LINK TO YOUR ISSUE TRACKING SYSTEM]) and find an open issue you'd like to work against, or alternatively file a new issue and mention you're working on a patch.
-
-#### Choose the Right Branch to Fork
-
-Our project typically has the following branches available, make sure to fork either the default branch or a branch someone else already tagged with a particular issue ticket you're working with.
-- `main`[INSERT DEFAULT VCS BRANCH NAME HERE] - default branch
-- [INSERT ADDITIONAL TYPICAL VCS BRANCH NAMES HERE] - 
+- Email to [Nathaniel Livesey](mailto:Nathaniel.J.Livesey@jpl.nasa.gov)
+- [Issue tracking system](https://github.com/njlivesey/dualpy/issues) - a regularly monitored area to report issues with our software or propose changes
 
 ### Make your Modifications
 
@@ -114,7 +75,7 @@ Reviewing pull-requests, or any kinds of proposed patch changes, is an art. That
 
 Issue tickets are a very simple way to get involved in our project. It also helps new contributors get an understanding of the project more comprehensively. This is a great place to get started with the project if you're not sure where to start. 
 
-See our list of issues at: [INSERT LINK TO YOUR ISSUE TRACKING SYSTEM]
+See our list of issues at: [https://github.com/njlivesey/dualpy/issues]
 
 #### Cleaning up Duplicate Issues
 
